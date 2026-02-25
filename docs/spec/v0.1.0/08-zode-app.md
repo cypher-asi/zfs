@@ -11,7 +11,7 @@ The **zfs-zode-app** crate provides a **standalone** Zode application: run the n
 - **Different UI:** May reuse UI data contracts from `zfs-zode-cli` (status, programs, peers, log); app-specific UI (e.g. GUI, tray icon, settings).
 - **Settings screen:** The app MUST provide a **Settings** screen where the operator can toggle default programs on or off (see [Default programs settings](#default-programs-settings) and [06-zode § Default programs](06-zode.md#default-programs)).
 - **No direct RocksDB:** Uses `zfs-zode` library only.
-- **Z Chat test messages (optional):** The app MAY embed an SDK client (or call into `zfs-sdk`) so the user can send **test messages** for Z Chat from the app. This allows operators to prove the system is working by sending and receiving messages (e.g. to a test channel) without a separate client. When implemented: use a dedicated test channel (e.g. `channel_id` reserved for "zode-app test"); key handling for the test channel is implementation-defined (e.g. fixed test key or generated and shown in UI). See [05-standard-programs](05-standard-programs.md) for Z Chat channel semantics.
+- **Interlink test messages (optional):** The app MAY embed an SDK client (or call into `zfs-sdk`) so the user can send **test messages** for Interlink from the app. This allows operators to prove the system is working by sending and receiving messages (e.g. to a test channel) without a separate client. When implemented: use a dedicated test channel (e.g. `channel_id` reserved for "zode-app test"); key handling for the test channel is implementation-defined (e.g. fixed test key or generated and shown in UI). See [05-standard-programs](05-standard-programs.md) for Interlink channel semantics.
 
 ## Interfaces
 
@@ -26,7 +26,7 @@ The Settings screen presents each default program (see [06-zode § Default progr
 | Program | Default | Description shown to operator |
 |---------|---------|-------------------------------|
 | **ZID** (Zero Identity) | Enabled | Store and serve identity records. |
-| **Z Chat** | Enabled | Store and serve encrypted chat messages. |
+| **Interlink** | Enabled | Store and serve encrypted chat messages. |
 
 Toggling a program **off** removes it from the effective topic list; toggling it **on** re-adds it. Changes take effect on the next restart (or immediately if the implementation supports hot-reload of subscriptions). The UI persists the selection to the Zode config (see [06-zode § Settings persistence](06-zode.md#settings-persistence)).
 
@@ -36,7 +36,7 @@ pub struct DefaultProgramsSettingsView {
 }
 
 pub struct DefaultProgramToggle {
-    pub name: String,           // e.g. "ZID", "Z Chat"
+    pub name: String,           // e.g. "ZID", "Interlink"
     pub description: String,    // short explanation
     pub enabled: bool,          // current state
 }

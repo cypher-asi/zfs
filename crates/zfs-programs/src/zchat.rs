@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zfs_core::{ProgramId, SectorId, ZfsError};
 
-/// Maximum Z Chat message size (64 KiB).
+/// Maximum Interlink message size (64 KiB).
 pub const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
 const CHANNEL_SECTOR_PREFIX: &[u8] = b"zchat/channel/";
 
-/// Z Chat program descriptor.
+/// Interlink program descriptor.
 ///
 /// Defines the chat program parameters. The `program_id` is derived
 /// as `SHA-256(canonical_cbor(self))`.
@@ -19,7 +19,7 @@ pub struct ZChatDescriptor {
 }
 
 impl ZChatDescriptor {
-    /// Create the canonical v1 Z Chat descriptor.
+    /// Create the canonical v1 Interlink descriptor.
     pub fn v1() -> Self {
         Self {
             name: "zchat".to_owned(),
@@ -50,7 +50,7 @@ impl ZChatDescriptor {
     }
 }
 
-/// Logical channel identifier for Z Chat.
+/// Logical channel identifier for Interlink.
 ///
 /// One sector per channel; the SectorId is deterministically derived
 /// from the ChannelId.
@@ -91,7 +91,7 @@ pub fn sector_id_for_channel(channel_id: &ChannelId) -> SectorId {
     SectorId::from_bytes(hash.to_vec())
 }
 
-/// A Z Chat message.
+/// An Interlink message.
 ///
 /// Size limit: [`MAX_MESSAGE_SIZE`] (64 KiB) for the canonical CBOR encoding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

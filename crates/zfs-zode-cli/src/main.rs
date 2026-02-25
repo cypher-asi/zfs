@@ -45,7 +45,7 @@ struct Cli {
     #[arg(long)]
     no_zid: bool,
 
-    /// Disable the default Z Chat program.
+    /// Disable the default Interlink program.
     #[arg(long)]
     no_zchat: bool,
 

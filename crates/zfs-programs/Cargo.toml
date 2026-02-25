@@ -2,7 +2,7 @@
 name = "zfs-programs"
 version = "0.1.0"
 edition = "2021"
-description = "ZFS program identity, topic naming, and standard programs (ZID, Z Chat)"
+description = "ZFS program identity, topic naming, and standard programs (ZID, Interlink)"
 license = "MIT OR Apache-2.0"
 
 [dependencies]

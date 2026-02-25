@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The **zfs-sdk** crate is the **client SDK**: manage identity and machine keys, connect to Zodes, compute program_id and topic, encrypt sectors, sign operations, optionally generate Valid-Sector proofs, upload to R Zodes, fetch by CID, and manage heads. It includes built-in ZID and Z Chat helpers. The SDK wraps `zero-neural`, `zfs-net`, `zfs-crypto`, `zfs-proof`, and `zfs-programs`; it does **not** use RocksDB.
+The **zfs-sdk** crate is the **client SDK**: manage identity and machine keys, connect to Zodes, compute program_id and topic, encrypt sectors, sign operations, optionally generate Valid-Sector proofs, upload to R Zodes, fetch by CID, and manage heads. It includes built-in ZID and Interlink helpers. The SDK wraps `zero-neural`, `zfs-net`, `zfs-crypto`, `zfs-proof`, and `zfs-programs`; it does **not** use RocksDB.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ The **zfs-sdk** crate is the **client SDK**: manage identity and machine keys, c
 - **Upload to R Zodes:** Send signed StoreRequest to R Zodes; replication factor R is a parameter. See [12-protocol](12-protocol.md) (replication semantics).
 - **Fetch by CID:** Send FetchRequest; receive FetchResponse (ciphertext or head).
 - **Head management:** Fetch/update head for a sector; helpers for head metadata.
-- **ZID and Z Chat helpers:** Built-in helpers for ZID and Z Chat (create descriptor, build message, upload). See [05-standard-programs](05-standard-programs.md).
+- **ZID and Interlink helpers:** Built-in helpers for ZID and Interlink (create descriptor, build message, upload). See [05-standard-programs](05-standard-programs.md).
 - **Abstract network:** All network via `zfs-net`; no direct libp2p in SDK.
 
 ## Interfaces (high-level client API)
@@ -112,7 +112,7 @@ pub async fn fetch_head(
 ) -> Result<Option<Head>, SdkError>;
 ```
 
-### ZID / Z Chat helpers (conceptual)
+### ZID / Interlink helpers (conceptual)
 
 ```rust
 pub fn zid_descriptor(...) -> ZidDescriptor;
@@ -149,4 +149,4 @@ stateDiagram-v2
 - **Replication factor R:** Parameter to upload (e.g. `replication_factor: usize`); semantics per [12-protocol](12-protocol.md) (at least one success).
 - **Signing:** Every upload is signed by the caller's `MachineKeyPair` producing a `HybridSignature`. The `machine_did` is derived from the machine's Ed25519 public key via `ed25519_to_did_key` (provided by `zero-neural`).
 - **SectorKey derivation:** SectorKeys are random 256-bit keys, wrapped per-recipient using the two-step hybrid key wrapping scheme in [10-crypto](10-crypto.md) (step 1: `zero-neural` hybrid encapsulation; step 2: `zfs-crypto` sector-context-bound wrapping).
-- **ZID and Z Chat:** Helper APIs in SDK that use ProgramDescriptor and message types from [05-standard-programs](05-standard-programs.md); same encoding (CBOR) and proof rules.
+- **ZID and Interlink:** Helper APIs in SDK that use ProgramDescriptor and message types from [05-standard-programs](05-standard-programs.md); same encoding (CBOR) and proof rules.

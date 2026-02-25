@@ -9,7 +9,7 @@
 | Property | Description |
 |----------|-------------|
 | **Encrypted-by-default** | All sector payloads are ciphertext at rest; clients encrypt before upload. Zodes never see plaintext. Sharing is supported by deriving or distributing keys so multiple participants can encrypt/decrypt the same sector (see [10-crypto](10-crypto.md)). |
-| **Program-scoped storage** | Storage and subscriptions are scoped by **program** (e.g. ZID, Z Chat). Zodes subscribe to program topics and serve only for those programs. |
+| **Program-scoped storage** | Storage and subscriptions are scoped by **program** (e.g. ZID, Interlink). Zodes subscribe to program topics and serve only for those programs. |
 | **Optional ZK proofs** | Programs may require Valid-Sector proofs; verification is pluggable and per-program. |
 | **Client-driven replication** | Clients choose replication factor R and upload to R Zodes; replication is not consensus-based. |
 | **Rust implementation** | Implemented in Rust (stable), with RocksDB as the mandatory storage engine. |
@@ -19,7 +19,7 @@
 - Clients can connect to Zodes, encrypt sectors, and upload with configurable replication.
 - Zodes persist blocks and heads in RocksDB, verify proofs when required, and enforce local storage policy.
 - Console CLI (zode-cli) and standalone app (zode-app) can run a Zode and show status, programs, peers, and live log.
-- SDK supports connect, program_id/topic, encrypt, prove (optional), upload, fetch, and head helpers; ZID and Z Chat helpers are available.
+- SDK supports connect, program_id/topic, encrypt, prove (optional), upload, fetch, and head helpers; ZID and Interlink helpers are available.
 - No RocksDB usage outside `zfs-storage`; no direct libp2p outside `zfs-net`.
 
 ## Context diagram
@@ -51,7 +51,7 @@ flowchart LR
 | [02-storage](02-storage.md) | RocksDB abstraction, schemas, config. |
 | [03-programs-and-topics](03-programs-and-topics.md) | Program identity, topic naming. |
 | [04-proof](04-proof.md) | Valid-Sector proof verification. |
-| [05-standard-programs](05-standard-programs.md) | ZID and Z Chat. |
+| [05-standard-programs](05-standard-programs.md) | ZID and Interlink. |
 | [06-zode](06-zode.md) | Zode node requirements. |
 | [07-zode-cli](07-zode-cli.md) | Console-only Zode CLI. |
 | [08-zode-app](08-zode-app.md) | Standalone Zode application. |

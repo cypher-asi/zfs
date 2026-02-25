@@ -5,7 +5,7 @@ pub fn zid_descriptor() -> ZidDescriptor {
     ZidDescriptor::v1()
 }
 
-/// Create the canonical Z Chat v1 program descriptor.
+/// Create the canonical Interlink v1 program descriptor.
 pub fn zchat_descriptor() -> ZChatDescriptor {
     ZChatDescriptor::v1()
 }

@@ -5,7 +5,7 @@ use crate::{ProgramId, ZfsError};
 /// Base program descriptor used to derive a [`ProgramId`].
 ///
 /// `program_id = SHA-256(canonical_cbor(self))`. Program-specific
-/// descriptors (ZID, ZChat, etc.) are defined in the `zfs-programs` crate
+/// descriptors (ZID, Interlink, etc.) are defined in the `zfs-programs` crate
 /// and derive their identities the same way.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramDescriptor {

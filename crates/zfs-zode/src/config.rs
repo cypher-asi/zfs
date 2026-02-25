@@ -6,7 +6,7 @@ use zfs_net::NetworkConfig;
 use zfs_programs::{ZChatDescriptor, ZidDescriptor};
 use zfs_storage::StorageConfig;
 
-/// Toggle default programs (ZID, Z Chat) on or off.
+/// Toggle default programs (ZID, Interlink) on or off.
 ///
 /// Both are enabled by default. Disabling a program removes it from the
 /// effective topic list so the Zode will neither subscribe to nor serve
@@ -15,7 +15,7 @@ use zfs_storage::StorageConfig;
 pub struct DefaultProgramsConfig {
     /// Enable the ZID (Zero Identity) program. Default: `true`.
     pub zid: bool,
-    /// Enable the Z Chat program. Default: `true`.
+    /// Enable the Interlink program. Default: `true`.
     pub zchat: bool,
 }
 

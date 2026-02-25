@@ -30,7 +30,7 @@ Defined in [11-core-types](11-core-types.md) as the base type. Here we define th
 ```rust
 pub struct ProgramDescriptor {
     // Program-specific fields; e.g. name, version, proof_required, ...
-    // Exact fields in 05-standard-programs for ZID and Z Chat.
+    // Exact fields in 05-standard-programs for ZID and Interlink.
 }
 
 impl ProgramDescriptor {

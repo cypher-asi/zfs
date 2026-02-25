@@ -16,7 +16,7 @@ use crate::helpers::format_timestamp_ms;
 use crate::state::{ChatState, ChatUpdate, DisplayMessage};
 
 fn derive_test_sector_key() -> SectorKey {
-    let hk = Hkdf::<Sha256>::new(None, b"zode-test-channel-v1");
+    let hk = Hkdf::<Sha256>::new(None, b"interlink-main-channel-v1");
     let mut key_bytes = [0u8; 32];
     hk.expand(b"zfs:test-channel-key:v1", &mut key_bytes)
         .expect("32-byte expand cannot fail");
@@ -26,7 +26,7 @@ fn derive_test_sector_key() -> SectorKey {
 fn derive_test_machine_did(zode_id: &str) -> String {
     use sha2::Digest;
     let hash: [u8; 32] =
-        sha2::Sha256::digest(format!("zode-test-machine:{zode_id}").as_bytes()).into();
+        sha2::Sha256::digest(format!("interlink-main-machine:{zode_id}").as_bytes()).into();
     let nk = NeuralKey::from_bytes(hash);
     let identity_id = [0x01; 16];
     let machine_id = [0x02; 16];
@@ -58,7 +58,7 @@ impl ZodeApp {
         let sector_id = channel_id.sector_id();
         let program_id = ZChatDescriptor::v1()
             .program_id()
-            .expect("ZChat descriptor is valid");
+            .expect("Interlink descriptor is valid");
 
         let (update_tx, update_rx) = tokio::sync::mpsc::channel::<ChatUpdate>(4);
         let (refresh_tx, refresh_rx) = tokio::sync::mpsc::channel::<()>(4);

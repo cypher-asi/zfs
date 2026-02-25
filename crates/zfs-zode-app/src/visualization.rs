@@ -516,44 +516,90 @@ fn color_of(node: &GraphNode, _accent: egui::Color32) -> egui::Color32 {
 
 fn paint_grid(painter: &egui::Painter, clip: egui::Rect, center: egui::Pos2, cam: &Camera) {
     const BASE_SPACING: f32 = 50.0;
-
+    const LINE_RGB: [u8; 3] = [48, 48, 54];
+    const DOT_RGB: [u8; 3] = [72, 72, 80];
     let spacing = BASE_SPACING * cam.zoom;
-    let stroke = egui::Stroke::new(
-        1.0,
-        egui::Color32::from_rgb(32, 32, 36),
-    );
-
+    let dot_radius = (1.5 * cam.zoom).clamp(0.5, 2.0);
     let origin = center + cam.offset * cam.zoom;
 
     let left = clip.left();
     let right = clip.right();
     let top = clip.top();
     let bottom = clip.bottom();
+    let height = (bottom - top).max(1.0);
 
-    // Vertical lines
+    let fade = |y: f32| -> f32 {
+        ((y - top) / height).clamp(0.0, 1.0).powf(0.6) * 0.85 + 0.15
+    };
+
     let start_x = origin.x + ((left - origin.x) / spacing).floor() * spacing;
+    let start_y = origin.y + ((top - origin.y) / spacing).floor() * spacing;
+
+    // Collect y positions for segmenting vertical lines
+    let mut ys: Vec<f32> = Vec::new();
+    let mut y = start_y;
+    while y <= bottom {
+        if y >= top {
+            ys.push(y);
+        }
+        y += spacing;
+    }
+
+    // Vertical lines — drawn per-segment so each segment fades with y
     let mut x = start_x;
     while x <= right {
         if x >= left {
-            painter.line_segment(
-                [egui::pos2(x, top), egui::pos2(x, bottom)],
-                stroke,
-            );
+            let mut prev = top;
+            for &gy in &ys {
+                let mid = (prev + gy) * 0.5;
+                let t = fade(mid);
+                let c = egui::Color32::from_rgba_unmultiplied(
+                    LINE_RGB[0], LINE_RGB[1], LINE_RGB[2],
+                    (t * 255.0) as u8,
+                );
+                painter.line_segment([egui::pos2(x, prev), egui::pos2(x, gy)], egui::Stroke::new(1.0, c));
+                prev = gy;
+            }
+            if prev < bottom {
+                let mid = (prev + bottom) * 0.5;
+                let t = fade(mid);
+                let c = egui::Color32::from_rgba_unmultiplied(
+                    LINE_RGB[0], LINE_RGB[1], LINE_RGB[2],
+                    (t * 255.0) as u8,
+                );
+                painter.line_segment([egui::pos2(x, prev), egui::pos2(x, bottom)], egui::Stroke::new(1.0, c));
+            }
         }
         x += spacing;
     }
 
     // Horizontal lines
-    let start_y = origin.y + ((top - origin.y) / spacing).floor() * spacing;
-    let mut y = start_y;
-    while y <= bottom {
-        if y >= top {
-            painter.line_segment(
-                [egui::pos2(left, y), egui::pos2(right, y)],
-                stroke,
-            );
+    for &gy in &ys {
+        let t = fade(gy);
+        let c = egui::Color32::from_rgba_unmultiplied(
+            LINE_RGB[0], LINE_RGB[1], LINE_RGB[2],
+            (t * 255.0) as u8,
+        );
+        painter.line_segment(
+            [egui::pos2(left, gy), egui::pos2(right, gy)],
+            egui::Stroke::new(1.0, c),
+        );
+    }
+
+    // Dots at intersections
+    let mut x = start_x;
+    while x <= right {
+        if x >= left {
+            for &gy in &ys {
+                let t = fade(gy);
+                let c = egui::Color32::from_rgba_unmultiplied(
+                    DOT_RGB[0], DOT_RGB[1], DOT_RGB[2],
+                    (t * 255.0) as u8,
+                );
+                painter.circle_filled(egui::pos2(x, gy), dot_radius, c);
+            }
         }
-        y += spacing;
+        x += spacing;
     }
 }
 

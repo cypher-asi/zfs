@@ -35,7 +35,7 @@ Full Zode config (single place for node behavior):
 
 ## Default programs
 
-ZFS ships with **default programs** — the standard programs defined in [05-standard-programs](05-standard-programs.md) that a Zode subscribes to out of the box. In v0.1.0 the default programs are **ZID** and **Z Chat**.
+ZFS ships with **default programs** — the standard programs defined in [05-standard-programs](05-standard-programs.md) that a Zode subscribes to out of the box. In v0.1.0 the default programs are **ZID** and **Interlink**.
 
 Default programs are **enabled by default** but can be individually toggled off in the Zode settings. This lets operators run lean nodes that serve only specific workloads (e.g. ZID-only, or only custom programs via `topics`).
 

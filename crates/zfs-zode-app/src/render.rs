@@ -98,7 +98,7 @@ fn render_default_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
         hint_label(ui, "Standard programs the Zode subscribes to. Toggle off to skip.");
         ui.add_space(8.0);
         ui.checkbox(&mut app.settings.enable_zid, "ZID (Zero Identity)");
-        ui.checkbox(&mut app.settings.enable_zchat, "Z Chat");
+        ui.checkbox(&mut app.settings.enable_zchat, "Interlink");
     });
 }
 
@@ -273,6 +273,12 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
         .map(|h| (h.cid, h))
         .collect();
 
+    let known_programs: HashMap<zfs_core::ProgramId, &str> =
+        zfs_programs::default_program_ids()
+            .into_iter()
+            .map(|(name, pid)| (pid, name))
+            .collect();
+
     section(ui, "Program Storage", |ui| {
         ui.set_min_height(ui.available_height());
         if status.topics.is_empty() {
@@ -290,7 +296,15 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                     let Ok(pid) = zfs_core::ProgramId::from_hex(hex) else {
                         continue;
                     };
-                    ui.collapsing(format!("Program: {}", &hex[..16.min(hex.len())]), |ui| {
+                    let label = match known_programs.get(&pid) {
+                        Some(name) => format!(
+                            "Program: {} [{}]",
+                            &hex[..16.min(hex.len())],
+                            name
+                        ),
+                        None => format!("Program: {}", &hex[..16.min(hex.len())]),
+                    };
+                    ui.collapsing(label, |ui| {
                         let cids = zode.storage().list_cids(&pid).unwrap_or_default();
                         if cids.is_empty() {
                             muted_label(ui, "No CIDs stored.");

@@ -128,7 +128,7 @@ fn zchat_message_size_limit() {
 #[test]
 fn test_channel_id_reserved() {
     let ch = ChannelId::from_str_id(crate::zchat::TEST_CHANNEL_ID);
-    assert_eq!(ch.as_bytes(), b"zode-test");
+    assert_eq!(ch.as_bytes(), b"INTERLINK-MAIN");
     let _ = ch.sector_id();
 }
 

@@ -11,7 +11,7 @@ The **zfs-zode-cli** crate provides a **console-only** Zode experience: CLI/TUI 
 - **Connected Zodes:** zode_id, address, connection state.
 - **Live data log:** Announce events, StoreRequests, proof results, rejections with reasons.
 - **Zode info:** zode_id, node key fingerprint, storage path, total DB size, limits.
-- **Settings:** View and toggle default programs (ZID, Z Chat) on or off (see [06-zode § Default programs](06-zode.md#default-programs)).
+- **Settings:** View and toggle default programs (ZID, Interlink) on or off (see [06-zode § Default programs](06-zode.md#default-programs)).
 
 ## UI data contracts
 
@@ -25,7 +25,7 @@ These are the data structures the UI **reads** from the Zode (in-process or RPC)
 | **Head metadata** | Per sector_id: Head (sector_id, cid, version, program_id, prev_head_cid, timestamp_ms). |
 | **Zode list** | zode_id (`Zx`-prefixed), address (multiaddr), connection_state (e.g. connected, dialing). |
 | **Log events** | Event types: Announce, StoreRequest (cid, program_id), ProofResult (ok/fail), Rejection (reason, code). |
-| **Default programs** | Current enabled/disabled state for each default program (ZID, Z Chat). See [06-zode § Default programs](06-zode.md#default-programs). |
+| **Default programs** | Current enabled/disabled state for each default program (ZID, Interlink). See [06-zode § Default programs](06-zode.md#default-programs). |
 
 ## Interfaces (summary)
 
@@ -89,13 +89,13 @@ flowchart TB
 
 The **Settings** screen (TUI or CLI subcommand) lets the operator toggle default programs on or off. It reads the current `DefaultProgramsConfig` from the Zode and writes changes back to the config.
 
-**TUI mode:** An interactive screen listing each default program with a toggle (e.g. `[x] ZID`, `[ ] Z Chat`).
+**TUI mode:** An interactive screen listing each default program with a toggle (e.g. `[x] ZID`, `[ ] Interlink`).
 
 **CLI subcommand mode:**
 
 ```
 zode settings                          # show current default-program states
-zode settings --enable zchat           # enable Z Chat
+zode settings --enable zchat           # enable Interlink
 zode settings --disable zid            # disable ZID
 ```
 

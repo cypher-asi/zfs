@@ -234,14 +234,19 @@ fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egui::Response
     );
     let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click());
     let vis = ui.style().interact_selectable(&resp, active);
-    if active || resp.hovered() {
+    if !active && resp.hovered() {
         ui.painter().rect_filled(rect, vis.rounding, vis.bg_fill);
     }
+    let text_color = if active {
+        egui::Color32::WHITE
+    } else {
+        vis.text_color()
+    };
     let galley = ui.fonts(|f| {
         f.layout_no_wrap(
             icon.to_string(),
             egui::FontId::proportional(16.0),
-            vis.text_color(),
+            text_color,
         )
     });
     let text_pos = rect.center() - galley.size() / 2.0;
@@ -295,6 +300,12 @@ impl eframe::App for ZodeApp {
                     egui::Id::new("title_bar"),
                     egui::Sense::click_and_drag(),
                 );
+                if !on_resize_edge
+                    && title_resp.drag_started_by(egui::PointerButton::Primary)
+                {
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
                 if title_resp.double_clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(
                         !maximized,
@@ -302,6 +313,11 @@ impl eframe::App for ZodeApp {
                 }
 
                 ui.visuals_mut().widgets.active = ui.visuals().widgets.hovered;
+                ui.visuals_mut().selection.bg_fill = egui::Color32::TRANSPARENT;
+                ui.visuals_mut().selection.stroke =
+                    egui::Stroke::new(1.0, egui::Color32::WHITE);
+                ui.visuals_mut().widgets.active.fg_stroke =
+                    egui::Stroke::new(1.0, egui::Color32::WHITE);
                 ui.horizontal(|ui| {
                     let tex = self.icon_texture(ui.ctx());
                     ui.add(
@@ -357,8 +373,14 @@ impl eframe::App for ZodeApp {
                             } else {
                                 crate::components::colors::DISCONNECTED
                             };
+                            let status_label = if connected { "connected" } else { "stopped" };
+                            let status_text_color = egui::Color32::from_rgb(0x01, 0xF4, 0xCB);
+                            ui.monospace(
+                                egui::RichText::new(status_label)
+                                    .color(status_text_color),
+                            );
                             let dot_radius = 3.5;
-                            let (dot_rect, dot_resp) = ui.allocate_exact_size(
+                            let (dot_rect, _) = ui.allocate_exact_size(
                                 egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
                                 egui::Sense::hover(),
                             );
@@ -367,21 +389,24 @@ impl eframe::App for ZodeApp {
                                 dot_radius,
                                 dot_color,
                             );
-                            dot_resp.on_hover_text(if connected {
-                                "Zode is running"
-                            } else {
-                                "Zode is stopped"
-                            });
                         },
                     );
                 });
 
-                // Drag anywhere in the title bar (including over buttons) moves the window.
-                // Uses raw pointer state so it works even when a button captured the press.
-                if !on_resize_edge {
-                    if let Some(press_origin) = ui.input(|i| i.pointer.press_origin()) {
+                // Drag from any point in the title bar (including over buttons)
+                // to move the window. Raw pointer state bypasses widget hit-testing
+                // so a press that started on a tab button still initiates a drag
+                // once the pointer moves past a small threshold.
+                if !on_resize_edge && !title_resp.double_clicked() {
+                    let drag = ui.input(|i| {
+                        match (i.pointer.press_origin(), i.pointer.hover_pos()) {
+                            (Some(origin), Some(current)) => Some((origin, current)),
+                            _ => None,
+                        }
+                    });
+                    if let Some((press_origin, current)) = drag {
                         if title_bar_rect.contains(press_origin)
-                            && ui.input(|i| i.pointer.is_decidedly_dragging())
+                            && press_origin.distance(current) > 4.0
                         {
                             ui.ctx()
                                 .send_viewport_cmd(egui::ViewportCommand::StartDrag);
