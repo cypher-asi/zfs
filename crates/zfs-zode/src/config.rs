@@ -55,10 +55,8 @@ pub struct ZodeConfig {
     pub default_programs: DefaultProgramsConfig,
     /// Additional (non-default) program topics to subscribe to.
     pub topics: HashSet<ProgramId>,
-    /// Size and policy limits.
-    pub limits: LimitsConfig,
-    /// Proof verification policy.
-    pub proof_policy: ProofPolicyConfig,
+    /// Sector-specific limits.
+    pub sector_limits: SectorLimitsConfig,
     /// Network (libp2p) configuration.
     pub network: NetworkConfig,
 }
@@ -73,26 +71,22 @@ impl ZodeConfig {
     }
 }
 
-/// Size and policy limits for the Zode.
-#[derive(Debug, Clone, Default)]
-pub struct LimitsConfig {
-    /// Maximum ciphertext size per block (bytes). `None` = unlimited.
-    pub max_block_size_bytes: Option<u64>,
+/// Sector protocol storage limits.
+#[derive(Debug, Clone)]
+pub struct SectorLimitsConfig {
+    /// Maximum payload size per sector slot (bytes). Default: 256 KB.
+    pub max_slot_size_bytes: u64,
     /// Maximum total storage per program (bytes). `None` = unlimited.
     pub max_per_program_bytes: Option<u64>,
-    /// Maximum total DB size (bytes). Overrides `StorageConfig::max_db_size_bytes`.
-    pub max_total_db_bytes: Option<u64>,
 }
 
-/// Proof verification policy.
-#[derive(Debug, Clone, Default)]
-pub struct ProofPolicyConfig {
-    /// Whether to require proofs for all programs.
-    pub require_proofs: bool,
-    /// Programs that require proofs (when `require_proofs` is false).
-    pub programs_requiring_proof: HashSet<ProgramId>,
-    /// Path for verifier key storage.
-    pub verifier_key_path: Option<PathBuf>,
+impl Default for SectorLimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_slot_size_bytes: 256 * 1024,
+            max_per_program_bytes: None,
+        }
+    }
 }
 
 impl Default for ZodeConfig {
@@ -101,8 +95,7 @@ impl Default for ZodeConfig {
             storage: StorageConfig::new(PathBuf::from("zfs-zode-data")),
             default_programs: DefaultProgramsConfig::default(),
             topics: HashSet::new(),
-            limits: LimitsConfig::default(),
-            proof_policy: ProofPolicyConfig::default(),
+            sector_limits: SectorLimitsConfig::default(),
             network: NetworkConfig::default(),
         }
     }

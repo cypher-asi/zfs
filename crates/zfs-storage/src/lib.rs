@@ -3,12 +3,13 @@
 mod config;
 mod error;
 mod rocks;
-mod traits;
+mod sector_rocks;
+mod sector_traits;
 
 pub use config::{CompressionType, StorageConfig};
 pub use error::StorageError;
 pub use rocks::RocksStorage;
-pub use traits::{BlockStore, HeadStore, ProgramIndex, StorageBackend, StorageStats};
+pub use sector_traits::{SectorBatchEntry, SectorPutResult, SectorStorageStats, SectorStore};
 
 #[cfg(test)]
 mod tests;

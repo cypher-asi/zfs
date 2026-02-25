@@ -1,22 +1,15 @@
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use futures::StreamExt;
-use libp2p::{
-    gossipsub, kad, request_response, swarm::SwarmEvent, Multiaddr, PeerId, StreamProtocol,
-};
+use libp2p::{gossipsub, kad, request_response, swarm::SwarmEvent, Multiaddr, PeerId};
 use tracing::{debug, info};
 
 use crate::behaviour::{ZfsBehaviour, ZfsBehaviourEvent};
+use crate::builder::{build_swarm, dial_bootstrap_peers};
 use crate::config::{KademliaMode, NetworkConfig};
 use crate::error::NetworkError;
 use crate::event::NetworkEvent;
-use crate::protocol::{ZfsRequest, ZfsResponse};
-
-const ZFS_PROTOCOL: &str = "/zfs/1.0.0";
-const ZFS_KAD_PROTOCOL: &str = "/zfs/kad/1.0.0";
 
 /// Manages the libp2p swarm and exposes the ZFS network API.
 ///
@@ -111,53 +104,28 @@ impl NetworkService {
         Ok(())
     }
 
-    /// Send a store request to a specific peer. Returns the outbound request ID.
-    pub fn send_store(
+    /// Send a sector request to a specific peer.
+    pub fn send_sector_request(
         &mut self,
         peer: &PeerId,
-        request: zfs_core::StoreRequest,
+        request: zfs_core::SectorRequest,
     ) -> request_response::OutboundRequestId {
         self.swarm
             .behaviour_mut()
-            .request_response
-            .send_request(peer, ZfsRequest::Store(Box::new(request)))
+            .sector_rr
+            .send_request(peer, request)
     }
 
-    /// Send a fetch request to a specific peer. Returns the outbound request ID.
-    pub fn send_fetch(
+    /// Send a sector response on a previously received request channel.
+    pub fn send_sector_response(
         &mut self,
-        peer: &PeerId,
-        request: zfs_core::FetchRequest,
-    ) -> request_response::OutboundRequestId {
-        self.swarm
-            .behaviour_mut()
-            .request_response
-            .send_request(peer, ZfsRequest::Fetch(request))
-    }
-
-    /// Send a store response on a previously received request channel.
-    pub fn send_store_response(
-        &mut self,
-        channel: request_response::ResponseChannel<ZfsResponse>,
-        response: zfs_core::StoreResponse,
+        channel: request_response::ResponseChannel<zfs_core::SectorResponse>,
+        response: zfs_core::SectorResponse,
     ) -> Result<(), NetworkError> {
         self.swarm
             .behaviour_mut()
-            .request_response
-            .send_response(channel, ZfsResponse::Store(response))
-            .map_err(|_| NetworkError::ResponseFailed)
-    }
-
-    /// Send a fetch response on a previously received request channel.
-    pub fn send_fetch_response(
-        &mut self,
-        channel: request_response::ResponseChannel<ZfsResponse>,
-        response: zfs_core::FetchResponse,
-    ) -> Result<(), NetworkError> {
-        self.swarm
-            .behaviour_mut()
-            .request_response
-            .send_response(channel, ZfsResponse::Fetch(Box::new(response)))
+            .sector_rr
+            .send_response(channel, response)
             .map_err(|_| NetworkError::ResponseFailed)
     }
 
@@ -196,10 +164,7 @@ impl NetworkService {
         }
     }
 
-    fn handle_swarm_event(
-        &mut self,
-        event: SwarmEvent<ZfsBehaviourEvent>,
-    ) -> Option<NetworkEvent> {
+    fn handle_swarm_event(&mut self, event: SwarmEvent<ZfsBehaviourEvent>) -> Option<NetworkEvent> {
         match event {
             SwarmEvent::Behaviour(event) => self.map_behaviour_event(event),
             SwarmEvent::ConnectionEstablished {
@@ -284,7 +249,7 @@ impl NetworkService {
     fn map_behaviour_event(&mut self, event: ZfsBehaviourEvent) -> Option<NetworkEvent> {
         match event {
             ZfsBehaviourEvent::Gossipsub(ev) => Self::map_gossip_event(ev),
-            ZfsBehaviourEvent::RequestResponse(ev) => Self::map_reqresp_event(ev),
+            ZfsBehaviourEvent::SectorRr(ev) => Self::map_sector_rr_event(ev),
             ZfsBehaviourEvent::Kademlia(ev) => self.map_kademlia_event(ev),
         }
     }
@@ -304,47 +269,33 @@ impl NetworkService {
         }
     }
 
-    fn map_reqresp_event(
-        event: request_response::Event<ZfsRequest, ZfsResponse>,
+    fn map_sector_rr_event(
+        event: request_response::Event<zfs_core::SectorRequest, zfs_core::SectorResponse>,
     ) -> Option<NetworkEvent> {
         match event {
             request_response::Event::Message { peer, message, .. } => match message {
                 request_response::Message::Request {
                     request, channel, ..
-                } => match request {
-                    ZfsRequest::Store(req) => Some(NetworkEvent::IncomingStore {
-                        peer,
-                        request: req,
-                        channel,
-                    }),
-                    ZfsRequest::Fetch(req) => Some(NetworkEvent::IncomingFetch {
-                        peer,
-                        request: req,
-                        channel,
-                    }),
-                },
+                } => Some(NetworkEvent::IncomingSectorRequest {
+                    peer,
+                    request: Box::new(request),
+                    channel,
+                }),
                 request_response::Message::Response {
                     request_id,
                     response,
-                } => match response {
-                    ZfsResponse::Store(resp) => Some(NetworkEvent::StoreResult {
-                        peer,
-                        request_id,
-                        response: resp,
-                    }),
-                    ZfsResponse::Fetch(resp) => Some(NetworkEvent::FetchResult {
-                        peer,
-                        request_id,
-                        response: *resp,
-                    }),
-                },
+                } => Some(NetworkEvent::SectorRequestResult {
+                    peer,
+                    request_id,
+                    response: Box::new(response),
+                }),
             },
             request_response::Event::OutboundFailure {
                 peer,
                 request_id,
                 error,
                 ..
-            } => Some(NetworkEvent::OutboundFailure {
+            } => Some(NetworkEvent::SectorOutboundFailure {
                 peer,
                 request_id,
                 error: error.to_string(),
@@ -377,7 +328,10 @@ impl NetworkService {
                 result: kad::QueryResult::Bootstrap(Ok(result)),
                 ..
             } => {
-                debug!(num_remaining = result.num_remaining, "kademlia bootstrap progressed");
+                debug!(
+                    num_remaining = result.num_remaining,
+                    "kademlia bootstrap progressed"
+                );
                 None
             }
             other => {
@@ -387,10 +341,7 @@ impl NetworkService {
         }
     }
 
-    fn handle_closest_peers(
-        &mut self,
-        ok: kad::GetClosestPeersOk,
-    ) -> Option<NetworkEvent> {
+    fn handle_closest_peers(&mut self, ok: kad::GetClosestPeersOk) -> Option<NetworkEvent> {
         let mut first_new_peer = None;
         for peer in &ok.peers {
             let peer_id = peer.peer_id;
@@ -407,92 +358,4 @@ impl NetworkService {
         }
         first_new_peer
     }
-}
-
-fn build_swarm() -> Result<libp2p::Swarm<ZfsBehaviour>, NetworkError> {
-    let message_id_fn = |message: &gossipsub::Message| {
-        let mut s = DefaultHasher::new();
-        message.data.hash(&mut s);
-        gossipsub::MessageId::from(s.finish().to_string())
-    };
-
-    let gossipsub_config = gossipsub::ConfigBuilder::default()
-        .heartbeat_interval(Duration::from_secs(10))
-        .validation_mode(gossipsub::ValidationMode::Permissive)
-        .message_id_fn(message_id_fn)
-        .build()
-        .map_err(|e| NetworkError::Config(format!("{e}")))?;
-
-    let swarm = libp2p::SwarmBuilder::with_new_identity()
-        .with_tokio()
-        .with_tcp(
-            libp2p::tcp::Config::default(),
-            libp2p::noise::Config::new,
-            libp2p::yamux::Config::default,
-        )
-        .map_err(|e| NetworkError::Transport(format!("{e}")))?
-        .with_quic()
-        .with_behaviour(|key| build_behaviour(key, gossipsub_config))
-        .map_err(|e| NetworkError::Transport(format!("{e}")))?
-        .build();
-    Ok(swarm)
-}
-
-fn build_behaviour(
-    key: &libp2p::identity::Keypair,
-    gossipsub_config: gossipsub::Config,
-) -> Result<ZfsBehaviour, Box<dyn std::error::Error + Send + Sync>> {
-    let gossipsub = gossipsub::Behaviour::new(
-        gossipsub::MessageAuthenticity::Signed(key.clone()),
-        gossipsub_config,
-    )?;
-    let request_response = request_response::cbor::Behaviour::new(
-        [(
-            StreamProtocol::new(ZFS_PROTOCOL),
-            request_response::ProtocolSupport::Full,
-        )],
-        request_response::Config::default(),
-    );
-    let peer_id = key.public().to_peer_id();
-    let mut kad_config = kad::Config::new(
-        StreamProtocol::try_from_owned(ZFS_KAD_PROTOCOL.to_string())
-            .expect("valid protocol name"),
-    );
-    kad_config.set_query_timeout(Duration::from_secs(60));
-    let store = kad::store::MemoryStore::new(peer_id);
-    let kademlia = kad::Behaviour::with_config(peer_id, store, kad_config);
-    Ok(ZfsBehaviour {
-        gossipsub,
-        request_response,
-        kademlia,
-    })
-}
-
-fn dial_bootstrap_peers(
-    swarm: &mut libp2p::Swarm<ZfsBehaviour>,
-    peers: &[Multiaddr],
-    kademlia_enabled: bool,
-) -> Result<(), NetworkError> {
-    for peer_addr in peers {
-        if kademlia_enabled {
-            if let Some(peer_id) = extract_peer_id(peer_addr) {
-                swarm
-                    .behaviour_mut()
-                    .kademlia
-                    .add_address(&peer_id, peer_addr.clone());
-                debug!(%peer_id, %peer_addr, "added bootstrap peer to kademlia");
-            }
-        }
-        swarm
-            .dial(peer_addr.clone())
-            .map_err(|e| NetworkError::Dial(e.to_string()))?;
-    }
-    Ok(())
-}
-
-fn extract_peer_id(addr: &Multiaddr) -> Option<PeerId> {
-    addr.iter().find_map(|proto| match proto {
-        libp2p::multiaddr::Protocol::P2p(peer_id) => Some(peer_id),
-        _ => None,
-    })
 }

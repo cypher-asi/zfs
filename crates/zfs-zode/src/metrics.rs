@@ -3,14 +3,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Atomic counters and gauges exposed for UI and monitoring.
 #[derive(Debug, Default)]
 pub struct ZodeMetrics {
-    /// Total blocks successfully stored.
-    pub blocks_stored_total: AtomicU64,
+    /// Total sector entries successfully stored.
+    pub sectors_stored_total: AtomicU64,
     /// Total store requests rejected (all reasons).
     pub store_rejections_total: AtomicU64,
     /// Rejections due to policy (program not subscribed).
     pub policy_rejections: AtomicU64,
-    /// Rejections due to proof verification failure.
-    pub proof_rejections: AtomicU64,
     /// Rejections due to storage limits exceeded.
     pub limit_rejections: AtomicU64,
     /// Current connected peer count.
@@ -20,18 +18,13 @@ pub struct ZodeMetrics {
 }
 
 impl ZodeMetrics {
-    pub fn inc_blocks_stored(&self) {
-        self.blocks_stored_total.fetch_add(1, Ordering::Relaxed);
+    pub fn inc_sectors_stored(&self) {
+        self.sectors_stored_total.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn inc_policy_rejection(&self) {
         self.store_rejections_total.fetch_add(1, Ordering::Relaxed);
         self.policy_rejections.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn inc_proof_rejection(&self) {
-        self.store_rejections_total.fetch_add(1, Ordering::Relaxed);
-        self.proof_rejections.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn inc_limit_rejection(&self) {
@@ -58,10 +51,9 @@ impl ZodeMetrics {
     /// Snapshot all counters for display.
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
-            blocks_stored_total: self.blocks_stored_total.load(Ordering::Relaxed),
+            sectors_stored_total: self.sectors_stored_total.load(Ordering::Relaxed),
             store_rejections_total: self.store_rejections_total.load(Ordering::Relaxed),
             policy_rejections: self.policy_rejections.load(Ordering::Relaxed),
-            proof_rejections: self.proof_rejections.load(Ordering::Relaxed),
             limit_rejections: self.limit_rejections.load(Ordering::Relaxed),
             peer_count: self.peer_count.load(Ordering::Relaxed),
             db_size_bytes: self.db_size_bytes.load(Ordering::Relaxed),
@@ -72,10 +64,9 @@ impl ZodeMetrics {
 /// Point-in-time snapshot of Zode metrics (non-atomic, safe to display/serialize).
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct MetricsSnapshot {
-    pub blocks_stored_total: u64,
+    pub sectors_stored_total: u64,
     pub store_rejections_total: u64,
     pub policy_rejections: u64,
-    pub proof_rejections: u64,
     pub limit_rejections: u64,
     pub peer_count: u64,
     pub db_size_bytes: u64,

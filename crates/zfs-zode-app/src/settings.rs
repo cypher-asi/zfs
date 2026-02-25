@@ -73,8 +73,7 @@ impl Settings {
                 zchat: self.enable_zchat,
             },
             topics: topic_set,
-            limits: Default::default(),
-            proof_policy: Default::default(),
+            sector_limits: Default::default(),
             network,
         })
     }
@@ -97,4 +96,3 @@ impl Settings {
             .collect()
     }
 }
-

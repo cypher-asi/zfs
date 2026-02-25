@@ -1,15 +1,31 @@
 use chacha20poly1305::aead::{Aead, KeyInit, OsRng};
 use chacha20poly1305::{AeadCore, XChaCha20Poly1305};
 use hkdf::Hkdf;
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zero_neural::{ed25519_to_did_key, MachineKeyPair, MachinePublicKey};
-use zfs_core::{KeyEnvelopeEntry, ProgramId, SectorId};
+use zfs_core::{ProgramId, SectorId};
 
 use crate::{CryptoError, SectorKey};
 
 const WRAP_INFO_PREFIX: &[u8] = b"zfs:sector-key-wrap:v1";
 const NONCE_LEN: usize = 24;
 const TAG_LEN: usize = 16;
+
+/// A single recipient entry within a key envelope.
+///
+/// Contains the hybrid-wrapped sector key for one recipient,
+/// identified by their `did:key`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeyEnvelopeEntry {
+    pub recipient_did: String,
+    #[serde(with = "serde_bytes")]
+    pub sender_x25519_public: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub mlkem_ciphertext: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub wrapped_key: Vec<u8>,
+}
 
 /// Derive the context-bound wrap key from a shared secret and sector context.
 fn derive_wrap_key(

@@ -9,12 +9,12 @@ zfs-core = { path = "../zfs-core" }
 zfs-crypto = { path = "../zfs-crypto" }
 zfs-storage = { path = "../zfs-storage" }
 zfs-net = { path = "../zfs-net" }
-zfs-proof = { path = "../zfs-proof" }
 zfs-programs = { path = "../zfs-programs" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
 
 [dev-dependencies]
 tempfile = "3"

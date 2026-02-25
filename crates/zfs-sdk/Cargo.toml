@@ -10,11 +10,9 @@ zfs-core = { path = "../zfs-core" }
 zfs-crypto = { path = "../zfs-crypto" }
 zfs-net = { path = "../zfs-net" }
 zfs-programs = { path = "../zfs-programs" }
-zfs-proof = { path = "../zfs-proof" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 thiserror = "2"
-sha2 = "0.10"
 rand_core = { version = "0.6", features = ["getrandom"] }
 
 [dev-dependencies]

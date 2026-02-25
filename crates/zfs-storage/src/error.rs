@@ -17,6 +17,15 @@ pub enum StorageError {
 
     #[error("column family not found: {0}")]
     CfNotFound(String),
+
+    #[error("slot occupied: sector already has a value")]
+    SlotOccupied,
+
+    #[error("condition failed: expected hash mismatch")]
+    ConditionFailed,
+
+    #[error("batch too large: {0}")]
+    BatchTooLarge(String),
 }
 
 impl From<StorageError> for zfs_core::ZfsError {
@@ -25,6 +34,13 @@ impl From<StorageError> for zfs_core::ZfsError {
             StorageError::Full { .. } => zfs_core::ZfsError::StorageFull,
             StorageError::Encode(msg) => zfs_core::ZfsError::Encode(msg),
             StorageError::Decode(msg) => zfs_core::ZfsError::Decode(msg),
+            StorageError::SlotOccupied => {
+                zfs_core::ZfsError::InvalidPayload("slot occupied".into())
+            }
+            StorageError::ConditionFailed => {
+                zfs_core::ZfsError::InvalidPayload("condition failed".into())
+            }
+            StorageError::BatchTooLarge(msg) => zfs_core::ZfsError::InvalidPayload(msg),
             other => zfs_core::ZfsError::Other(other.to_string()),
         }
     }

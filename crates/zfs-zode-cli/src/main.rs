@@ -79,9 +79,7 @@ async fn main() -> Result<()> {
         .init();
 
     let config = build_config(&cli)?;
-    let zode = Zode::start(config)
-        .await
-        .context("failed to start Zode")?;
+    let zode = Zode::start(config).await.context("failed to start Zode")?;
 
     let result = run_tui(&zode).await;
 
@@ -91,15 +89,16 @@ async fn main() -> Result<()> {
 }
 
 fn build_config(cli: &Cli) -> Result<ZodeConfig> {
-    let listen_addr: zfs_net::Multiaddr = cli
-        .listen
-        .parse()
-        .context("invalid listen multiaddr")?;
+    let listen_addr: zfs_net::Multiaddr = cli.listen.parse().context("invalid listen multiaddr")?;
 
     let bootstrap_peers: Vec<zfs_net::Multiaddr> = cli
         .bootstrap
         .iter()
-        .map(|s| zfs_net::strip_zx_multiaddr(s).parse().context("invalid bootstrap multiaddr"))
+        .map(|s| {
+            zfs_net::strip_zx_multiaddr(s)
+                .parse()
+                .context("invalid bootstrap multiaddr")
+        })
         .collect::<Result<_>>()?;
 
     let topics: HashSet<ProgramId> = cli
@@ -133,8 +132,7 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
             zchat: !cli.no_zchat,
         },
         topics,
-        limits: Default::default(),
-        proof_policy: Default::default(),
+        sector_limits: Default::default(),
         network,
     })
 }

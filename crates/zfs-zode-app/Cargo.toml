@@ -15,7 +15,8 @@ zfs-storage = { path = "../zfs-storage" }
 zfs-programs = { path = "../zfs-programs" }
 zfs-net = { path = "../zfs-net" }
 zfs-crypto = { path = "../zfs-crypto" }
-zero-neural = { path = "../zero-neural" }
+zero-neural = { path = "../zero-neural", features = ["testkit"] }
+rand = "0.8"
 eframe = "0.30"
 egui_extras = { version = "0.30", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -24,5 +25,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+hex = "0.4"
 hkdf = "0.12"
 sha2 = "0.10"

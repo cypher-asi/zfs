@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
-use zfs_core::{Cid, Head, ProgramId};
-use zfs_storage::{HeadStore, ProgramIndex, StorageStats};
+use zfs_core::ProgramId;
 use zfs_zode::{LogEvent, MetricsSnapshot, Zode, ZodeStatus};
 
 const MAX_LOG_ENTRIES: usize = 500;
@@ -44,8 +43,6 @@ impl Screen {
 #[derive(Debug, Clone)]
 pub enum TraverseView {
     ProgramList,
-    CidList { program_id: ProgramId },
-    HeadDetail { head: Head },
 }
 
 /// TUI application state — reads all data from the Zode in-process API.
@@ -55,13 +52,11 @@ pub struct App<'z> {
 
     // Cached data (refreshed each tick)
     pub status: Option<ZodeStatus>,
-    pub storage_stats: Option<StorageStats>,
     pub metrics: Option<MetricsSnapshot>,
 
     // Traverse state
     pub traverse: TraverseView,
     pub programs: Vec<ProgramId>,
-    pub cids: Vec<Cid>,
 
     // Log buffer
     pub log_entries: VecDeque<String>,
@@ -79,11 +74,9 @@ impl<'z> App<'z> {
             zode,
             screen: Screen::Status,
             status: None,
-            storage_stats: None,
             metrics: None,
             traverse: TraverseView::ProgramList,
             programs: Vec::new(),
-            cids: Vec::new(),
             log_entries: VecDeque::with_capacity(MAX_LOG_ENTRIES),
             event_rx,
             scroll_offset: 0,
@@ -94,7 +87,6 @@ impl<'z> App<'z> {
     /// Refresh cached data from the Zode.
     pub async fn refresh(&mut self) {
         let status = self.zode.status();
-        self.storage_stats = Some(status.storage.clone());
         self.metrics = Some(status.metrics.clone());
 
         self.programs = status
@@ -108,22 +100,13 @@ impl<'z> App<'z> {
 
         self.status = Some(status);
 
-        if let TraverseView::CidList { ref program_id } = self.traverse {
-            let pid = *program_id;
-            self.cids = self
-                .zode
-                .storage()
-                .list_cids(&pid)
-                .unwrap_or_default();
-        }
-
         self.drain_events();
     }
 
     fn drain_events(&mut self) {
         if let Some(ref mut rx) = self.event_rx {
             while let Ok(event) = rx.try_recv() {
-                let line = format_log_event(&event);
+                let line = event.to_string();
                 if self.log_entries.len() >= MAX_LOG_ENTRIES {
                     self.log_entries.pop_front();
                 }
@@ -156,77 +139,14 @@ impl<'z> App<'z> {
 
     /// Handle Enter key — drill into traverse views or no-op on other screens.
     pub fn select(&mut self) {
-        if self.screen == Screen::Traverse {
-            match &self.traverse {
-                TraverseView::ProgramList => {
-                    if let Some(pid) = self.programs.get(self.scroll_offset) {
-                        self.traverse = TraverseView::CidList { program_id: *pid };
-                        self.scroll_offset = 0;
-                    }
-                }
-                TraverseView::CidList { program_id: _ } => {
-                    if let Some(cid) = self.cids.get(self.scroll_offset) {
-                        let sector_id =
-                            zfs_core::SectorId::from_bytes(cid.as_bytes().to_vec());
-                        if let Ok(Some(head)) =
-                            self.zode.storage().get_head(&sector_id)
-                        {
-                            self.traverse = TraverseView::HeadDetail { head };
-                            self.scroll_offset = 0;
-                        }
-                    }
-                }
-                TraverseView::HeadDetail { .. } => {}
-            }
-        }
+        // Currently only ProgramList, no deeper drill-down.
     }
 
     /// Handle Backspace — go back in traverse drill-down.
     pub fn back(&mut self) {
         if self.screen == Screen::Traverse {
-            match &self.traverse {
-                TraverseView::CidList { .. } | TraverseView::HeadDetail { .. } => {
-                    self.traverse = TraverseView::ProgramList;
-                    self.scroll_offset = 0;
-                }
-                TraverseView::ProgramList => {}
-            }
+            self.traverse = TraverseView::ProgramList;
+            self.scroll_offset = 0;
         }
-    }
-}
-
-fn format_log_event(event: &LogEvent) -> String {
-    match event {
-        LogEvent::Started { listen_addr } => format!("[STARTED] listening on {listen_addr}"),
-        LogEvent::PeerConnected(peer) => format!("[PEER+] {peer}"),
-        LogEvent::PeerDisconnected(peer) => format!("[PEER-] {peer}"),
-        LogEvent::StoreProcessed {
-            program_id,
-            cid,
-            accepted,
-            reason,
-        } => {
-            let status = if *accepted { "OK" } else { "REJECT" };
-            let detail = reason.as_deref().unwrap_or("");
-            format!("[STORE {status}] prog={} cid={} {detail}", &program_id[..8.min(program_id.len())], &cid[..8.min(cid.len())])
-        }
-        LogEvent::FetchProcessed { program_id, found } => {
-            let status = if *found { "FOUND" } else { "MISS" };
-            format!("[FETCH {status}] prog={}", &program_id[..8.min(program_id.len())])
-        }
-        LogEvent::PeerDiscovered(peer) => format!("[DHT] discovered {peer}"),
-        LogEvent::GossipReceived {
-            program_id,
-            cid,
-            accepted,
-        } => {
-            let status = if *accepted { "OK" } else { "DROP" };
-            format!(
-                "[GOSSIP {status}] prog={} cid={}",
-                &program_id[..8.min(program_id.len())],
-                &cid[..8.min(cid.len())]
-            )
-        }
-        LogEvent::ShuttingDown => "[SHUTDOWN] Zode shutting down".to_string(),
     }
 }

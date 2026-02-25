@@ -28,4 +28,10 @@ pub enum CryptoError {
 
     #[error("invalid ciphertext length: expected {expected}, got {got}")]
     InvalidCiphertextLength { expected: usize, got: usize },
+
+    #[error("Shamir split failed: {0}")]
+    ShamirSplitFailed(String),
+
+    #[error("Shamir recovery failed: {0}")]
+    ShamirRecoveryFailed(String),
 }

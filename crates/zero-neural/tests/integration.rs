@@ -1,23 +1,24 @@
+use zero_neural::testkit::{derive_identity_signing_key_from_seed, derive_machine_keypair_from_seed};
 use zero_neural::*;
 
-fn test_identity() -> ([u8; 16], NeuralKey) {
-    let mut rng = rand::thread_rng();
-    let nk = NeuralKey::generate(&mut rng);
+fn test_identity() -> ([u8; 16], IdentitySigningKey) {
+    let seed: [u8; 32] = rand::random();
     let identity_id: [u8; 16] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f, 0x10,
     ];
-    (identity_id, nk)
+    let isk = derive_identity_signing_key_from_seed(seed, &identity_id).unwrap();
+    (identity_id, isk)
 }
 
 fn test_machine_ids() -> ([u8; 16], [u8; 16]) {
     let identity_id: [u8; 16] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-        0x10,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        0x0f, 0x10,
     ];
     let machine_id: [u8; 16] = [
-        0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
-        0xB0,
+        0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE,
+        0xAF, 0xB0,
     ];
     (identity_id, machine_id)
 }
@@ -27,37 +28,32 @@ fn test_machine_ids() -> ([u8; 16], [u8; 16]) {
 #[test]
 fn deterministic_isk_derivation() {
     let seed = [0x42u8; 32];
-    let nk = NeuralKey::from_bytes(seed);
     let identity_id = [0x01u8; 16];
 
-    let isk1 = derive_identity_signing_key(&nk, &identity_id).unwrap();
-    let nk2 = NeuralKey::from_bytes(seed);
-    let isk2 = derive_identity_signing_key(&nk2, &identity_id).unwrap();
+    let isk1 = derive_identity_signing_key_from_seed(seed, &identity_id).unwrap();
+    let isk2 = derive_identity_signing_key_from_seed(seed, &identity_id).unwrap();
 
     assert_eq!(
         isk1.ed25519_public_bytes(),
         isk2.ed25519_public_bytes(),
-        "same NeuralKey + identity_id must produce identical Ed25519 keys"
+        "same seed + identity_id must produce identical Ed25519 keys"
     );
 }
 
 #[test]
 fn deterministic_machine_key_derivation() {
     let seed = [0x77u8; 32];
-    let nk = NeuralKey::from_bytes(seed);
     let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let mk1 = derive_machine_keypair(&nk, &identity_id, &machine_id, 1, caps).unwrap();
-    let nk2 = NeuralKey::from_bytes(seed);
-    let mk2 = derive_machine_keypair(&nk2, &identity_id, &machine_id, 1, caps).unwrap();
-
-    let pk1 = mk1.public_key();
-    let pk2 = mk2.public_key();
+    let mk1 =
+        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk2 =
+        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
 
     assert_eq!(
-        pk1.ed25519_bytes(),
-        pk2.ed25519_bytes(),
+        mk1.public_key().ed25519_bytes(),
+        mk2.public_key().ed25519_bytes(),
         "same inputs must produce identical machine keys"
     );
 }
@@ -68,11 +64,10 @@ fn different_epochs_produce_different_keys() {
     let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN;
 
-    let nk1 = NeuralKey::from_bytes(seed);
-    let mk1 = derive_machine_keypair(&nk1, &identity_id, &machine_id, 1, caps).unwrap();
-
-    let nk2 = NeuralKey::from_bytes(seed);
-    let mk2 = derive_machine_keypair(&nk2, &identity_id, &machine_id, 2, caps).unwrap();
+    let mk1 =
+        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk2 =
+        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 2, caps).unwrap();
 
     assert_ne!(
         mk1.public_key().ed25519_bytes(),
@@ -85,8 +80,7 @@ fn different_epochs_produce_different_keys() {
 
 #[test]
 fn isk_hybrid_sign_verify() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
     let msg = b"hello, zero-neural";
@@ -100,11 +94,12 @@ fn isk_hybrid_sign_verify() {
 
 #[test]
 fn machine_key_hybrid_sign_verify() {
-    let (identity_id, nk) = test_identity();
-    let (_, machine_id) = test_machine_ids();
+    let seed: [u8; 32] = rand::random();
+    let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let mk = derive_machine_keypair(&nk, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk =
+        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
     let pk = mk.public_key();
 
     let msg = b"machine key test message";
@@ -118,8 +113,7 @@ fn machine_key_hybrid_sign_verify() {
 
 #[test]
 fn hybrid_signature_wrong_message_fails() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
     let sig = isk.sign(b"correct message");
@@ -131,8 +125,7 @@ fn hybrid_signature_wrong_message_fails() {
 
 #[test]
 fn tampered_ed25519_component_rejected() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
     let msg = b"test";
@@ -147,8 +140,7 @@ fn tampered_ed25519_component_rejected() {
 
 #[test]
 fn tampered_ml_dsa_component_rejected() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
     let msg = b"test";
@@ -165,8 +157,7 @@ fn tampered_ml_dsa_component_rejected() {
 
 #[test]
 fn stripped_ml_dsa_component_rejected() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
     let msg = b"test";
@@ -183,8 +174,7 @@ fn stripped_ml_dsa_component_rejected() {
 
 #[test]
 fn hybrid_signature_round_trip_bytes() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
 
     let sig = isk.sign(b"round-trip test");
     let bytes = sig.to_bytes();
@@ -206,11 +196,10 @@ fn hybrid_encap_decap_round_trip() {
     let machine_b = [0x0Bu8; 16];
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let nk_a = NeuralKey::from_bytes(seed_a);
-    let mk_a = derive_machine_keypair(&nk_a, &identity_a, &machine_a, 1, caps).unwrap();
-
-    let nk_b = NeuralKey::from_bytes(seed_b);
-    let mk_b = derive_machine_keypair(&nk_b, &identity_b, &machine_b, 1, caps).unwrap();
+    let mk_a =
+        derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
+    let mk_b =
+        derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
 
     let pk_b = mk_b.public_key();
     let (ss_sender, bundle) = pk_b.encapsulate(&mk_a).unwrap();
@@ -229,8 +218,7 @@ fn hybrid_encap_decap_round_trip() {
 
 #[test]
 fn did_key_round_trip() {
-    let (identity_id, nk) = test_identity();
-    let isk = derive_identity_signing_key(&nk, &identity_id).unwrap();
+    let (_, isk) = test_identity();
     let pk_bytes = isk.ed25519_public_bytes();
 
     let did = ed25519_to_did_key(&pk_bytes);
@@ -268,11 +256,10 @@ fn encap_bundle_round_trip_bytes() {
     let machine_b = [0x0Bu8; 16];
     let caps = MachineKeyCapabilities::all();
 
-    let nk_a = NeuralKey::from_bytes(seed_a);
-    let mk_a = derive_machine_keypair(&nk_a, &identity_a, &machine_a, 1, caps).unwrap();
-
-    let nk_b = NeuralKey::from_bytes(seed_b);
-    let mk_b = derive_machine_keypair(&nk_b, &identity_b, &machine_b, 1, caps).unwrap();
+    let mk_a =
+        derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
+    let mk_b =
+        derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
 
     let pk_b = mk_b.public_key();
     let (_, bundle) = pk_b.encapsulate(&mk_a).unwrap();
@@ -284,18 +271,64 @@ fn encap_bundle_round_trip_bytes() {
     assert_eq!(bundle.mlkem_ciphertext, bundle2.mlkem_ciphertext);
 }
 
-// --- Zeroization ---
+// --- Shamir round-trip ---
 
 #[test]
-fn neural_key_debug_redacted() {
-    let nk = NeuralKey::from_bytes([0x42u8; 32]);
-    let debug = format!("{:?}", nk);
-    assert!(
-        !debug.contains("42"),
-        "NeuralKey debug output must not leak key material"
-    );
-    assert!(
-        debug.contains("REDACTED"),
-        "NeuralKey debug output must show REDACTED"
-    );
+fn shamir_split_combine_round_trip() {
+    let mut rng = rand::thread_rng();
+    let identity_id = [0x01u8; 16];
+
+    let bundle = generate_identity(3, 5, &identity_id, &mut rng).unwrap();
+    assert_eq!(bundle.shares.len(), 5);
+    assert_eq!(bundle.threshold, 3);
+
+    let info = verify_shares(&bundle.shares[0..3], &identity_id).unwrap();
+    assert_eq!(info.did, bundle.did);
+}
+
+#[test]
+fn shamir_share_hex_round_trip() {
+    let mut rng = rand::thread_rng();
+    let identity_id = [0x02u8; 16];
+
+    let bundle = generate_identity(2, 3, &identity_id, &mut rng).unwrap();
+    for share in &bundle.shares {
+        let h = share.to_hex();
+        let recovered = ShamirShare::from_hex(&h).unwrap();
+        assert_eq!(recovered.index(), share.index());
+    }
+}
+
+#[test]
+fn shares_api_sign_verify() {
+    let mut rng = rand::thread_rng();
+    let identity_id = [0x03u8; 16];
+
+    let bundle = generate_identity(2, 3, &identity_id, &mut rng).unwrap();
+    let msg = b"shares-based signing test";
+    let sig = sign_with_shares(&bundle.shares[0..2], &identity_id, msg).unwrap();
+
+    assert!(bundle.verifying_key.verify(msg, &sig).is_ok());
+}
+
+#[test]
+fn shares_api_machine_keypair() {
+    let mut rng = rand::thread_rng();
+    let identity_id = [0x04u8; 16];
+    let machine_id = [0x0Au8; 16];
+    let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
+
+    let bundle = generate_identity(2, 3, &identity_id, &mut rng).unwrap();
+    let kp = derive_machine_keypair_from_shares(
+        &bundle.shares[0..2],
+        &identity_id,
+        &machine_id,
+        1,
+        caps,
+    )
+    .unwrap();
+
+    let pk = kp.public_key();
+    let sig = kp.sign(b"machine test");
+    assert!(pk.verify(b"machine test", &sig).is_ok());
 }

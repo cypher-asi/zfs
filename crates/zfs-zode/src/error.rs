@@ -9,9 +9,6 @@ pub enum ZodeError {
     #[error("network error: {0}")]
     Network(#[from] zfs_net::NetworkError),
 
-    #[error("proof error: {0}")]
-    Proof(#[from] zfs_proof::ProofError),
-
     #[error("core error: {0}")]
     Core(#[from] zfs_core::ZfsError),
 
@@ -36,7 +33,6 @@ impl ZodeError {
                 zfs_core::ErrorCode::StorageFull
             }
             Self::StorageFull(_) => zfs_core::ErrorCode::StorageFull,
-            Self::Proof(_) => zfs_core::ErrorCode::ProofInvalid,
             Self::PolicyReject(_) => zfs_core::ErrorCode::PolicyReject,
             Self::Core(e) => e
                 .error_code()

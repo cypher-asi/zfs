@@ -1,8 +1,7 @@
 use libp2p::request_response::{OutboundRequestId, ResponseChannel};
 use libp2p::Multiaddr;
-use zfs_core::{FetchRequest, FetchResponse, StoreRequest, StoreResponse};
+use zfs_core::{SectorRequest, SectorResponse};
 
-use crate::protocol::ZfsResponse;
 use crate::ZodeId;
 
 /// Events produced by the [`NetworkService`](crate::NetworkService) event loop.
@@ -19,32 +18,25 @@ pub enum NetworkEvent {
         addresses: Vec<Multiaddr>,
     },
 
-    /// An incoming store request from a remote Zode.
-    IncomingStore {
+    /// An incoming sector request from a remote peer.
+    IncomingSectorRequest {
         peer: ZodeId,
-        request: Box<StoreRequest>,
-        channel: ResponseChannel<ZfsResponse>,
+        request: Box<SectorRequest>,
+        channel: ResponseChannel<SectorResponse>,
     },
 
-    /// An incoming fetch request from a remote Zode.
-    IncomingFetch {
-        peer: ZodeId,
-        request: FetchRequest,
-        channel: ResponseChannel<ZfsResponse>,
-    },
-
-    /// Response received for an outbound store request.
-    StoreResult {
+    /// Response received for an outbound sector request.
+    SectorRequestResult {
         peer: ZodeId,
         request_id: OutboundRequestId,
-        response: StoreResponse,
+        response: Box<SectorResponse>,
     },
 
-    /// Response received for an outbound fetch request.
-    FetchResult {
+    /// An outbound sector request failed.
+    SectorOutboundFailure {
         peer: ZodeId,
         request_id: OutboundRequestId,
-        response: FetchResponse,
+        error: String,
     },
 
     /// A GossipSub message received on a subscribed topic.
@@ -56,11 +48,4 @@ pub enum NetworkEvent {
 
     /// A new listen address was established.
     ListenAddress(Multiaddr),
-
-    /// An outbound request failed.
-    OutboundFailure {
-        peer: ZodeId,
-        request_id: OutboundRequestId,
-        error: String,
-    },
 }

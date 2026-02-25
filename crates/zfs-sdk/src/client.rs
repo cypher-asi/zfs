@@ -18,14 +18,13 @@ pub struct SdkConfig {
 
 /// Pending outbound request tracker.
 pub(crate) enum PendingRequest {
-    Store(tokio::sync::oneshot::Sender<zfs_core::StoreResponse>),
-    Fetch(tokio::sync::oneshot::Sender<zfs_core::FetchResponse>),
+    Sector(tokio::sync::oneshot::Sender<zfs_core::SectorResponse>),
 }
 
 /// SDK client wrapping network connectivity to Zodes.
 ///
 /// Create via [`Client::connect`]. The client maintains a libp2p connection
-/// and tracks connected peers for upload/fetch operations.
+/// and tracks connected peers for sector operations.
 pub struct Client {
     pub(crate) network: Arc<Mutex<NetworkService>>,
     pub(crate) peers: Arc<Mutex<Vec<ZodeId>>>,
@@ -115,50 +114,30 @@ impl Client {
                     }
                 }
                 NetworkEvent::PeerDisconnected(peer) => {
-                    let mut p = peers.lock().await;
-                    p.retain(|p| p != &peer);
+                    peers.lock().await.retain(|p| p != &peer);
                 }
-                NetworkEvent::StoreResult {
+                NetworkEvent::SectorRequestResult {
                     request_id,
                     response,
                     ..
                 } => {
                     let mut pend = pending.lock().await;
-                    if let Some(PendingRequest::Store(tx)) = pend.remove(&request_id) {
-                        let _ = tx.send(response);
+                    if let Some(PendingRequest::Sector(tx)) = pend.remove(&request_id) {
+                        let _ = tx.send(*response);
                     }
                 }
-                NetworkEvent::FetchResult {
-                    request_id,
-                    response,
-                    ..
-                } => {
-                    let mut pend = pending.lock().await;
-                    if let Some(PendingRequest::Fetch(tx)) = pend.remove(&request_id) {
-                        let _ = tx.send(response);
-                    }
-                }
-                NetworkEvent::OutboundFailure {
+                NetworkEvent::SectorOutboundFailure {
                     request_id, error, ..
                 } => {
                     let mut pend = pending.lock().await;
-                    if let Some(req) = pend.remove(&request_id) {
-                        match req {
-                            PendingRequest::Store(tx) => {
-                                let _ = tx.send(zfs_core::StoreResponse {
-                                    ok: false,
-                                    error_code: Some(zfs_core::ErrorCode::InvalidPayload),
-                                });
-                            }
-                            PendingRequest::Fetch(tx) => {
-                                let _ = tx.send(zfs_core::FetchResponse {
-                                    ciphertext: None,
-                                    head: None,
-                                    error_code: Some(zfs_core::ErrorCode::NotFound),
-                                });
-                            }
-                        }
-                        tracing::warn!(%error, "outbound request failed");
+                    if let Some(PendingRequest::Sector(tx)) = pend.remove(&request_id) {
+                        let _ = tx.send(zfs_core::SectorResponse::Store(
+                            zfs_core::SectorStoreResponse {
+                                ok: false,
+                                error_code: Some(zfs_core::ErrorCode::InvalidPayload),
+                            },
+                        ));
+                        tracing::warn!(%error, "outbound sector request failed");
                     }
                 }
                 _ => {}

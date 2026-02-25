@@ -54,17 +54,13 @@ fn render_help(frame: &mut Frame, screen: Screen, area: Rect) {
         Screen::Traverse => " | Enter: drill in | Backspace: back",
         _ => "",
     };
-    let text = format!(
-        " q: quit | Tab/1-5: switch screen | ↑↓/jk: scroll{traverse_hint}"
-    );
+    let text = format!(" q: quit | Tab/1-5: switch screen | ↑↓/jk: scroll{traverse_hint}");
     let help = Paragraph::new(text).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, area);
 }
 
 fn render_status(frame: &mut Frame, app: &mut App, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Status ");
+    let block = Block::default().borders(Borders::ALL).title(" Status ");
 
     let Some(ref status) = app.status else {
         frame.render_widget(Paragraph::new("Loading...").block(block), area);
@@ -76,7 +72,9 @@ fn render_status(frame: &mut Frame, app: &mut App, area: Rect) {
     lines.extend(build_metrics_lines(&status.metrics));
 
     app.list_len = 0;
-    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -101,10 +99,11 @@ fn build_storage_lines(status: &zfs_zode::ZodeStatus) -> Vec<Line<'static>> {
     vec![
         Line::from(""),
         section_header("── Storage ──"),
-        kv_line_owned("DB size:  ", format_bytes(status.storage.db_size_bytes)),
-        kv_line_owned("Blocks:   ", format!("{}", status.storage.block_count)),
-        kv_line_owned("Heads:    ", format!("{}", status.storage.head_count)),
-        kv_line_owned("Programs: ", format!("{}", status.storage.program_count)),
+        kv_line_owned("DB size:  ", format_bytes(status.metrics.db_size_bytes)),
+        kv_line_owned(
+            "Sectors:  ",
+            format!("{}", status.metrics.sectors_stored_total),
+        ),
     ]
 }
 
@@ -112,12 +111,12 @@ fn build_metrics_lines(m: &zfs_zode::MetricsSnapshot) -> Vec<Line<'static>> {
     vec![
         Line::from(""),
         section_header("── Metrics ──"),
-        kv_line_owned("Stored:     ", format!("{}", m.blocks_stored_total)),
+        kv_line_owned("Stored:     ", format!("{}", m.sectors_stored_total)),
         kv_line_owned(
             "Rejections: ",
             format!(
-                "{} (policy: {}, proof: {}, limit: {})",
-                m.store_rejections_total, m.policy_rejections, m.proof_rejections, m.limit_rejections,
+                "{} (policy: {}, limit: {})",
+                m.store_rejections_total, m.policy_rejections, m.limit_rejections,
             ),
         ),
     ]
@@ -127,8 +126,6 @@ fn render_traverse(frame: &mut Frame, app: &mut App, area: Rect) {
     let view = app.traverse.clone();
     match view {
         TraverseView::ProgramList => render_program_list(frame, app, area),
-        TraverseView::CidList { program_id } => render_cid_list(frame, app, &program_id, area),
-        TraverseView::HeadDetail { head } => render_head_detail(frame, app, &head, area),
     }
 }
 
@@ -148,60 +145,6 @@ fn render_program_list(frame: &mut Frame, app: &mut App, area: Rect) {
         .borders(Borders::ALL)
         .title(format!(" Programs ({}) ", items.len()));
     frame.render_widget(List::new(items).block(block), area);
-}
-
-fn render_cid_list(
-    frame: &mut Frame,
-    app: &mut App,
-    program_id: &zfs_core::ProgramId,
-    area: Rect,
-) {
-    let items: Vec<ListItem> = app
-        .cids
-        .iter()
-        .enumerate()
-        .map(|(i, cid)| {
-            let style = highlight_style(i == app.scroll_offset);
-            ListItem::new(Line::from(Span::styled(cid.to_hex(), style)))
-        })
-        .collect();
-
-    app.list_len = items.len();
-    let title = format!(
-        " CIDs for {}.. ({}) ",
-        &program_id.to_hex()[..8],
-        items.len()
-    );
-    let block = Block::default().borders(Borders::ALL).title(title);
-    frame.render_widget(List::new(items).block(block), area);
-}
-
-fn render_head_detail(
-    frame: &mut Frame,
-    app: &mut App,
-    head: &zfs_core::Head,
-    area: Rect,
-) {
-    app.list_len = 0;
-    let prev = head
-        .prev_head_cid
-        .as_ref()
-        .map(|c| c.to_hex())
-        .unwrap_or_else(|| "(none)".into());
-
-    let lines = vec![
-        kv_line_owned("Sector ID:    ", head.sector_id.to_hex()),
-        kv_line_owned("CID:          ", head.cid.to_hex()),
-        kv_line_owned("Version:      ", format!("{}", head.version)),
-        kv_line_owned("Program ID:   ", head.program_id.to_hex()),
-        kv_line_owned("Prev Head:    ", prev),
-        kv_line_owned("Timestamp:    ", format!("{} ms", head.timestamp_ms)),
-    ];
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Head Detail ");
-    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 fn render_peers(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -268,9 +211,7 @@ fn render_log(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Zode Info ");
+    let block = Block::default().borders(Borders::ALL).title(" Zode Info ");
 
     let Some(ref status) = app.status else {
         frame.render_widget(Paragraph::new("Loading...").block(block), area);
@@ -279,10 +220,14 @@ fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
 
     let mut lines = vec![
         kv_line_owned("Zode ID:        ", status.zode_id.clone()),
-        kv_line_owned("DB Size:        ", format_bytes(status.storage.db_size_bytes)),
-        kv_line_owned("Block Count:    ", format!("{}", status.storage.block_count)),
-        kv_line_owned("Head Count:     ", format!("{}", status.storage.head_count)),
-        kv_line_owned("Program Count:  ", format!("{}", status.storage.program_count)),
+        kv_line_owned(
+            "DB Size:        ",
+            format_bytes(status.metrics.db_size_bytes),
+        ),
+        kv_line_owned(
+            "Sectors Stored: ",
+            format!("{}", status.metrics.sectors_stored_total),
+        ),
         Line::from(""),
         section_header("── Subscribed Programs ──"),
     ];
@@ -297,7 +242,9 @@ fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
     )));
 
     app.list_len = 0;
-    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -325,33 +272,16 @@ fn highlight_style(selected: bool) -> Style {
 }
 
 fn log_entry_style(entry: &str) -> Style {
-    if entry.starts_with("[REJECT") || entry.starts_with("[STORE REJECT") {
-        Style::default().fg(Color::Red)
-    } else if entry.starts_with("[DHT") {
-        Style::default().fg(Color::Blue)
-    } else if entry.starts_with("[PEER+") {
-        Style::default().fg(Color::Green)
-    } else if entry.starts_with("[PEER-") {
-        Style::default().fg(Color::Yellow)
-    } else if entry.starts_with("[SHUTDOWN") {
-        Style::default().fg(Color::Magenta)
-    } else {
-        Style::default()
+    use zfs_zode::LogLevel;
+    match LogLevel::from_log_line(entry) {
+        LogLevel::Reject => Style::default().fg(Color::Red),
+        LogLevel::Gossip => Style::default().fg(Color::Blue),
+        LogLevel::Discovery => Style::default().fg(Color::Blue),
+        LogLevel::PeerConnect => Style::default().fg(Color::Green),
+        LogLevel::PeerDisconnect => Style::default().fg(Color::Yellow),
+        LogLevel::Shutdown => Style::default().fg(Color::Magenta),
+        LogLevel::Normal => Style::default(),
     }
 }
 
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * KB;
-    const GB: u64 = 1024 * MB;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{bytes} B")
-    }
-}
+use zfs_core::format_bytes;

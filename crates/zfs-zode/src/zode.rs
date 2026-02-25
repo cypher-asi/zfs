@@ -2,62 +2,14 @@ use std::sync::{Arc, RwLock};
 
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
-use zfs_core::GossipBlock;
 use zfs_net::{format_zode_id, NetworkEvent, NetworkService, ZodeId};
-use zfs_proof::{NoopVerifier, ProofVerifier};
-use zfs_storage::{RocksStorage, StorageBackend, StorageStats};
+use zfs_storage::{RocksStorage, SectorStore};
 
 use crate::config::ZodeConfig;
 use crate::error::ZodeError;
-use crate::handler::RequestHandler;
-use crate::metrics::{MetricsSnapshot, ZodeMetrics};
-
-/// Structured log events emitted by the Zode for UI consumption.
-#[derive(Debug, Clone)]
-pub enum LogEvent {
-    /// Zode started and is serving.
-    Started { listen_addr: String },
-    /// A new peer connected.
-    PeerConnected(String),
-    /// A peer disconnected.
-    PeerDisconnected(String),
-    /// A new peer was discovered via DHT.
-    PeerDiscovered(String),
-    /// A store request was received and processed.
-    StoreProcessed {
-        program_id: String,
-        cid: String,
-        accepted: bool,
-        reason: Option<String>,
-    },
-    /// A fetch request was received and processed.
-    FetchProcessed { program_id: String, found: bool },
-    /// A block was received and stored via GossipSub.
-    GossipReceived {
-        program_id: String,
-        cid: String,
-        accepted: bool,
-    },
-    /// The Zode is shutting down.
-    ShuttingDown,
-}
-
-/// Status snapshot of the running Zode.
-#[derive(Debug, Clone)]
-pub struct ZodeStatus {
-    /// The local Zode ID.
-    pub zode_id: String,
-    /// Number of connected Zodes.
-    pub peer_count: u64,
-    /// Connected Zode IDs.
-    pub connected_peers: Vec<String>,
-    /// Subscribed program topics.
-    pub topics: Vec<String>,
-    /// Storage usage.
-    pub storage: StorageStats,
-    /// Metrics snapshot.
-    pub metrics: MetricsSnapshot,
-}
+use crate::metrics::ZodeMetrics;
+use crate::sector_handler::SectorRequestHandler;
+pub use crate::types::{LogEvent, ZodeStatus};
 
 /// The Zode — ties together storage, network, proof, and programs.
 ///
@@ -84,20 +36,11 @@ impl Zode {
     /// Opens storage, starts the network, subscribes to topics, and begins
     /// the event loop in a background task.
     pub async fn start(config: ZodeConfig) -> Result<Self, ZodeError> {
-        Self::start_with_verifier(config, Arc::new(NoopVerifier)).await
-    }
-
-    /// Start the Zode with a custom proof verifier (for testing or future use).
-    pub async fn start_with_verifier(
-        config: ZodeConfig,
-        verifier: Arc<dyn ProofVerifier>,
-    ) -> Result<Self, ZodeError> {
         let storage =
             Arc::new(RocksStorage::open(config.storage.clone()).map_err(ZodeError::Storage)?);
         info!(path = ?config.storage.path, "storage opened");
 
-        let (network, zode_id, topic_strings, effective) =
-            Self::start_network(&config).await?;
+        let (network, zode_id, topic_strings, effective) = Self::start_network(&config).await?;
 
         let (event_tx, _) = broadcast::channel(256);
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -105,22 +48,16 @@ impl Zode {
         let metrics = Arc::new(ZodeMetrics::default());
         let connected_peers: Arc<RwLock<Vec<String>>> = Arc::default();
 
-        if let Ok(stats) = storage.stats() {
-            metrics.set_db_size(stats.db_size_bytes);
-        }
-
-        let handler = RequestHandler::new(
+        let sector_handler = SectorRequestHandler::new(
             Arc::clone(&storage),
             effective,
-            config.limits.clone(),
-            config.proof_policy.clone(),
-            verifier,
+            config.sector_limits.clone(),
             Arc::clone(&metrics),
         );
 
         let network = Arc::new(Mutex::new(network));
         let event_loop_handle = Self::spawn_event_loop(
-            handler,
+            sector_handler,
             Arc::clone(&network),
             event_tx.clone(),
             Arc::clone(&metrics),
@@ -171,8 +108,9 @@ impl Zode {
         Ok((network, zode_id, topic_strings, effective))
     }
 
-    fn spawn_event_loop<S: StorageBackend + Send + Sync + 'static>(
-        handler: RequestHandler<S>,
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_event_loop<S: SectorStore + Send + Sync + 'static>(
+        sector_handler: SectorRequestHandler<S>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,
@@ -182,7 +120,7 @@ impl Zode {
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             Self::event_loop(
-                handler,
+                sector_handler,
                 network,
                 event_tx,
                 metrics,
@@ -196,7 +134,6 @@ impl Zode {
 
     /// Get a status snapshot of the running Zode (lock-free, never blocks).
     pub fn status(&self) -> ZodeStatus {
-        let storage_stats = self.storage.stats().unwrap_or_default();
         let metrics = self.metrics.snapshot();
         let connected_peers = self
             .connected_peers
@@ -209,7 +146,6 @@ impl Zode {
             peer_count,
             connected_peers,
             topics: self.topics.clone(),
-            storage: storage_stats,
             metrics,
         }
     }
@@ -257,8 +193,9 @@ impl Zode {
         info!("zode shutdown complete");
     }
 
-    async fn event_loop<S: StorageBackend>(
-        handler: RequestHandler<S>,
+    #[allow(clippy::too_many_arguments)]
+    async fn event_loop<S: SectorStore>(
+        sector_handler: SectorRequestHandler<S>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,
@@ -291,7 +228,7 @@ impl Zode {
 
             Self::dispatch_event(
                 event,
-                &handler,
+                &sector_handler,
                 &network,
                 &event_tx,
                 &metrics,
@@ -301,9 +238,9 @@ impl Zode {
         }
     }
 
-    async fn dispatch_event<S: StorageBackend>(
+    async fn dispatch_event<S: SectorStore>(
         event: NetworkEvent,
-        handler: &RequestHandler<S>,
+        sector_handler: &SectorRequestHandler<S>,
         network: &Arc<Mutex<NetworkService>>,
         event_tx: &broadcast::Sender<LogEvent>,
         metrics: &Arc<ZodeMetrics>,
@@ -316,28 +253,38 @@ impl Zode {
             NetworkEvent::PeerDisconnected(peer) => {
                 Self::handle_peer_disconnected(peer, metrics, connected_peers, event_tx);
             }
-            NetworkEvent::IncomingStore { peer, request, channel } => {
-                Self::handle_incoming_store(handler, network, event_tx, peer, request, channel)
-                    .await;
-            }
-            NetworkEvent::IncomingFetch { peer, request, channel } => {
-                Self::handle_incoming_fetch(handler, network, event_tx, peer, request, channel)
-                    .await;
+            NetworkEvent::IncomingSectorRequest {
+                peer,
+                request,
+                channel,
+            } => {
+                Self::handle_incoming_sector(
+                    sector_handler,
+                    network,
+                    event_tx,
+                    peer,
+                    request,
+                    channel,
+                )
+                .await;
             }
             NetworkEvent::ListenAddress(addr) => {
                 info!(%addr, "listening");
-                let _ = event_tx.send(LogEvent::Started { listen_addr: addr.to_string() });
+                let _ = event_tx.send(LogEvent::Started {
+                    listen_addr: addr.to_string(),
+                });
             }
             NetworkEvent::GossipMessage { topic, data, .. } => {
-                Self::handle_gossip_message(handler, event_tx, &topic, &data);
+                crate::gossip::handle_gossip_message(sector_handler, event_tx, &topic, &data);
             }
-            NetworkEvent::PeerDiscovered { zode_id, addresses, .. } => {
+            NetworkEvent::PeerDiscovered {
+                zode_id, addresses, ..
+            } => {
                 debug!(%zode_id, addr_count = addresses.len(), "zode discovered via DHT");
                 let _ = event_tx.send(LogEvent::PeerDiscovered(format_zode_id(&zode_id)));
             }
-            NetworkEvent::StoreResult { .. }
-            | NetworkEvent::FetchResult { .. }
-            | NetworkEvent::OutboundFailure { .. } => {}
+            NetworkEvent::SectorRequestResult { .. }
+            | NetworkEvent::SectorOutboundFailure { .. } => {}
         }
     }
 
@@ -373,81 +320,49 @@ impl Zode {
         let _ = event_tx.send(LogEvent::PeerDisconnected(peer_str));
     }
 
-    async fn handle_incoming_store<S: StorageBackend>(
-        handler: &RequestHandler<S>,
+    async fn handle_incoming_sector<S: SectorStore>(
+        sector_handler: &SectorRequestHandler<S>,
         network: &Arc<Mutex<NetworkService>>,
         event_tx: &broadcast::Sender<LogEvent>,
         peer: ZodeId,
-        request: Box<zfs_core::StoreRequest>,
-        channel: zfs_net::ResponseChannel<zfs_net::ZfsResponse>,
+        request: Box<zfs_core::SectorRequest>,
+        channel: zfs_net::ResponseChannel<zfs_core::SectorResponse>,
     ) {
-        let program_hex = request.program_id.to_hex();
-        let cid_hex = request.cid.to_hex();
-        debug!(%peer, program = %program_hex, cid = %cid_hex, "incoming store");
-
-        let response = handler.handle_store(&request);
-        let accepted = response.ok;
-        let reason = response.error_code.map(|c| c.to_string());
-
-        let _ = event_tx.send(LogEvent::StoreProcessed {
-            program_id: program_hex,
-            cid: cid_hex,
-            accepted,
-            reason,
-        });
-
+        debug!(%peer, "incoming sector request");
+        let response = sector_handler.handle_sector_request(&request);
+        emit_sector_log(event_tx, &request, &response);
         let mut net = network.lock().await;
-        if let Err(e) = net.send_store_response(channel, response) {
-            error!(error = %e, "failed to send store response");
+        if let Err(e) = net.send_sector_response(channel, response) {
+            error!(error = %e, "failed to send sector response");
         }
     }
+}
 
-    async fn handle_incoming_fetch<S: StorageBackend>(
-        handler: &RequestHandler<S>,
-        network: &Arc<Mutex<NetworkService>>,
-        event_tx: &broadcast::Sender<LogEvent>,
-        peer: ZodeId,
-        request: zfs_core::FetchRequest,
-        channel: zfs_net::ResponseChannel<zfs_net::ZfsResponse>,
-    ) {
-        let program_hex = request.program_id.to_hex();
-        debug!(%peer, program = %program_hex, "incoming fetch");
-
-        let response = handler.handle_fetch(&request);
-        let found = response.error_code.is_none();
-
-        let _ = event_tx.send(LogEvent::FetchProcessed {
-            program_id: program_hex,
-            found,
-        });
-
-        let mut net = network.lock().await;
-        if let Err(e) = net.send_fetch_response(channel, response) {
-            error!(error = %e, "failed to send fetch response");
+fn emit_sector_log(
+    event_tx: &broadcast::Sender<LogEvent>,
+    request: &zfs_core::SectorRequest,
+    response: &zfs_core::SectorResponse,
+) {
+    match request {
+        zfs_core::SectorRequest::Store(r) => {
+            let ok = matches!(response, zfs_core::SectorResponse::Store(s) if s.ok);
+            let _ = event_tx.send(LogEvent::SectorStoreProcessed {
+                program_id: r.program_id.to_hex(),
+                sector_id: r.sector_id.to_hex(),
+                accepted: ok,
+            });
         }
-    }
-
-    fn handle_gossip_message<S: StorageBackend>(
-        handler: &RequestHandler<S>,
-        event_tx: &broadcast::Sender<LogEvent>,
-        topic: &str,
-        data: &[u8],
-    ) {
-        debug!(%topic, bytes = data.len(), "gossip message received");
-        match zfs_core::decode_canonical::<GossipBlock>(data) {
-            Ok(block) => {
-                let program_id = block.program_id.to_hex();
-                let cid = block.cid.to_hex();
-                let accepted = handler.handle_gossip(&block);
-                let _ = event_tx.send(LogEvent::GossipReceived {
-                    program_id,
-                    cid,
-                    accepted,
-                });
-            }
-            Err(e) => {
-                debug!(error = %e, "failed to decode gossip block");
-            }
+        zfs_core::SectorRequest::Fetch(r) => {
+            let found = matches!(
+                response,
+                zfs_core::SectorResponse::Fetch(f) if f.error_code.is_none()
+            );
+            let _ = event_tx.send(LogEvent::SectorFetchProcessed {
+                program_id: r.program_id.to_hex(),
+                sector_id: r.sector_id.to_hex(),
+                found,
+            });
         }
+        _ => {}
     }
 }

@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
-//! ZFS client SDK — identity, connect, encrypt, sign, upload, fetch.
+//! ZFS client SDK — identity, connect, encrypt, sign, sector operations.
 //!
-//! Wraps `zero-neural`, `zfs-net`, `zfs-crypto`, `zfs-programs`, and
-//! `zfs-proof` into a unified client API. Does **not** use RocksDB.
+//! Wraps `zero-neural`, `zfs-net`, `zfs-crypto`, and `zfs-programs`
+//! into a unified client API. Does **not** use RocksDB.
 //!
 //! # Quick start
 //!
@@ -11,7 +11,7 @@
 //! use zfs_sdk::{SdkConfig, Client};
 //!
 //! let client = Client::connect(&SdkConfig::default()).await?;
-//! // ... generate keys, encrypt, upload, fetch ...
+//! // ... generate keys, encrypt, sector_store, sector_fetch ...
 //! # Ok(())
 //! # }
 //! ```
@@ -20,19 +20,22 @@ mod client;
 mod error;
 mod helpers;
 mod identity;
-mod upload;
+pub mod sector;
 
 pub use client::{Client, SdkConfig};
 pub use error::SdkError;
 pub use helpers::{zchat_descriptor, zid_descriptor};
-pub use identity::{derive_identity_signing_key, derive_machine_keypair};
-pub use upload::{fetch, fetch_head, upload, FetchResult, StoreResult};
+pub use identity::{
+    derive_machine_keypair_from_shares, generate_identity, sign_with_shares, verify_shares,
+    IdentityBundle, IdentityInfo,
+};
+pub use sector::{sector_decrypt, sector_encrypt, sector_fetch, sector_store};
 
 // Re-export frequently used types so callers don't need extra deps.
 pub use zero_neural::{
     HybridSignature, IdentitySigningKey, MachineKeyCapabilities, MachineKeyPair, MachinePublicKey,
-    NeuralKey,
+    ShamirShare,
 };
-pub use zfs_core::{Cid, Head, ProgramId, SectorId};
-pub use zfs_crypto::{decrypt_sector, encrypt_sector, SectorKey};
+pub use zfs_core::{Cid, ProgramId, SectorId};
+pub use zfs_crypto::{decrypt_sector, encrypt_sector, pad_to_bucket, unpad_from_bucket, SectorKey};
 pub use zfs_programs::{program_topic, ZChatDescriptor, ZChatMessage, ZidDescriptor, ZidMessage};

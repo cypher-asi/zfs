@@ -12,6 +12,9 @@ pub enum ErrorCode {
     NotFound,
     InvalidPayload,
     ProgramMismatch,
+    SlotOccupied,
+    BatchTooLarge,
+    ConditionFailed,
 }
 
 impl fmt::Display for ErrorCode {
@@ -23,6 +26,30 @@ impl fmt::Display for ErrorCode {
             Self::NotFound => f.write_str("not found"),
             Self::InvalidPayload => f.write_str("invalid payload"),
             Self::ProgramMismatch => f.write_str("program mismatch"),
+            Self::SlotOccupied => f.write_str("slot occupied"),
+            Self::BatchTooLarge => f.write_str("batch too large"),
+            Self::ConditionFailed => f.write_str("condition failed"),
+        }
+    }
+}
+
+/// Sector-specific store error with structured detail.
+#[derive(Debug, Error)]
+pub enum SectorStoreError {
+    #[error("slot occupied: sector already has a value")]
+    SlotOccupied,
+    #[error("condition failed: expected hash mismatch")]
+    ConditionFailed,
+    #[error("batch too large: {0}")]
+    BatchTooLarge(String),
+}
+
+impl From<SectorStoreError> for ErrorCode {
+    fn from(e: SectorStoreError) -> Self {
+        match e {
+            SectorStoreError::SlotOccupied => Self::SlotOccupied,
+            SectorStoreError::ConditionFailed => Self::ConditionFailed,
+            SectorStoreError::BatchTooLarge(_) => Self::BatchTooLarge,
         }
     }
 }
@@ -61,6 +88,9 @@ impl From<ErrorCode> for ZfsError {
             ErrorCode::NotFound => Self::NotFound,
             ErrorCode::InvalidPayload => Self::InvalidPayload(String::new()),
             ErrorCode::ProgramMismatch => Self::ProgramMismatch,
+            ErrorCode::SlotOccupied => Self::InvalidPayload("slot occupied".into()),
+            ErrorCode::BatchTooLarge => Self::InvalidPayload("batch too large".into()),
+            ErrorCode::ConditionFailed => Self::InvalidPayload("condition failed".into()),
         }
     }
 }

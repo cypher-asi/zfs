@@ -5,10 +5,13 @@ mod app;
 mod chat;
 mod components;
 mod helpers;
+mod identity;
 mod render;
+mod render_storage;
 mod settings;
 mod state;
 mod visualization;
+mod visualization_render;
 
 use std::sync::Arc;
 
@@ -118,9 +121,13 @@ fn configure_theme(ctx: &egui::Context) {
     ctx.style_mut(|s| {
         s.spacing.interact_size.y = 20.0;
         use egui::{FontId, TextStyle};
-        s.text_styles.insert(TextStyle::Body, FontId::proportional(11.0));
-        s.text_styles.insert(TextStyle::Button, FontId::proportional(11.0));
-        s.text_styles.insert(TextStyle::Small, FontId::proportional(9.0));
-        s.text_styles.insert(TextStyle::Monospace, FontId::monospace(10.0));
+        s.text_styles
+            .insert(TextStyle::Body, FontId::proportional(11.0));
+        s.text_styles
+            .insert(TextStyle::Button, FontId::proportional(11.0));
+        s.text_styles
+            .insert(TextStyle::Small, FontId::proportional(9.0));
+        s.text_styles
+            .insert(TextStyle::Monospace, FontId::monospace(10.0));
     });
 }

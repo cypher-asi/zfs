@@ -4991,6 +4991,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "shamir-vault"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3ea89f34f73d61bdfb65ba2904f62de24090f08718bd785fba5a7119aa1a5b4"
+dependencies = [
+ "rand 0.8.5",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7059,6 +7069,7 @@ dependencies = [
  "bitflags 2.11.0",
  "bs58",
  "ed25519-dalek",
+ "hex",
  "hkdf",
  "ml-dsa",
  "ml-kem",
@@ -7067,8 +7078,10 @@ dependencies = [
  "serde",
  "serde_bytes",
  "sha2",
+ "shamir-vault",
  "thiserror 2.0.18",
  "x25519-dalek",
+ "zero-neural",
  "zeroize",
 ]
 
@@ -7187,6 +7200,8 @@ dependencies = [
  "hkdf",
  "rand 0.8.5",
  "rand_core 0.6.4",
+ "serde",
+ "serde_bytes",
  "sha2",
  "zero-neural",
  "zeroize",
@@ -7218,20 +7233,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zfs-proof"
-version = "0.1.0"
-dependencies = [
- "thiserror 2.0.18",
- "zfs-core",
- "zfs-programs",
-]
-
-[[package]]
 name = "zfs-sdk"
 version = "0.1.0"
 dependencies = [
  "rand_core 0.6.4",
- "sha2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -7240,7 +7245,6 @@ dependencies = [
  "zfs-crypto",
  "zfs-net",
  "zfs-programs",
- "zfs-proof",
 ]
 
 [[package]]
@@ -7251,6 +7255,7 @@ dependencies = [
  "rocksdb",
  "serde",
  "serde_bytes",
+ "sha2",
  "tempfile",
  "thiserror 2.0.18",
  "zfs-core",
@@ -7261,6 +7266,7 @@ name = "zfs-zode"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_bytes",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -7270,7 +7276,6 @@ dependencies = [
  "zfs-crypto",
  "zfs-net",
  "zfs-programs",
- "zfs-proof",
  "zfs-storage",
 ]
 
@@ -7282,8 +7287,10 @@ dependencies = [
  "eframe",
  "egui-phosphor",
  "egui_extras",
+ "hex",
  "hkdf",
  "image",
+ "rand 0.8.5",
  "sha2",
  "tokio",
  "tracing",

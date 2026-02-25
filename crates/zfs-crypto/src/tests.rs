@@ -1,5 +1,6 @@
 use crate::{decrypt_sector, encrypt_sector, unwrap_sector_key, wrap_sector_key, SectorKey};
-use zero_neural::{derive_machine_keypair, MachineKeyCapabilities, NeuralKey};
+use zero_neural::testkit::derive_machine_keypair_from_seed;
+use zero_neural::MachineKeyCapabilities;
 use zfs_core::{ProgramDescriptor, ProgramId, SectorId};
 
 fn test_aad(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
@@ -12,11 +13,10 @@ fn test_aad(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
 fn make_keypair(seed: u8) -> zero_neural::MachineKeyPair {
     let mut nk_bytes = [0u8; 32];
     nk_bytes[0] = seed;
-    let nk = NeuralKey::from_bytes(nk_bytes);
     let identity_id = [seed; 16];
     let machine_id = [seed; 16];
-    derive_machine_keypair(
-        &nk,
+    derive_machine_keypair_from_seed(
+        nk_bytes,
         &identity_id,
         &machine_id,
         0,
@@ -182,7 +182,7 @@ fn key_envelope_entry_serialization() {
     .expect("wrap");
 
     let encoded = zfs_core::encode_canonical(&entry).expect("encode");
-    let decoded: zfs_core::KeyEnvelopeEntry = zfs_core::decode_canonical(&encoded).expect("decode");
+    let decoded: crate::KeyEnvelopeEntry = zfs_core::decode_canonical(&encoded).expect("decode");
 
     assert_eq!(decoded.recipient_did, entry.recipient_did);
     assert_eq!(decoded.sender_x25519_public, entry.sender_x25519_public);

@@ -1,10 +1,9 @@
 #![forbid(unsafe_code)]
-//! ZFS Zode — ties together storage, network, proof, and programs.
+//! ZFS Zode — ties together storage, network, and programs.
 //!
-//! The Zode is the storage Zode: it runs libp2p + QUIC via `zfs-net`,
-//! subscribes to program topics via GossipSub, persists blocks and heads
-//! in RocksDB via `zfs-storage`, verifies proofs when required, and
-//! enforces local storage policy.
+//! The Zode is the storage node: it runs libp2p + QUIC via `zfs-net`,
+//! subscribes to program topics via GossipSub, persists sectors
+//! in RocksDB via `zfs-storage`, and enforces local storage policy.
 //!
 //! # Usage
 //!
@@ -23,11 +22,14 @@
 
 mod config;
 mod error;
-mod handler;
+mod gossip;
 mod metrics;
+mod sector_handler;
+mod types;
 mod zode;
 
-pub use config::{DefaultProgramsConfig, LimitsConfig, ProofPolicyConfig, ZodeConfig};
+pub use config::{DefaultProgramsConfig, SectorLimitsConfig, ZodeConfig};
 pub use error::ZodeError;
 pub use metrics::{MetricsSnapshot, ZodeMetrics};
-pub use zode::{LogEvent, Zode, ZodeStatus};
+pub use types::{LogEvent, LogLevel, ZodeStatus};
+pub use zode::Zode;

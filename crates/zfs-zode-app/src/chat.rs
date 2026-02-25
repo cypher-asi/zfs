@@ -3,15 +3,18 @@ use std::sync::Arc;
 use eframe::egui;
 use hkdf::Hkdf;
 use sha2::Sha256;
-use zfs_core::{Cid, GossipBlock, Head, ProgramId, SectorId};
-use zfs_crypto::{decrypt_sector, encrypt_sector, SectorKey};
+use zero_neural::ed25519_to_did_key;
+use zero_neural::testkit::derive_machine_keypair_from_seed;
+use zero_neural::MachineKeyCapabilities;
+use zfs_core::{GossipSector, ProgramId, SectorId};
+use zfs_crypto::{decrypt_sector, encrypt_sector, pad_to_bucket, unpad_from_bucket, SectorKey};
 use zfs_programs::zchat::{ChannelId, ZChatDescriptor, ZChatMessage, TEST_CHANNEL_ID};
-use zfs_storage::{BlockStore, HeadStore, ProgramIndex};
-use zero_neural::{
-    derive_machine_keypair, ed25519_to_did_key, MachineKeyCapabilities, NeuralKey,
-};
+use zfs_storage::SectorStore;
 
 use crate::app::ZodeApp;
+use crate::components::{
+    error_label, field_label, info_grid, kv_row, section, std_button, text_input,
+};
 use crate::helpers::format_timestamp_ms;
 use crate::state::{ChatState, ChatUpdate, DisplayMessage};
 
@@ -27,11 +30,10 @@ fn derive_test_machine_did(zode_id: &str) -> String {
     use sha2::Digest;
     let hash: [u8; 32] =
         sha2::Sha256::digest(format!("interlink-main-machine:{zode_id}").as_bytes()).into();
-    let nk = NeuralKey::from_bytes(hash);
     let identity_id = [0x01; 16];
     let machine_id = [0x02; 16];
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
-    let kp = derive_machine_keypair(&nk, &identity_id, &machine_id, 0, caps)
+    let kp = derive_machine_keypair_from_seed(hash, &identity_id, &machine_id, 0, caps)
         .expect("deterministic derivation cannot fail");
     ed25519_to_did_key(&kp.public_key().ed25519_bytes())
 }
@@ -83,8 +85,6 @@ impl ZodeApp {
             channel_id,
             program_id,
             sector_id,
-            last_head_cid: None,
-            version: 0,
             error: None,
             initialized: true,
             scroll_to_bottom: true,
@@ -105,15 +105,18 @@ impl ZodeApp {
         let bg_storage = Arc::clone(zode.storage());
         let bg_key = sector_key.clone();
         rt.spawn(async move {
-            let mut known = 0usize;
+            let mut known_len = 0usize;
             loop {
-                let cur = bg_storage
-                    .list_cids(&program_id)
+                let cur_len = bg_storage
+                    .get(&program_id, &sector_id)
+                    .ok()
+                    .flatten()
                     .map(|v| v.len())
-                    .unwrap_or(known);
-                if cur != known {
-                    known = cur;
-                    let upd = build_chat_update(&bg_storage, &bg_key, &program_id, &sector_id);
+                    .unwrap_or(0);
+                if cur_len != known_len {
+                    known_len = cur_len;
+                    let upd =
+                        build_chat_update(&bg_storage, &bg_key, &program_id, &sector_id);
                     if update_tx.send(upd).await.is_err() {
                         return;
                     }
@@ -146,90 +149,98 @@ impl ZodeApp {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        match encode_and_encrypt(chat, &text, now_ms) {
-            Ok((cid, ciphertext, head)) => {
-                if let Err(e) = persist_message(&storage, &cid, &ciphertext, &head, &chat.program_id) {
-                    chat.error = Some(e);
-                    return;
+        let aad = build_aad(&chat.program_id, &chat.sector_id);
+
+        let new_msg = ZChatMessage {
+            sender_did: chat.machine_did.clone(),
+            channel_id: chat.channel_id.clone(),
+            content: text.clone(),
+            timestamp_ms: now_ms,
+        };
+
+        let mut messages = load_messages(&storage, &chat.sector_key, &chat.program_id, &chat.sector_id, &aad);
+        messages.push(new_msg);
+
+        match encode_message_list(&messages) {
+            Ok(plaintext) => {
+                let padded = pad_to_bucket(&plaintext);
+                match encrypt_sector(&padded, &chat.sector_key, &aad) {
+                    Ok(ciphertext) => {
+                        if let Err(e) = storage.put(
+                            &chat.program_id,
+                            &chat.sector_id,
+                            &ciphertext,
+                            true,
+                            None,
+                        ) {
+                            chat.error = Some(format!("Sector write failed: {e}"));
+                            return;
+                        }
+                        chat.messages.push(DisplayMessage {
+                            sender: chat.machine_did.clone(),
+                            content: text,
+                            timestamp_ms: now_ms,
+                        });
+                        chat.error = None;
+                        chat.scroll_to_bottom = true;
+                        broadcast_gossip(
+                            zode,
+                            chat.program_id,
+                            chat.sector_id.clone(),
+                            ciphertext,
+                        );
+                        let _ = chat.refresh_tx.try_send(());
+                    }
+                    Err(e) => {
+                        chat.error = Some(format!("Encrypt failed: {e}"));
+                    }
                 }
-                chat.last_head_cid = Some(cid);
-                chat.messages.push(DisplayMessage {
-                    sender: chat.machine_did.clone(),
-                    content: text,
-                    timestamp_ms: now_ms,
-                });
-                chat.error = None;
-                chat.scroll_to_bottom = true;
-                broadcast_gossip(zode, chat.program_id, cid, ciphertext, head);
-                let _ = chat.refresh_tx.try_send(());
             }
             Err(e) => {
-                chat.error = Some(e);
+                chat.error = Some(format!("Encode failed: {e}"));
             }
         }
     }
 }
 
-fn encode_and_encrypt(
-    chat: &mut ChatState,
-    text: &str,
-    now_ms: u64,
-) -> Result<(Cid, Vec<u8>, Head), String> {
-    let msg = ZChatMessage {
-        sender_did: chat.machine_did.clone(),
-        channel_id: chat.channel_id.clone(),
-        content: text.to_string(),
-        timestamp_ms: now_ms,
-    };
-    let cbor = msg.encode_canonical().map_err(|e| format!("Encode failed: {e}"))?;
-    let aad = build_aad(&chat.program_id, &chat.sector_id);
-    let ciphertext =
-        encrypt_sector(&cbor, &chat.sector_key, &aad).map_err(|e| format!("Encrypt failed: {e}"))?;
-    let cid = Cid::from_ciphertext(&ciphertext);
-    chat.version += 1;
-    let head = Head {
-        sector_id: chat.sector_id.clone(),
-        cid,
-        version: chat.version,
-        program_id: chat.program_id,
-        prev_head_cid: chat.last_head_cid,
-        timestamp_ms: now_ms,
-        signature: None,
-    };
-    Ok((cid, ciphertext, head))
+fn encode_message_list(messages: &[ZChatMessage]) -> Result<Vec<u8>, String> {
+    zfs_core::encode_canonical(&messages.to_vec()).map_err(|e| format!("{e}"))
 }
 
-fn persist_message(
+fn decode_message_list(bytes: &[u8]) -> Result<Vec<ZChatMessage>, String> {
+    zfs_core::decode_canonical(bytes).map_err(|e| format!("{e}"))
+}
+
+fn load_messages(
     storage: &Arc<zfs_storage::RocksStorage>,
-    cid: &Cid,
-    ciphertext: &[u8],
-    head: &Head,
+    sector_key: &SectorKey,
     program_id: &ProgramId,
-) -> Result<(), String> {
-    storage
-        .put(cid, ciphertext)
-        .map_err(|e| format!("Block write failed: {e}"))?;
-    storage
-        .put_head(&head.sector_id, head)
-        .map_err(|e| format!("Head write failed: {e}"))?;
-    storage
-        .add_cid(program_id, cid)
-        .map_err(|e| format!("Index write failed: {e}"))?;
-    Ok(())
+    sector_id: &SectorId,
+    aad: &[u8],
+) -> Vec<ZChatMessage> {
+    match SectorStore::get(storage.as_ref(), program_id, sector_id) {
+        Ok(Some(ciphertext)) => match decrypt_sector(&ciphertext, sector_key, aad) {
+            Ok(padded) => unpad_from_bucket(&padded)
+                .ok()
+                .and_then(|pt| decode_message_list(&pt).ok())
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
 }
 
 fn broadcast_gossip(
     zode: &Arc<zfs_zode::Zode>,
     program_id: ProgramId,
-    cid: Cid,
+    sector_id: SectorId,
     ciphertext: Vec<u8>,
-    head: Head,
 ) {
-    let gossip = GossipBlock {
+    let gossip = GossipSector {
         program_id,
-        cid,
-        ciphertext,
-        head: Some(head),
+        sector_id,
+        payload: ciphertext,
+        overwrite: true,
     };
     let topic = zfs_programs::program_topic(&gossip.program_id);
     if let Ok(data) = zfs_core::encode_canonical(&gossip) {
@@ -245,83 +256,37 @@ fn build_chat_update(
 ) -> ChatUpdate {
     let aad = build_aad(program_id, sector_id);
 
-    let (last_head_cid, version) = match storage.get_head(sector_id) {
-        Ok(Some(h)) => (Some(h.cid), h.version),
-        Ok(None) => return empty_chat_update(None),
-        Err(e) => return error_chat_update(format!("Failed to read head: {e}")),
+    let ciphertext = match SectorStore::get(storage.as_ref(), program_id, sector_id) {
+        Ok(Some(ct)) => ct,
+        Ok(None) => return ChatUpdate::empty(),
+        Err(e) => return ChatUpdate::error(format!("Sector read failed: {e}")),
     };
 
-    let cids = match storage.list_cids(program_id) {
-        Ok(c) => c,
-        Err(e) => return error_chat_update(format!("Failed to list CIDs: {e}")),
-    };
-
-    let (mut msgs, error) = decrypt_messages(storage, &cids, sector_key, &aad);
-    msgs.sort_by_key(|m| m.timestamp_ms);
-    ChatUpdate {
-        messages: msgs,
-        last_head_cid,
-        version,
-        error,
+    match decrypt_sector(&ciphertext, sector_key, &aad) {
+        Ok(padded) => match unpad_from_bucket(&padded).and_then(|pt| {
+            decode_message_list(&pt).map_err(|e| zfs_crypto::CryptoError::PaddingError(e))
+        }) {
+            Ok(msgs) => {
+                let mut display: Vec<DisplayMessage> = msgs
+                    .into_iter()
+                    .map(|m| DisplayMessage {
+                        sender: m.sender_did,
+                        content: m.content,
+                        timestamp_ms: m.timestamp_ms,
+                    })
+                    .collect();
+                display.sort_by_key(|m| m.timestamp_ms);
+                ChatUpdate {
+                    messages: display,
+                    error: None,
+                }
+            }
+            Err(e) => ChatUpdate::error(format!("Decode failed: {e}")),
+        },
+        Err(e) => ChatUpdate::error(format!("Decrypt failed: {e}")),
     }
 }
 
-fn decrypt_messages(
-    storage: &Arc<zfs_storage::RocksStorage>,
-    cids: &[Cid],
-    sector_key: &SectorKey,
-    aad: &[u8],
-) -> (Vec<DisplayMessage>, Option<String>) {
-    let mut msgs = Vec::new();
-    for cid in cids {
-        match storage.get(cid) {
-            Ok(Some(ciphertext)) => match decrypt_sector(&ciphertext, sector_key, aad) {
-                Ok(plaintext) => match ZChatMessage::decode_canonical(&plaintext) {
-                    Ok(msg) => msgs.push(DisplayMessage {
-                        sender: msg.sender_did,
-                        content: msg.content,
-                        timestamp_ms: msg.timestamp_ms,
-                    }),
-                    Err(e) => msgs.push(DisplayMessage {
-                        sender: "system".into(),
-                        content: format!("[decode error: {e}]"),
-                        timestamp_ms: 0,
-                    }),
-                },
-                Err(e) => msgs.push(DisplayMessage {
-                    sender: "system".into(),
-                    content: format!("[decrypt error: {e}]"),
-                    timestamp_ms: 0,
-                }),
-            },
-            Ok(None) => msgs.push(DisplayMessage {
-                sender: "system".into(),
-                content: format!("[block not found: {}]", cid.to_hex()),
-                timestamp_ms: 0,
-            }),
-            Err(e) => return (msgs, Some(format!("Storage read error: {e}"))),
-        }
-    }
-    (msgs, None)
-}
-
-fn empty_chat_update(last_head_cid: Option<Cid>) -> ChatUpdate {
-    ChatUpdate {
-        messages: Vec::new(),
-        last_head_cid,
-        version: 0,
-        error: None,
-    }
-}
-
-fn error_chat_update(error: String) -> ChatUpdate {
-    ChatUpdate {
-        messages: Vec::new(),
-        last_head_cid: None,
-        version: 0,
-        error: Some(error),
-    }
-}
 
 pub(crate) fn render_chat(app: &mut ZodeApp, ui: &mut egui::Ui) {
     if app.chat_state.is_none() || !app.chat_state.as_ref().unwrap().initialized {
@@ -342,11 +307,11 @@ fn render_chat_header(app: &ZodeApp, ui: &mut egui::Ui) {
         .collect();
     let ch_display = String::from_utf8_lossy(chat.channel_id.as_bytes()).to_string();
 
-    crate::components::section(ui, "INTERLINK", |ui| {
-        crate::components::info_grid(ui, "chat_info_grid", |ui| {
-            crate::components::kv_row(ui, "Channel", &ch_display);
+    section(ui, "INTERLINK", |ui| {
+        info_grid(ui, "chat_info_grid", |ui| {
+            kv_row(ui, "Channel", &ch_display);
 
-            crate::components::field_label(ui, "Sector Key");
+            field_label(ui, "Sector Key");
             ui.label(
                 egui::RichText::new(format!("{key_preview}..."))
                     .monospace()
@@ -354,20 +319,19 @@ fn render_chat_header(app: &ZodeApp, ui: &mut egui::Ui) {
             );
             ui.end_row();
 
-            crate::components::kv_row(ui, "Messages", &format!("{}", chat.messages.len()));
+            kv_row(ui, "Messages", &format!("{}", chat.messages.len()));
+            kv_row(ui, "Protocol", "/zfs/sector/1.0.0");
         });
     });
 
     if let Some(ref err) = chat.error {
-        crate::components::error_label(ui, err);
+        error_label(ui, err);
     }
 }
 
 fn drain_chat_updates(app: &mut ZodeApp) {
     let chat = app.chat_state.as_mut().unwrap();
     while let Ok(upd) = chat.update_rx.try_recv() {
-        chat.last_head_cid = upd.last_head_cid;
-        chat.version = upd.version;
         chat.error = upd.error;
         chat.messages = upd.messages;
         chat.scroll_to_bottom = true;
@@ -406,11 +370,7 @@ fn render_chat_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
                     let name = short_sender(&msg.sender);
                     ui.horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new(format!("[{time}]")).monospace().weak());
-                        ui.label(
-                            egui::RichText::new(format!("{name}:"))
-                                .monospace()
-                                .strong(),
-                        );
+                        ui.label(egui::RichText::new(format!("{name}:")).monospace().strong());
                         ui.label(&msg.content);
                     });
                 }
@@ -427,14 +387,14 @@ fn render_chat_compose(app: &mut ZodeApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let chat = app.chat_state.as_mut().unwrap();
         let resp = ui.add(
-            crate::components::text_input(&mut chat.compose, ui.available_width() - 70.0)
+            text_input(&mut chat.compose, ui.available_width() - 70.0)
                 .hint_text("Type a message..."),
         );
         if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             do_send = true;
             resp.request_focus();
         }
-        if crate::components::std_button(ui, "Send") {
+        if std_button(ui, "Send") {
             do_send = true;
         }
     });

@@ -9,6 +9,8 @@ license = "MIT OR Apache-2.0"
 chacha20poly1305 = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
 zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 zero-neural = { path = "../zero-neural" }
@@ -16,3 +18,4 @@ zfs-core = { path = "../zfs-core" }
 
 [dev-dependencies]
 rand = "0.8"
+zero-neural = { path = "../zero-neural", features = ["testkit"] }

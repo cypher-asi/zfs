@@ -5,7 +5,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use zfs_zode::{LogEvent, Zode};
 
-use crate::helpers::format_log_event;
+use crate::components::title_bar_icon;
 use crate::settings::Settings;
 use crate::state::{AppState, Tab, MAX_LOG_ENTRIES};
 
@@ -19,6 +19,7 @@ pub(crate) struct ZodeApp {
     pub shutdown_tx: Option<tokio::sync::mpsc::Sender<()>>,
     pub poller_handle: Option<tokio::task::JoinHandle<()>>,
     pub chat_state: Option<crate::state::ChatState>,
+    pub identity_state: crate::state::IdentityState,
     pub visualization: crate::visualization::NetworkVisualization,
     icon_texture: Option<egui::TextureHandle>,
 }
@@ -35,6 +36,7 @@ impl ZodeApp {
             shutdown_tx: None,
             poller_handle: None,
             chat_state: None,
+            identity_state: Default::default(),
             visualization: Default::default(),
             icon_texture: None,
         };
@@ -53,11 +55,7 @@ impl ZodeApp {
                     [rgba.width() as usize, rgba.height() as usize],
                     pixels.as_slice(),
                 );
-                ctx.load_texture(
-                    "app_icon",
-                    color_image,
-                    egui::TextureOptions::LINEAR,
-                )
+                ctx.load_texture("app_icon", color_image, egui::TextureOptions::LINEAR)
             })
             .clone()
     }
@@ -113,37 +111,33 @@ impl ZodeApp {
         })
     }
 
-    fn spawn_log_listener(
-        rt: &Runtime,
-        zode: &Arc<Zode>,
-        shared: &Arc<Mutex<AppState>>,
-    ) {
+    fn spawn_log_listener(rt: &Runtime, zode: &Arc<Zode>, shared: &Arc<Mutex<AppState>>) {
         let log_shared = Arc::clone(shared);
         let mut event_rx = zode.subscribe_events();
         rt.spawn(async move {
             loop {
                 match event_rx.recv().await {
                     Ok(event) => {
-                        let line = format_log_event(&event);
+                        let line = event.to_string();
                         let mut state = log_shared.lock().await;
                         if let LogEvent::Started { ref listen_addr } = event {
                             state.listen_addr = Some(listen_addr.clone());
                         }
                         match &event {
                             LogEvent::PeerConnected(id) => {
-                                state.peer_events.push_back(
-                                    crate::state::PeerEvent::Connected(id.clone()),
-                                );
+                                state
+                                    .peer_events
+                                    .push_back(crate::state::PeerEvent::Connected(id.clone()));
                             }
                             LogEvent::PeerDisconnected(id) => {
-                                state.peer_events.push_back(
-                                    crate::state::PeerEvent::Disconnected(id.clone()),
-                                );
+                                state
+                                    .peer_events
+                                    .push_back(crate::state::PeerEvent::Disconnected(id.clone()));
                             }
                             LogEvent::PeerDiscovered(id) => {
-                                state.peer_events.push_back(
-                                    crate::state::PeerEvent::Discovered(id.clone()),
-                                );
+                                state
+                                    .peer_events
+                                    .push_back(crate::state::PeerEvent::Discovered(id.clone()));
                             }
                             _ => {}
                         }
@@ -205,18 +199,10 @@ impl ZodeApp {
         let Some(dir) = dir else { return false };
 
         let cursor = match dir {
-            ResizeDirection::North | ResizeDirection::South => {
-                egui::CursorIcon::ResizeVertical
-            }
-            ResizeDirection::East | ResizeDirection::West => {
-                egui::CursorIcon::ResizeHorizontal
-            }
-            ResizeDirection::NorthWest | ResizeDirection::SouthEast => {
-                egui::CursorIcon::ResizeNwSe
-            }
-            ResizeDirection::NorthEast | ResizeDirection::SouthWest => {
-                egui::CursorIcon::ResizeNeSw
-            }
+            ResizeDirection::North | ResizeDirection::South => egui::CursorIcon::ResizeVertical,
+            ResizeDirection::East | ResizeDirection::West => egui::CursorIcon::ResizeHorizontal,
+            ResizeDirection::NorthWest | ResizeDirection::SouthEast => egui::CursorIcon::ResizeNwSe,
+            ResizeDirection::NorthEast | ResizeDirection::SouthWest => egui::CursorIcon::ResizeNeSw,
         };
         ctx.set_cursor_icon(cursor);
 
@@ -228,44 +214,9 @@ impl ZodeApp {
     }
 }
 
-fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egui::Response {
-    let font_id = egui::FontId::proportional(16.0);
-    let galley = ui.fonts(|f| {
-        f.layout_no_wrap(icon.to_string(), font_id, egui::Color32::PLACEHOLDER)
-    });
-    let bp = ui.spacing().button_padding;
-    let desired = egui::vec2(
-        galley.size().x + bp.x * 2.0,
-        ui.spacing().interact_size.y,
-    );
-    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click());
-    let vis = ui.style().interact_selectable(&resp, active);
-    if !active && resp.hovered() {
-        ui.painter().rect_filled(rect, vis.rounding, vis.bg_fill);
-    }
-    let text_color = if active {
-        egui::Color32::WHITE
-    } else {
-        vis.text_color()
-    };
-    let galley = ui.fonts(|f| {
-        f.layout_no_wrap(
-            icon.to_string(),
-            egui::FontId::proportional(16.0),
-            text_color,
-        )
-    });
-    let text_pos = rect.center() - galley.size() / 2.0;
-    ui.painter().galley(text_pos, galley, vis.text_color());
-    resp
-}
 
-impl eframe::App for ZodeApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let state = self
-            .rt
-            .block_on(async { self.shared.lock().await.snapshot() });
-
+impl ZodeApp {
+    fn sync_visualization(&mut self, state: &crate::state::StateSnapshot) {
         for event in &state.peer_events {
             match event {
                 crate::state::PeerEvent::Connected(id) => {
@@ -283,15 +234,14 @@ impl eframe::App for ZodeApp {
             self.visualization
                 .reconcile(&status.zode_id, &status.connected_peers);
         }
+    }
 
-        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-
-        let on_resize_edge = if !maximized {
-            Self::handle_resize_edges(ctx)
-        } else {
-            false
-        };
-
+    fn render_title_bar(
+        &mut self,
+        ctx: &egui::Context,
+        maximized: bool,
+        on_resize_edge: bool,
+    ) {
         egui::TopBottomPanel::top("tabs")
             .frame(
                 egui::Frame::default()
@@ -306,16 +256,12 @@ impl eframe::App for ZodeApp {
                     egui::Id::new("title_bar"),
                     egui::Sense::click_and_drag(),
                 );
-                if !on_resize_edge
-                    && title_resp.drag_started_by(egui::PointerButton::Primary)
-                {
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                if !on_resize_edge && title_resp.drag_started_by(egui::PointerButton::Primary) {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
                 if title_resp.double_clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(
-                        !maximized,
-                    ));
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                 }
 
                 ui.visuals_mut().widgets.active = ui.visuals().widgets.hovered;
@@ -324,107 +270,115 @@ impl eframe::App for ZodeApp {
                     egui::Stroke::new(1.0, egui::Color32::WHITE);
                 ui.visuals_mut().widgets.active.fg_stroke =
                     egui::Stroke::new(1.0, egui::Color32::WHITE);
+
                 ui.horizontal(|ui| {
-                    let tex = self.icon_texture(ui.ctx());
-                    ui.add(
-                        egui::Image::new(&tex)
-                            .fit_to_exact_size(egui::vec2(20.0, 20.0))
-                            .rounding(3.0),
-                    );
-                    ui.add_space(4.0);
-                    ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
-                    ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
-                    ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
-                    ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
-                    ui.selectable_value(&mut self.tab, Tab::Chat, "INTERLINK");
-                    ui.selectable_value(&mut self.tab, Tab::Info, "INFO");
+                    self.render_tab_buttons(ui);
 
                     ui.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked() {
-                                ui.ctx()
-                                    .send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-
-                            let maximized =
-                                ui.input(|i| i.viewport().maximized.unwrap_or(false));
-                            let max_icon = if maximized {
-                                egui_phosphor::regular::CORNERS_IN
-                            } else {
-                                egui_phosphor::regular::CORNERS_OUT
-                            };
-                            if title_bar_icon(ui, max_icon, false).clicked() {
-                                ui.ctx().send_viewport_cmd(
-                                    egui::ViewportCommand::Maximized(!maximized),
-                                );
-                            }
-
-                            if title_bar_icon(ui, egui_phosphor::regular::MINUS, false).clicked() {
-                                ui.ctx().send_viewport_cmd(
-                                    egui::ViewportCommand::Minimized(true),
-                                );
-                            }
-
-                            ui.add_space(4.0);
-
-                            let is_settings = self.tab == Tab::Settings;
-                            if title_bar_icon(ui, egui_phosphor::regular::GEAR_SIX, is_settings).clicked() {
-                                self.tab = Tab::Settings;
-                            }
-
-                            let connected = self.zode.is_some();
-                            let dot_color = if connected {
-                                crate::components::colors::CONNECTED
-                            } else {
-                                crate::components::colors::DISCONNECTED
-                            };
-                            let status_label = if connected { "connected" } else { "stopped" };
-                            let status_text_color = if connected {
-                                crate::components::colors::CONNECTED
-                            } else {
-                                crate::components::colors::DISCONNECTED
-                            };
-                            ui.monospace(
-                                egui::RichText::new(status_label)
-                                    .color(status_text_color),
-                            );
-                            let dot_radius = 3.5;
-                            let (dot_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().circle_filled(
-                                dot_rect.center(),
-                                dot_radius,
-                                dot_color,
-                            );
-                        },
+                        |ui| self.render_window_controls(ui),
                     );
                 });
 
-                // Drag from any point in the title bar (including over buttons)
-                // to move the window. Raw pointer state bypasses widget hit-testing
-                // so a press that started on a tab button still initiates a drag
-                // once the pointer moves past a small threshold.
-                if !on_resize_edge && !title_resp.double_clicked() {
-                    let drag = ui.input(|i| {
-                        match (i.pointer.press_origin(), i.pointer.hover_pos()) {
-                            (Some(origin), Some(current)) => Some((origin, current)),
-                            _ => None,
-                        }
-                    });
-                    if let Some((press_origin, current)) = drag {
-                        if title_bar_rect.contains(press_origin)
-                            && press_origin.distance(current) > 4.0
-                        {
-                            ui.ctx()
-                                .send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                        }
-                    }
-                }
+                Self::handle_title_bar_drag(ui, &title_resp, title_bar_rect, on_resize_edge);
             });
+    }
 
+    fn render_tab_buttons(&mut self, ui: &mut egui::Ui) {
+        let tex = self.icon_texture(ui.ctx());
+        ui.add(
+            egui::Image::new(&tex)
+                .fit_to_exact_size(egui::vec2(20.0, 20.0))
+                .rounding(3.0),
+        );
+        ui.add_space(4.0);
+        ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
+        ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
+        ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
+        ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
+        ui.selectable_value(&mut self.tab, Tab::Chat, "INTERLINK");
+        ui.selectable_value(&mut self.tab, Tab::Info, "INFO");
+    }
+
+    fn render_window_controls(&mut self, ui: &mut egui::Ui) {
+        if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
+        let maximized = ui.input(|i| i.viewport().maximized.unwrap_or(false));
+        let max_icon = if maximized {
+            egui_phosphor::regular::CORNERS_IN
+        } else {
+            egui_phosphor::regular::CORNERS_OUT
+        };
+        if title_bar_icon(ui, max_icon, false).clicked() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+        }
+
+        if title_bar_icon(ui, egui_phosphor::regular::MINUS, false).clicked() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+
+        ui.add_space(4.0);
+
+        let is_settings = self.tab == Tab::Settings;
+        if title_bar_icon(ui, egui_phosphor::regular::GEAR_SIX, is_settings).clicked() {
+            self.tab = Tab::Settings;
+        }
+
+        let is_identity = self.tab == Tab::Identity;
+        if title_bar_icon(ui, egui_phosphor::regular::USER_CIRCLE, is_identity).clicked() {
+            self.tab = Tab::Identity;
+        }
+
+        let connected = self.zode.is_some();
+        let dot_color = if connected {
+            crate::components::colors::CONNECTED
+        } else {
+            crate::components::colors::DISCONNECTED
+        };
+        let status_label = if connected { "connected" } else { "stopped" };
+        ui.monospace(egui::RichText::new(status_label).color(dot_color));
+        let dot_radius = 3.5;
+        let (dot_rect, _) = ui.allocate_exact_size(
+            egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
+            egui::Sense::hover(),
+        );
+        ui.painter()
+            .circle_filled(dot_rect.center(), dot_radius, dot_color);
+    }
+
+    /// Drag from any point in the title bar (including over buttons) to move
+    /// the window. Raw pointer state bypasses widget hit-testing so a press
+    /// that started on a tab button still initiates a drag once the pointer
+    /// moves past a small threshold.
+    fn handle_title_bar_drag(
+        ui: &egui::Ui,
+        title_resp: &egui::Response,
+        title_bar_rect: egui::Rect,
+        on_resize_edge: bool,
+    ) {
+        if on_resize_edge || title_resp.double_clicked() {
+            return;
+        }
+        let drag = ui.input(|i| match (i.pointer.press_origin(), i.pointer.hover_pos()) {
+            (Some(origin), Some(current)) => Some((origin, current)),
+            _ => None,
+        });
+        if let Some((press_origin, current)) = drag {
+            if title_bar_rect.contains(press_origin) && press_origin.distance(current) > 4.0 {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+        }
+    }
+
+    fn render_central_panel(
+        &mut self,
+        ctx: &egui::Context,
+        state: &crate::state::StateSnapshot,
+    ) {
         let central_frame = egui::Frame::default()
             .fill(egui::Color32::BLACK)
             .inner_margin(8.0);
@@ -432,27 +386,30 @@ impl eframe::App for ZodeApp {
         egui::CentralPanel::default()
             .frame(central_frame)
             .show(ctx, |ui| {
-            if self.tab != Tab::Settings && self.zode.is_none() {
-                let rect = ui.max_rect();
-                ui.vertical_centered(|ui| {
-                    ui.add_space((rect.height() / 2.0 - 25.0).max(0.0));
-                    ui.spinner();
-                    ui.add_space(4.0);
-                    ui.label("Zode is stopped. Go to Settings to start.");
-                });
-                return;
-            }
-            match self.tab {
-                Tab::Status => crate::render::render_status(self, ui, &state),
-                Tab::Storage => crate::render::render_storage(self, ui, &state),
-                Tab::Peers => crate::render::render_peers(self, ui, &state),
-                Tab::Log => crate::render::render_log(ui, &state),
-                Tab::Chat => crate::chat::render_chat(self, ui),
-                Tab::Info => crate::render::render_info(self, ui, &state),
-                Tab::Settings => crate::render::render_settings(self, ui),
-            }
-        });
+                if self.tab != Tab::Settings && self.tab != Tab::Identity && self.zode.is_none() {
+                    let rect = ui.max_rect();
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((rect.height() / 2.0 - 25.0).max(0.0));
+                        ui.spinner();
+                        ui.add_space(4.0);
+                        ui.label("Zode is stopped. Go to Settings to start.");
+                    });
+                    return;
+                }
+                match self.tab {
+                    Tab::Status => crate::render::render_status(self, ui, state),
+                    Tab::Storage => crate::render_storage::render_storage(self, ui, state),
+                    Tab::Peers => crate::render::render_peers(self, ui, state),
+                    Tab::Log => crate::render::render_log(ui, state),
+                    Tab::Chat => crate::chat::render_chat(self, ui),
+                    Tab::Info => crate::render::render_info(self, ui, state),
+                    Tab::Settings => crate::render::render_settings(self, ui),
+                    Tab::Identity => crate::identity::render_identity(self, ui),
+                }
+            });
+    }
 
+    fn render_window_border(ctx: &egui::Context, maximized: bool) {
         if !maximized {
             let fg = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
@@ -464,7 +421,27 @@ impl eframe::App for ZodeApp {
                 egui::Stroke::new(1.0, crate::components::colors::BORDER),
             );
         }
+    }
+}
 
+impl eframe::App for ZodeApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let state = self
+            .rt
+            .block_on(async { self.shared.lock().await.snapshot() });
+
+        self.sync_visualization(&state);
+
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let on_resize_edge = if !maximized {
+            Self::handle_resize_edges(ctx)
+        } else {
+            false
+        };
+
+        self.render_title_bar(ctx, maximized, on_resize_edge);
+        self.render_central_panel(ctx, &state);
+        Self::render_window_border(ctx, maximized);
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
 }

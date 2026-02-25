@@ -61,7 +61,10 @@ pub(crate) fn action_panel(
                 .stroke(egui::Stroke::new(1.0, colors::BORDER)),
         )
         .show_inside(ui, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add_contents);
+            ui.with_layout(
+                egui::Layout::right_to_left(egui::Align::Center),
+                add_contents,
+            );
         });
 }
 
@@ -69,11 +72,7 @@ pub(crate) fn action_panel(
 // Info grid — two-column key–value grid with uniform spacing
 // ---------------------------------------------------------------------------
 
-pub(crate) fn info_grid(
-    ui: &mut egui::Ui,
-    id: &str,
-    add_rows: impl FnOnce(&mut egui::Ui),
-) {
+pub(crate) fn info_grid(ui: &mut egui::Ui, id: &str, add_rows: impl FnOnce(&mut egui::Ui)) {
     egui::Grid::new(id)
         .num_columns(2)
         .spacing([12.0, 6.0])
@@ -146,13 +145,39 @@ pub(crate) fn action_button(ui: &mut egui::Ui, label: &str) -> bool {
     styled_button(ui, label, egui::vec2(12.0, 5.0), 11.0)
 }
 
+/// Title-bar icon button (custom-painted for tight layout control).
+pub(crate) fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egui::Response {
+    let font_id = egui::FontId::proportional(16.0);
+    let galley =
+        ui.fonts(|f| f.layout_no_wrap(icon.to_string(), font_id, egui::Color32::PLACEHOLDER));
+    let bp = ui.spacing().button_padding;
+    let desired = egui::vec2(galley.size().x + bp.x * 2.0, ui.spacing().interact_size.y);
+    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click());
+    let vis = ui.style().interact_selectable(&resp, active);
+    if !active && resp.hovered() {
+        ui.painter().rect_filled(rect, vis.rounding, vis.bg_fill);
+    }
+    let text_color = if active {
+        egui::Color32::WHITE
+    } else {
+        vis.text_color()
+    };
+    let galley = ui.fonts(|f| {
+        f.layout_no_wrap(
+            icon.to_string(),
+            egui::FontId::proportional(16.0),
+            text_color,
+        )
+    });
+    let text_pos = rect.center() - galley.size() / 2.0;
+    ui.painter().galley(text_pos, galley, vis.text_color());
+    resp
+}
+
 /// Frameless icon button, vertically centered on the current line.
 /// Returns the `Response` so callers can check `.clicked()`, add tooltips, etc.
 pub(crate) fn icon_button(ui: &mut egui::Ui, icon: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(icon).size(ICON_SIZE))
-            .frame(false),
-    )
+    ui.add(egui::Button::new(egui::RichText::new(icon).size(ICON_SIZE)).frame(false))
 }
 
 /// Clipboard-icon button that copies `text` and briefly shows a checkmark.
@@ -227,10 +252,8 @@ pub(crate) fn editable_list(
     let mut remove_idx = None;
     for (i, item) in items.iter().enumerate() {
         ui.horizontal(|ui| {
-            ui.add(
-                egui::Label::new(egui::RichText::new(item).monospace()).truncate(),
-            )
-            .on_hover_text(item);
+            ui.add(egui::Label::new(egui::RichText::new(item).monospace()).truncate())
+                .on_hover_text(item);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if std_button_small(ui, "×") {
                     remove_idx = Some(i);

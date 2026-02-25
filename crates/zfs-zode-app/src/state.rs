@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use zfs_core::{Cid, ProgramId, SectorId};
+use zfs_core::{ProgramId, SectorId};
 use zfs_crypto::SectorKey;
 use zfs_programs::zchat::ChannelId;
 use zfs_zode::ZodeStatus;
@@ -48,6 +48,60 @@ pub(crate) enum Tab {
     Chat,
     Info,
     Settings,
+    Identity,
+}
+
+pub(crate) struct IdentityState {
+    pub shares: Vec<zero_neural::ShamirShare>,
+    pub threshold: usize,
+    pub identity_id: [u8; 16],
+    pub verifying_key: Option<zero_neural::IdentityVerifyingKey>,
+    pub did: Option<String>,
+    pub show_shares: bool,
+    pub recovery_mode: bool,
+    pub recovery_inputs: Vec<String>,
+    pub recovery_input: String,
+    pub machine_keys: Vec<DerivedMachineKey>,
+    pub new_machine_id_hex: String,
+    pub new_epoch: u64,
+    pub cap_sign: bool,
+    pub cap_encrypt: bool,
+    pub cap_store: bool,
+    pub cap_fetch: bool,
+    pub error: Option<String>,
+}
+
+impl Default for IdentityState {
+    fn default() -> Self {
+        Self {
+            shares: Vec::new(),
+            threshold: 3,
+            identity_id: [0u8; 16],
+            verifying_key: None,
+            did: None,
+            show_shares: false,
+            recovery_mode: false,
+            recovery_inputs: Vec::new(),
+            recovery_input: String::new(),
+            machine_keys: Vec::new(),
+            new_machine_id_hex: String::new(),
+            new_epoch: 1,
+            cap_sign: true,
+            cap_encrypt: true,
+            cap_store: false,
+            cap_fetch: false,
+            error: None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) struct DerivedMachineKey {
+    pub machine_id: [u8; 16],
+    pub epoch: u64,
+    pub capabilities: zero_neural::MachineKeyCapabilities,
+    pub did: String,
+    pub public_key: zero_neural::MachinePublicKey,
 }
 
 pub(crate) struct DisplayMessage {
@@ -58,9 +112,23 @@ pub(crate) struct DisplayMessage {
 
 pub(crate) struct ChatUpdate {
     pub messages: Vec<DisplayMessage>,
-    pub last_head_cid: Option<Cid>,
-    pub version: u64,
     pub error: Option<String>,
+}
+
+impl ChatUpdate {
+    pub fn empty() -> Self {
+        Self {
+            messages: Vec::new(),
+            error: None,
+        }
+    }
+
+    pub fn error(msg: String) -> Self {
+        Self {
+            messages: Vec::new(),
+            error: Some(msg),
+        }
+    }
 }
 
 pub(crate) struct ChatState {
@@ -71,8 +139,6 @@ pub(crate) struct ChatState {
     pub channel_id: ChannelId,
     pub program_id: ProgramId,
     pub sector_id: SectorId,
-    pub last_head_cid: Option<Cid>,
-    pub version: u64,
     pub error: Option<String>,
     pub initialized: bool,
     pub scroll_to_bottom: bool,

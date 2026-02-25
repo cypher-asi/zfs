@@ -9,9 +9,6 @@ pub enum SdkError {
     #[error("network error: {0}")]
     Network(#[from] zfs_net::NetworkError),
 
-    #[error("proof error: {0}")]
-    Proof(#[from] zfs_proof::ProofError),
-
     #[error("core error: {0}")]
     Core(#[from] zfs_core::ZfsError),
 

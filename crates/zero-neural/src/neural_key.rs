@@ -6,11 +6,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// Generated via CSPRNG. Must be stored securely (e.g. encrypted at rest,
 /// Shamir-split for recovery). Zeroized on drop.
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct NeuralKey([u8; 32]);
+pub(crate) struct NeuralKey([u8; 32]);
 
 impl NeuralKey {
     /// Generate a new NeuralKey from a cryptographically secure RNG.
-    pub fn generate(rng: &mut (impl RngCore + CryptoRng)) -> Self {
+    pub(crate) fn generate(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
         Self(bytes)
@@ -21,11 +21,13 @@ impl NeuralKey {
         &self.0
     }
 
+    /// Copy the raw key material (needed by Shamir split).
+    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
     /// Reconstruct a NeuralKey from raw bytes (e.g. after Shamir recovery).
-    ///
-    /// # Safety
-    /// Caller must ensure the bytes come from a trusted source.
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+    pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 }
