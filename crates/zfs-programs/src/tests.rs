@@ -1,5 +1,7 @@
 use crate::program_topic;
-use crate::zchat::{sector_id_for_channel, ChannelId, ZChatDescriptor, ZChatMessage};
+use crate::zchat::{
+    sector_id_for_channel, sector_id_for_message, ChannelId, ZChatDescriptor, ZChatMessage,
+};
 use crate::zid::{ZidDescriptor, ZidMessage};
 
 #[test]
@@ -130,6 +132,47 @@ fn test_channel_id_reserved() {
     let ch = ChannelId::from_str_id(crate::zchat::TEST_CHANNEL_ID);
     assert_eq!(ch.as_bytes(), b"INTERLINK-MAIN");
     let _ = ch.sector_id();
+}
+
+#[test]
+fn sector_id_for_message_deterministic() {
+    let ch = ChannelId::from_str_id("general");
+    let s1 = sector_id_for_message(&ch, 1700000000000, "did:key:z6Mk...");
+    let s2 = sector_id_for_message(&ch, 1700000000000, "did:key:z6Mk...");
+    assert_eq!(s1, s2);
+}
+
+#[test]
+fn sector_id_for_message_differs_by_timestamp() {
+    let ch = ChannelId::from_str_id("general");
+    let s1 = sector_id_for_message(&ch, 1700000000000, "did:key:z6Mk...");
+    let s2 = sector_id_for_message(&ch, 1700000000001, "did:key:z6Mk...");
+    assert_ne!(s1, s2);
+}
+
+#[test]
+fn sector_id_for_message_differs_by_sender() {
+    let ch = ChannelId::from_str_id("general");
+    let s1 = sector_id_for_message(&ch, 1700000000000, "did:key:alice");
+    let s2 = sector_id_for_message(&ch, 1700000000000, "did:key:bob");
+    assert_ne!(s1, s2);
+}
+
+#[test]
+fn sector_id_for_message_differs_by_channel() {
+    let ch1 = ChannelId::from_str_id("general");
+    let ch2 = ChannelId::from_str_id("random");
+    let s1 = sector_id_for_message(&ch1, 1700000000000, "did:key:z6Mk...");
+    let s2 = sector_id_for_message(&ch2, 1700000000000, "did:key:z6Mk...");
+    assert_ne!(s1, s2);
+}
+
+#[test]
+fn sector_id_for_message_differs_from_channel_sector() {
+    let ch = ChannelId::from_str_id("general");
+    let channel_sid = sector_id_for_channel(&ch);
+    let msg_sid = sector_id_for_message(&ch, 0, "");
+    assert_ne!(channel_sid, msg_sid);
 }
 
 #[test]

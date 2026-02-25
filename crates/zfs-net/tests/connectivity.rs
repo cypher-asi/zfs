@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use tokio::time::timeout;
-use zfs_core::{ProgramId, SectorFetchRequest, SectorFetchResponse, SectorRequest, SectorResponse};
+use zfs_core::{
+    ProgramId, SectorLogLengthRequest, SectorLogLengthResponse, SectorRequest, SectorResponse,
+};
 use zfs_net::{NetworkConfig, NetworkEvent, NetworkService};
 
 async fn wait_for_listen_addr(zode: &mut NetworkService) -> zfs_net::Multiaddr {
@@ -78,8 +80,8 @@ async fn sector_request_response_round_trip() {
             if let Some(NetworkEvent::IncomingSectorRequest { channel, .. }) =
                 zode2.next_event().await
             {
-                let resp = SectorResponse::Fetch(SectorFetchResponse {
-                    payload: Some(vec![0xAB; 64]),
+                let resp = SectorResponse::LogLength(SectorLogLengthResponse {
+                    length: 42,
                     error_code: None,
                 });
                 zode2
@@ -101,9 +103,9 @@ async fn sector_request_response_round_trip() {
     .await
     .expect("connection timed out");
 
-    let request = SectorRequest::Fetch(SectorFetchRequest {
+    let request = SectorRequest::LogLength(SectorLogLengthRequest {
         program_id: ProgramId::from([0u8; 32]),
-        sector_id: zfs_core::SectorId::from_bytes(vec![1, 2, 3]),
+        sector_id: zfs_core::SectorId::from_bytes(vec![0xAA; 32]),
     });
     zode1.send_sector_request(&zode2_zode_id, request);
 
@@ -120,10 +122,10 @@ async fn sector_request_response_round_trip() {
     .expect("sector response timed out");
 
     match response {
-        SectorResponse::Fetch(f) => {
-            assert_eq!(f.payload, Some(vec![0xAB; 64]));
-            assert!(f.error_code.is_none());
+        SectorResponse::LogLength(r) => {
+            assert_eq!(r.length, 42);
+            assert!(r.error_code.is_none());
         }
-        other => panic!("expected Fetch response, got {other:?}"),
+        other => panic!("expected LogLength response, got {other:?}"),
     }
 }

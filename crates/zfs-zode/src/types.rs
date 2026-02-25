@@ -13,19 +13,20 @@ pub enum LogEvent {
     PeerDisconnected(String),
     /// A new peer was discovered via DHT.
     PeerDiscovered(String),
-    /// A sector store request was processed.
-    SectorStoreProcessed {
+    /// A sector append request was processed.
+    SectorAppendProcessed {
         program_id: String,
         sector_id: String,
+        index: Option<u64>,
         accepted: bool,
     },
-    /// A sector fetch request was processed.
-    SectorFetchProcessed {
+    /// A sector read-log request was processed.
+    SectorReadLogProcessed {
         program_id: String,
         sector_id: String,
-        found: bool,
+        entries: usize,
     },
-    /// A gossip sector was received and stored (or rejected).
+    /// A gossip sector append was received and stored (or rejected).
     GossipSectorReceived {
         program_id: String,
         sector_id: String,
@@ -42,30 +43,32 @@ impl fmt::Display for LogEvent {
             Self::PeerConnected(peer) => write!(f, "[PEER+] {peer}"),
             Self::PeerDisconnected(peer) => write!(f, "[PEER-] {peer}"),
             Self::PeerDiscovered(peer) => write!(f, "[DHT] discovered {peer}"),
-            Self::SectorStoreProcessed {
+            Self::SectorAppendProcessed {
                 program_id,
                 sector_id,
+                index,
                 accepted,
             } => {
                 let status = if *accepted { "OK" } else { "REJECT" };
+                let idx = index.map(|i| format!(" idx={i}")).unwrap_or_default();
                 write!(
                     f,
-                    "[SECTOR STORE {status}] prog={} sid={}",
+                    "[SECTOR APPEND {status}] prog={} sid={}{}",
                     &program_id[..8.min(program_id.len())],
-                    &sector_id[..8.min(sector_id.len())]
+                    &sector_id[..8.min(sector_id.len())],
+                    idx,
                 )
             }
-            Self::SectorFetchProcessed {
+            Self::SectorReadLogProcessed {
                 program_id,
                 sector_id,
-                found,
+                entries,
             } => {
-                let status = if *found { "FOUND" } else { "MISS" };
                 write!(
                     f,
-                    "[SECTOR FETCH {status}] prog={} sid={}",
+                    "[SECTOR READ] prog={} sid={} entries={entries}",
                     &program_id[..8.min(program_id.len())],
-                    &sector_id[..8.min(sector_id.len())]
+                    &sector_id[..8.min(sector_id.len())],
                 )
             }
             Self::GossipSectorReceived {
@@ -101,7 +104,7 @@ pub enum LogLevel {
 
 impl LogLevel {
     pub fn from_log_line(line: &str) -> Self {
-        if line.starts_with("[SECTOR STORE REJECT") || line.starts_with("[REJECT") {
+        if line.starts_with("[SECTOR APPEND REJECT") || line.starts_with("[REJECT") {
             Self::Reject
         } else if line.starts_with("[GOSSIP") {
             Self::Gossip

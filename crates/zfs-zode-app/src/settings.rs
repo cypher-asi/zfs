@@ -74,6 +74,7 @@ impl Settings {
             },
             topics: topic_set,
             sector_limits: Default::default(),
+            sector_filter: Default::default(),
             network,
         })
     }

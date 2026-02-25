@@ -10,118 +10,159 @@ fn open_temp_db() -> (RocksStorage, TempDir) {
     (storage, dir)
 }
 
-#[test]
-fn sector_put_get() {
-    let (db, _dir) = open_temp_db();
-    let pid = ProgramId::from([0x11; 32]);
-    let sid = SectorId::from_bytes(b"sector-1".to_vec());
+fn test_pid() -> ProgramId {
+    ProgramId::from([0x11; 32])
+}
 
-    assert!(db.get(&pid, &sid).expect("get").is_none());
-
-    db.put(&pid, &sid, b"payload-data", false, None)
-        .expect("put");
-    let got = db.get(&pid, &sid).expect("get").expect("some");
-    assert_eq!(got, b"payload-data");
+fn test_sid() -> SectorId {
+    SectorId::from_bytes(vec![0xAA; 32])
 }
 
 #[test]
-fn sector_write_once_rejects_overwrite() {
+fn append_and_read_log() {
     let (db, _dir) = open_temp_db();
-    let pid = ProgramId::from([0x22; 32]);
-    let sid = SectorId::from_bytes(b"once".to_vec());
+    let pid = test_pid();
+    let sid = test_sid();
 
-    db.put(&pid, &sid, b"v1", false, None).expect("put");
-    let err = db.put(&pid, &sid, b"v2", false, None);
-    assert!(err.is_err());
+    assert_eq!(db.log_length(&pid, &sid).expect("len"), 0);
+
+    let idx0 = db.append(&pid, &sid, b"entry-0").expect("append");
+    assert_eq!(idx0, 0);
+
+    let idx1 = db.append(&pid, &sid, b"entry-1").expect("append");
+    assert_eq!(idx1, 1);
+
+    assert_eq!(db.log_length(&pid, &sid).expect("len"), 2);
+
+    let entries = db.read_log(&pid, &sid, 0, 10).expect("read");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0], b"entry-0");
+    assert_eq!(entries[1], b"entry-1");
 }
 
 #[test]
-fn sector_overwrite_allowed() {
+fn read_log_with_offset() {
     let (db, _dir) = open_temp_db();
-    let pid = ProgramId::from([0x33; 32]);
-    let sid = SectorId::from_bytes(b"mutable".to_vec());
+    let pid = test_pid();
+    let sid = test_sid();
 
-    db.put(&pid, &sid, b"v1", false, None).expect("put");
-    db.put(&pid, &sid, b"v2", true, None).expect("overwrite");
-    let got = db.get(&pid, &sid).expect("get").expect("some");
-    assert_eq!(got, b"v2");
+    for i in 0..5u8 {
+        db.append(&pid, &sid, &[i]).expect("append");
+    }
+
+    let entries = db.read_log(&pid, &sid, 2, 10).expect("read");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0], &[2]);
+    assert_eq!(entries[1], &[3]);
+    assert_eq!(entries[2], &[4]);
+}
+
+#[test]
+fn read_log_max_entries() {
+    let (db, _dir) = open_temp_db();
+    let pid = test_pid();
+    let sid = test_sid();
+
+    for i in 0..10u8 {
+        db.append(&pid, &sid, &[i]).expect("append");
+    }
+
+    let entries = db.read_log(&pid, &sid, 0, 3).expect("read");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0], &[0]);
+    assert_eq!(entries[2], &[2]);
+}
+
+#[test]
+fn insert_at_idempotent() {
+    let (db, _dir) = open_temp_db();
+    let pid = test_pid();
+    let sid = test_sid();
+
+    assert!(db.insert_at(&pid, &sid, 0, b"first").expect("insert"));
+    assert!(!db.insert_at(&pid, &sid, 0, b"dup").expect("insert"));
+
+    let entries = db.read_log(&pid, &sid, 0, 10).expect("read");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0], b"first");
 }
 
 #[test]
 fn sector_stats() {
     let (db, _dir) = open_temp_db();
-    let pid = ProgramId::from([0x44; 32]);
+    let pid = test_pid();
+    let sid1 = SectorId::from_bytes(vec![0xAA; 32]);
+    let sid2 = SectorId::from_bytes(vec![0xBB; 32]);
 
-    db.put(
-        &pid,
-        &SectorId::from_bytes(b"s1".to_vec()),
-        b"aaa",
-        false,
-        None,
-    )
-    .expect("put");
-    db.put(
-        &pid,
-        &SectorId::from_bytes(b"s2".to_vec()),
-        b"bbb",
-        false,
-        None,
-    )
-    .expect("put");
+    db.append(&pid, &sid1, b"aaa").expect("append");
+    db.append(&pid, &sid1, b"bbb").expect("append");
+    db.append(&pid, &sid2, b"ccc").expect("append");
 
     let stats = db.sector_stats().expect("stats");
     assert_eq!(stats.sector_count, 2);
-    assert_eq!(stats.sector_size_bytes, 6);
+    assert_eq!(stats.entry_count, 3);
+    assert_eq!(stats.sector_size_bytes, 9);
 }
 
 #[test]
-fn sector_batch_put_and_get() {
+fn list_programs_and_sectors() {
     let (db, _dir) = open_temp_db();
-    let pid = ProgramId::from([0x55; 32]);
-    let entries = vec![
-        (
-            SectorId::from_bytes(b"b1".to_vec()),
-            b"data1".to_vec(),
-            false,
-            None,
-        ),
-        (
-            SectorId::from_bytes(b"b2".to_vec()),
-            b"data2".to_vec(),
-            false,
-            None,
-        ),
-    ];
+    let pid1 = ProgramId::from([0x11; 32]);
+    let pid2 = ProgramId::from([0x22; 32]);
+    let sid = test_sid();
 
-    let results = db.batch_put(&pid, &entries).expect("batch_put");
-    assert!(results.iter().all(|r| r.ok));
+    db.append(&pid1, &sid, b"a").expect("append");
+    db.append(&pid2, &sid, b"b").expect("append");
 
-    let sids = vec![
-        SectorId::from_bytes(b"b1".to_vec()),
-        SectorId::from_bytes(b"b2".to_vec()),
-    ];
-    let payloads = db.batch_get(&pid, &sids).expect("batch_get");
-    assert_eq!(payloads[0].as_deref(), Some(b"data1".as_slice()));
-    assert_eq!(payloads[1].as_deref(), Some(b"data2".as_slice()));
+    let programs = db.list_programs().expect("list");
+    assert_eq!(programs.len(), 2);
+
+    let sectors = db.list_sectors(&pid1).expect("list");
+    assert_eq!(sectors.len(), 1);
+    assert_eq!(sectors[0], sid);
 }
 
 #[test]
-fn reopen_persists_sector_data() {
+fn reopen_persists() {
     let dir = TempDir::new().expect("tempdir");
-    let pid = ProgramId::from([0x66; 32]);
-    let sid = SectorId::from_bytes(b"persist".to_vec());
+    let pid = test_pid();
+    let sid = test_sid();
 
     {
-        let config = StorageConfig::new(dir.path());
-        let db = RocksStorage::open(config).expect("open");
-        db.put(&pid, &sid, b"persistent", false, None)
-            .expect("put");
+        let db = RocksStorage::open(StorageConfig::new(dir.path())).expect("open");
+        db.append(&pid, &sid, b"persistent").expect("append");
     }
 
     {
-        let config = StorageConfig::new(dir.path());
-        let db = RocksStorage::open(config).expect("reopen");
-        let got = db.get(&pid, &sid).expect("get").expect("some");
-        assert_eq!(got, b"persistent");
+        let db = RocksStorage::open(StorageConfig::new(dir.path())).expect("reopen");
+        let entries = db.read_log(&pid, &sid, 0, 10).expect("read");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0], b"persistent");
     }
+}
+
+#[test]
+fn rejects_non_32_byte_sector_id() {
+    let (db, _dir) = open_temp_db();
+    let pid = test_pid();
+    let bad_sid = SectorId::from_bytes(b"too-short".to_vec());
+    assert!(db.append(&pid, &bad_sid, b"data").is_err());
+}
+
+#[test]
+fn multiple_sectors_per_program() {
+    let (db, _dir) = open_temp_db();
+    let pid = test_pid();
+    let sid1 = SectorId::from_bytes(vec![0x01; 32]);
+    let sid2 = SectorId::from_bytes(vec![0x02; 32]);
+
+    db.append(&pid, &sid1, b"s1-e0").expect("append");
+    db.append(&pid, &sid2, b"s2-e0").expect("append");
+    db.append(&pid, &sid1, b"s1-e1").expect("append");
+
+    assert_eq!(db.log_length(&pid, &sid1).expect("len"), 2);
+    assert_eq!(db.log_length(&pid, &sid2).expect("len"), 1);
+
+    let sectors = db.list_sectors(&pid).expect("list");
+    assert_eq!(sectors.len(), 2);
 }

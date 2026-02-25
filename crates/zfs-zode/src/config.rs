@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use zfs_core::ProgramId;
+use zfs_core::{ProgramId, SectorId};
 use zfs_net::NetworkConfig;
 use zfs_programs::{ZChatDescriptor, ZidDescriptor};
 use zfs_storage::StorageConfig;
@@ -46,6 +46,18 @@ impl DefaultProgramsConfig {
     }
 }
 
+/// Per-Zode filter controlling which sectors are served.
+///
+/// Applied after the program-level topic check. `All` means every sector
+/// under a subscribed program is accepted. `AllowList` restricts to an
+/// explicit set of sector IDs.
+#[derive(Debug, Clone, Default)]
+pub enum SectorFilter {
+    #[default]
+    All,
+    AllowList(HashSet<SectorId>),
+}
+
 /// Full Zode configuration.
 #[derive(Debug, Clone)]
 pub struct ZodeConfig {
@@ -57,6 +69,8 @@ pub struct ZodeConfig {
     pub topics: HashSet<ProgramId>,
     /// Sector-specific limits.
     pub sector_limits: SectorLimitsConfig,
+    /// Per-sector filter (default: accept all).
+    pub sector_filter: SectorFilter,
     /// Network (libp2p) configuration.
     pub network: NetworkConfig,
 }
@@ -74,7 +88,7 @@ impl ZodeConfig {
 /// Sector protocol storage limits.
 #[derive(Debug, Clone)]
 pub struct SectorLimitsConfig {
-    /// Maximum payload size per sector slot (bytes). Default: 256 KB.
+    /// Maximum payload size per sector entry (bytes). Default: 256 KB.
     pub max_slot_size_bytes: u64,
     /// Maximum total storage per program (bytes). `None` = unlimited.
     pub max_per_program_bytes: Option<u64>,
@@ -96,6 +110,7 @@ impl Default for ZodeConfig {
             default_programs: DefaultProgramsConfig::default(),
             topics: HashSet::new(),
             sector_limits: SectorLimitsConfig::default(),
+            sector_filter: SectorFilter::default(),
             network: NetworkConfig::default(),
         }
     }

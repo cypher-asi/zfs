@@ -52,6 +52,7 @@ impl Zode {
             Arc::clone(&storage),
             effective,
             config.sector_limits.clone(),
+            config.sector_filter.clone(),
             Arc::clone(&metrics),
         );
 
@@ -343,24 +344,20 @@ fn emit_sector_log(
     request: &zfs_core::SectorRequest,
     response: &zfs_core::SectorResponse,
 ) {
-    match request {
-        zfs_core::SectorRequest::Store(r) => {
-            let ok = matches!(response, zfs_core::SectorResponse::Store(s) if s.ok);
-            let _ = event_tx.send(LogEvent::SectorStoreProcessed {
+    match (request, response) {
+        (zfs_core::SectorRequest::Append(r), zfs_core::SectorResponse::Append(s)) => {
+            let _ = event_tx.send(LogEvent::SectorAppendProcessed {
                 program_id: r.program_id.to_hex(),
                 sector_id: r.sector_id.to_hex(),
-                accepted: ok,
+                index: s.index,
+                accepted: s.ok,
             });
         }
-        zfs_core::SectorRequest::Fetch(r) => {
-            let found = matches!(
-                response,
-                zfs_core::SectorResponse::Fetch(f) if f.error_code.is_none()
-            );
-            let _ = event_tx.send(LogEvent::SectorFetchProcessed {
+        (zfs_core::SectorRequest::ReadLog(r), zfs_core::SectorResponse::ReadLog(s)) => {
+            let _ = event_tx.send(LogEvent::SectorReadLogProcessed {
                 program_id: r.program_id.to_hex(),
                 sector_id: r.sector_id.to_hex(),
-                found,
+                entries: s.entries.len(),
             });
         }
         _ => {}

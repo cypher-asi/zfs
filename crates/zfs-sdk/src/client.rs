@@ -131,9 +131,10 @@ impl Client {
                 } => {
                     let mut pend = pending.lock().await;
                     if let Some(PendingRequest::Sector(tx)) = pend.remove(&request_id) {
-                        let _ = tx.send(zfs_core::SectorResponse::Store(
-                            zfs_core::SectorStoreResponse {
+                        let _ = tx.send(zfs_core::SectorResponse::Append(
+                            zfs_core::SectorAppendResponse {
                                 ok: false,
+                                index: None,
                                 error_code: Some(zfs_core::ErrorCode::InvalidPayload),
                             },
                         ));

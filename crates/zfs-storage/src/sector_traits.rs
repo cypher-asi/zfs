@@ -2,65 +2,53 @@ use zfs_core::{ProgramId, SectorId};
 
 use crate::StorageError;
 
-/// Entry for batch sector put: `(sector_id, payload, overwrite, expected_hash)`.
-pub type SectorBatchEntry = (SectorId, Vec<u8>, bool, Option<Vec<u8>>);
-
-/// Per-entry result of a sector batch put operation.
-#[derive(Debug)]
-pub struct SectorPutResult {
-    pub ok: bool,
-    pub error: Option<StorageError>,
-}
-
 /// Statistics for the sector column family.
 #[derive(Debug, Clone, Default)]
 pub struct SectorStorageStats {
-    /// Number of sector entries stored.
+    /// Number of distinct sectors (unique program_id + sector_id pairs).
     pub sector_count: u64,
+    /// Total number of log entries across all sectors.
+    pub entry_count: u64,
     /// Approximate size of sector data in bytes.
     pub sector_size_bytes: u64,
 }
 
-/// Key-value storage for encrypted sector payloads.
+/// Append-only log storage for encrypted sector entries.
 ///
-/// Each sector is identified by `(program_id, sector_id)`. Supports
-/// write-once semantics, mutable overwrites, and compare-and-swap.
+/// Each sector is an ordered sequence of entries identified by
+/// `(program_id, sector_id)`. Entries are indexed starting at 0.
+/// Key layout: `pid(32B) || sid(32B) || index(8B big-endian)`.
 pub trait SectorStore {
-    /// Store a sector payload.
-    ///
-    /// - `overwrite = false`: write-once; fails with `SlotOccupied` if key exists.
-    /// - `overwrite = true, expected_hash = None`: unconditional overwrite.
-    /// - `overwrite = true, expected_hash = Some(h)`: CAS — overwrites only if
-    ///   the SHA-256 of the current value matches `h`.
-    fn put(
+    /// Append an entry to the sector log. Returns the assigned index.
+    fn append(
         &self,
         program_id: &ProgramId,
         sector_id: &SectorId,
-        payload: &[u8],
-        overwrite: bool,
-        expected_hash: Option<&[u8]>,
-    ) -> Result<(), StorageError>;
+        entry: &[u8],
+    ) -> Result<u64, StorageError>;
 
-    /// Fetch a sector payload by program and sector ID.
-    fn get(
+    /// Store an entry at a specific index (for gossip replication).
+    /// Returns `true` if stored, `false` if the index already exists.
+    fn insert_at(
         &self,
         program_id: &ProgramId,
         sector_id: &SectorId,
-    ) -> Result<Option<Vec<u8>>, StorageError>;
+        index: u64,
+        entry: &[u8],
+    ) -> Result<bool, StorageError>;
 
-    /// Store multiple sectors in a batch. Returns one result per entry.
-    fn batch_put(
+    /// Read log entries starting from `from_index`, up to `max_entries`.
+    fn read_log(
         &self,
         program_id: &ProgramId,
-        entries: &[SectorBatchEntry],
-    ) -> Result<Vec<SectorPutResult>, StorageError>;
+        sector_id: &SectorId,
+        from_index: u64,
+        max_entries: usize,
+    ) -> Result<Vec<Vec<u8>>, StorageError>;
 
-    /// Fetch multiple sectors in a batch.
-    fn batch_get(
-        &self,
-        program_id: &ProgramId,
-        sector_ids: &[SectorId],
-    ) -> Result<Vec<Option<Vec<u8>>>, StorageError>;
+    /// Return the logical length of the sector log (max stored index + 1).
+    fn log_length(&self, program_id: &ProgramId, sector_id: &SectorId)
+        -> Result<u64, StorageError>;
 
     /// Sector storage statistics.
     fn sector_stats(&self) -> Result<SectorStorageStats, StorageError>;

@@ -6,6 +6,7 @@ use zfs_core::{ProgramId, SectorId, ZfsError};
 pub const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
 const CHANNEL_SECTOR_PREFIX: &[u8] = b"zchat/channel/";
+const MESSAGE_SECTOR_PREFIX: &[u8] = b"zchat/msg/";
 
 /// Interlink program descriptor.
 ///
@@ -52,8 +53,8 @@ impl ZChatDescriptor {
 
 /// Logical channel identifier for Interlink.
 ///
-/// One sector per channel; the SectorId is deterministically derived
-/// from the ChannelId.
+/// Chat messages use per-message sectors via [`sector_id_for_message`].
+/// The legacy per-channel sector ID is retained for non-chat uses.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ChannelId(#[serde(with = "serde_bytes")] Vec<u8>);
@@ -87,6 +88,26 @@ pub fn sector_id_for_channel(channel_id: &ChannelId) -> SectorId {
     let mut hasher = Sha256::new();
     hasher.update(CHANNEL_SECTOR_PREFIX);
     hasher.update(channel_id.as_bytes());
+    let hash: [u8; 32] = hasher.finalize().into();
+    SectorId::from_bytes(hash.to_vec())
+}
+
+/// Derive a unique write-once SectorId for a single chat message.
+///
+/// `SHA-256("zchat/msg/" || channel_id || "/" || timestamp_ms_le || "/" || sender_did)`.
+/// Practically collision-free: unique per sender per millisecond per channel.
+pub fn sector_id_for_message(
+    channel_id: &ChannelId,
+    timestamp_ms: u64,
+    sender_did: &str,
+) -> SectorId {
+    let mut hasher = Sha256::new();
+    hasher.update(MESSAGE_SECTOR_PREFIX);
+    hasher.update(channel_id.as_bytes());
+    hasher.update(b"/");
+    hasher.update(timestamp_ms.to_le_bytes());
+    hasher.update(b"/");
+    hasher.update(sender_did.as_bytes());
     let hash: [u8; 32] = hasher.finalize().into();
     SectorId::from_bytes(hash.to_vec())
 }

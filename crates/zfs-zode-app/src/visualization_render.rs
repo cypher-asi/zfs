@@ -1,8 +1,6 @@
 use eframe::egui;
 
-use crate::visualization::{
-    color_of, radius_of, Camera, GraphNode, NetworkVisualization,
-};
+use crate::visualization::{color_of, radius_of, Camera, GraphNode, NetworkVisualization};
 
 impl NetworkVisualization {
     pub fn render(&mut self, ui: &mut egui::Ui) {
@@ -21,8 +19,7 @@ impl NetworkVisualization {
         );
         let ui = &mut child_ui;
 
-        let (resp, painter) =
-            ui.allocate_painter(outer_rect.size(), egui::Sense::click_and_drag());
+        let (resp, painter) = ui.allocate_painter(outer_rect.size(), egui::Sense::click_and_drag());
         let rect = resp.rect;
         let center = rect.center();
 
@@ -102,13 +99,7 @@ impl NetworkVisualization {
         }
     }
 
-    fn paint_node_label(
-        &self,
-        painter: &egui::Painter,
-        node: &GraphNode,
-        sp: egui::Pos2,
-        r: f32,
-    ) {
+    fn paint_node_label(&self, painter: &egui::Painter, node: &GraphNode, sp: egui::Pos2, r: f32) {
         if node.is_local {
             painter.text(
                 sp + egui::vec2(0.0, r + 10.0),
@@ -156,12 +147,7 @@ impl NetworkVisualization {
         );
     }
 
-    fn handle_click_selection(
-        &mut self,
-        resp: &egui::Response,
-        center: egui::Pos2,
-        ui: &egui::Ui,
-    ) {
+    fn handle_click_selection(&mut self, resp: &egui::Response, center: egui::Pos2, ui: &egui::Ui) {
         if resp.clicked() {
             if let Some(pp) = resp.interact_pointer_pos() {
                 if let Some(idx) = self.hit_test(pp, center) {
@@ -322,11 +308,7 @@ struct GridParams {
 
 impl GridParams {
     fn fade(&self, y: f32) -> f32 {
-        ((y - self.top) / self.height)
-            .clamp(0.0, 1.0)
-            .powf(0.6)
-            * 0.85
-            + 0.15
+        ((y - self.top) / self.height).clamp(0.0, 1.0).powf(0.6) * 0.85 + 0.15
     }
 }
 

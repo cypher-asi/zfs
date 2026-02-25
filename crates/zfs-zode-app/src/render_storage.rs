@@ -30,14 +30,20 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
         .map(|(name, pid)| (pid, name))
         .collect();
 
+    render_stats_section(ui, zode);
+    ui.add_space(8.0);
+    render_programs_section(ui, zode, status, &known_programs);
+}
+
+fn render_stats_section(ui: &mut egui::Ui, zode: &zfs_zode::Zode) {
     section(ui, "Sector Storage", |ui| {
-        let stats = zode.storage().sector_stats();
-        match stats {
+        match zode.storage().sector_stats() {
             Ok(stats) => {
                 info_grid(ui, "sector_stats_grid", |ui| {
                     kv_row(ui, "Sectors", &format!("{}", stats.sector_count));
+                    kv_row(ui, "Entries", &format!("{}", stats.entry_count));
                     kv_row(ui, "Size", &format_bytes(stats.sector_size_bytes));
-                    kv_row(ui, "Protocol", "/zfs/sector/1.0.0");
+                    kv_row(ui, "Protocol", "/zfs/sector/2.0.0");
                 });
             }
             Err(e) => {
@@ -45,9 +51,14 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             }
         }
     });
+}
 
-    ui.add_space(8.0);
-
+fn render_programs_section(
+    ui: &mut egui::Ui,
+    zode: &zfs_zode::Zode,
+    status: &zfs_zode::ZodeStatus,
+    known_programs: &HashMap<zfs_core::ProgramId, &str>,
+) {
     section(ui, "Program Data", |ui| {
         ui.set_min_height(ui.available_height());
 
@@ -61,7 +72,7 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 for topic in &status.topics {
-                    render_program_entry(ui, zode, topic, &known_programs);
+                    render_program_entry(ui, zode, topic, known_programs);
                 }
             });
     });
@@ -102,10 +113,14 @@ fn render_sector_entry(
     sector_id: &zfs_core::SectorId,
 ) {
     let sid_hex = sector_id.to_hex();
-    let short = &sid_hex[..16.min(sid_hex.len())];
     let header_id = format!("sector_{sid_hex}");
+    let entry_count = zode
+        .storage()
+        .log_length(program_id, sector_id)
+        .unwrap_or(0);
+    let label = format!("  {sid_hex} ({entry_count} entries)");
 
-    egui::CollapsingHeader::new(egui::RichText::new(format!("  {sid_hex}")).monospace())
+    egui::CollapsingHeader::new(egui::RichText::new(label).monospace())
         .id_salt(&header_id)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -114,19 +129,33 @@ fn render_sector_entry(
                 copy_button(ui, &sid_hex);
             });
 
-            match SectorStore::get(zode.storage().as_ref(), program_id, sector_id) {
-                Ok(Some(data)) => render_sector_content(ui, &data, short),
-                Ok(None) => {
-                    ui.colored_label(colors::WARN, "Sector not found in local store.");
-                }
-                Err(e) => {
-                    ui.colored_label(colors::ERROR, format!("Read error: {e}"));
+            let entries = zode
+                .storage()
+                .read_log(program_id, sector_id, 0, 64)
+                .unwrap_or_default();
+            if entries.is_empty() {
+                muted_label(ui, "Empty sector log.");
+            } else {
+                for (i, data) in entries.iter().enumerate() {
+                    render_log_entry(ui, i, data, &sid_hex);
                 }
             }
         });
 }
 
-fn render_sector_content(ui: &mut egui::Ui, data: &[u8], short_sid: &str) {
+fn render_log_entry(ui: &mut egui::Ui, index: usize, data: &[u8], sid_hex: &str) {
+    let short = &sid_hex[..8.min(sid_hex.len())];
+    let entry_id = format!("entry_{short}_{index}");
+    let label = format!("  [{index}] {} bytes", data.len());
+
+    egui::CollapsingHeader::new(egui::RichText::new(label).monospace())
+        .id_salt(&entry_id)
+        .show(ui, |ui| {
+            render_entry_content(ui, data, &format!("{short}_{index}"));
+        });
+}
+
+fn render_entry_content(ui: &mut egui::Ui, data: &[u8], label: &str) {
     ui.horizontal(|ui| {
         field_label(ui, "Size");
         ui.label(format!(
@@ -136,10 +165,9 @@ fn render_sector_content(ui: &mut egui::Ui, data: &[u8], short_sid: &str) {
         ));
     });
 
-    render_text_preview(ui, data, short_sid);
-
+    render_text_preview(ui, data, label);
     ui.add_space(4.0);
-    render_hex_preview(ui, data, short_sid);
+    render_hex_preview(ui, data, label);
 }
 
 fn render_text_preview(ui: &mut egui::Ui, data: &[u8], short_sid: &str) {

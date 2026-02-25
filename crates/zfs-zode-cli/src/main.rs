@@ -133,6 +133,7 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
         },
         topics,
         sector_limits: Default::default(),
+        sector_filter: Default::default(),
         network,
     })
 }

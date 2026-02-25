@@ -1,6 +1,7 @@
 use zfs_core::{
-    ProgramId, SectorFetchRequest, SectorFetchResponse, SectorId, SectorRequest, SectorResponse,
-    SectorStoreRequest, SectorStoreResponse,
+    ProgramId, SectorAppendRequest, SectorAppendResponse, SectorId, SectorLogLengthRequest,
+    SectorLogLengthResponse, SectorReadLogRequest, SectorReadLogResponse, SectorRequest,
+    SectorResponse,
 };
 use zfs_crypto::{pad_to_bucket, unpad_from_bucket, SectorKey};
 
@@ -37,44 +38,62 @@ pub fn sector_decrypt(
     Ok(plaintext)
 }
 
-/// Store a sector via a connected Zode.
-pub async fn sector_store(
+/// Append an entry to a sector log via a connected Zode.
+pub async fn sector_append(
     client: &Client,
     program_id: &ProgramId,
     sector_id: &SectorId,
-    payload: &[u8],
-    overwrite: bool,
-    expected_hash: Option<Vec<u8>>,
-) -> Result<SectorStoreResponse, SdkError> {
-    let request = SectorRequest::Store(SectorStoreRequest {
+    entry: &[u8],
+) -> Result<SectorAppendResponse, SdkError> {
+    let request = SectorRequest::Append(SectorAppendRequest {
         program_id: *program_id,
         sector_id: sector_id.clone(),
-        payload: payload.to_vec(),
-        overwrite,
-        expected_hash,
+        entry: entry.to_vec(),
     });
 
     let response = send_sector_request(client, &request).await?;
     match response {
-        SectorResponse::Store(r) => Ok(r),
+        SectorResponse::Append(r) => Ok(r),
         _ => Err(SdkError::Other("unexpected sector response variant".into())),
     }
 }
 
-/// Fetch a sector from a connected Zode.
-pub async fn sector_fetch(
+/// Read log entries from a sector via a connected Zode.
+pub async fn sector_read_log(
     client: &Client,
     program_id: &ProgramId,
     sector_id: &SectorId,
-) -> Result<SectorFetchResponse, SdkError> {
-    let request = SectorRequest::Fetch(SectorFetchRequest {
+    from_index: u64,
+    max_entries: u32,
+) -> Result<SectorReadLogResponse, SdkError> {
+    let request = SectorRequest::ReadLog(SectorReadLogRequest {
+        program_id: *program_id,
+        sector_id: sector_id.clone(),
+        from_index,
+        max_entries,
+    });
+
+    let response = send_sector_request(client, &request).await?;
+    match response {
+        SectorResponse::ReadLog(r) => Ok(r),
+        _ => Err(SdkError::Other("unexpected sector response variant".into())),
+    }
+}
+
+/// Query the length of a sector log via a connected Zode.
+pub async fn sector_log_length(
+    client: &Client,
+    program_id: &ProgramId,
+    sector_id: &SectorId,
+) -> Result<SectorLogLengthResponse, SdkError> {
+    let request = SectorRequest::LogLength(SectorLogLengthRequest {
         program_id: *program_id,
         sector_id: sector_id.clone(),
     });
 
     let response = send_sector_request(client, &request).await?;
     match response {
-        SectorResponse::Fetch(r) => Ok(r),
+        SectorResponse::LogLength(r) => Ok(r),
         _ => Err(SdkError::Other("unexpected sector response variant".into())),
     }
 }

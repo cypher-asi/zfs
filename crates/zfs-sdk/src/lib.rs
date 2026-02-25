@@ -29,7 +29,9 @@ pub use identity::{
     derive_machine_keypair_from_shares, generate_identity, sign_with_shares, verify_shares,
     IdentityBundle, IdentityInfo,
 };
-pub use sector::{sector_decrypt, sector_encrypt, sector_fetch, sector_store};
+pub use sector::{
+    sector_append, sector_decrypt, sector_encrypt, sector_log_length, sector_read_log,
+};
 
 // Re-export frequently used types so callers don't need extra deps.
 pub use zero_neural::{

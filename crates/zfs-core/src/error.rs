@@ -36,10 +36,6 @@ impl fmt::Display for ErrorCode {
 /// Sector-specific store error with structured detail.
 #[derive(Debug, Error)]
 pub enum SectorStoreError {
-    #[error("slot occupied: sector already has a value")]
-    SlotOccupied,
-    #[error("condition failed: expected hash mismatch")]
-    ConditionFailed,
     #[error("batch too large: {0}")]
     BatchTooLarge(String),
 }
@@ -47,8 +43,6 @@ pub enum SectorStoreError {
 impl From<SectorStoreError> for ErrorCode {
     fn from(e: SectorStoreError) -> Self {
         match e {
-            SectorStoreError::SlotOccupied => Self::SlotOccupied,
-            SectorStoreError::ConditionFailed => Self::ConditionFailed,
             SectorStoreError::BatchTooLarge(_) => Self::BatchTooLarge,
         }
     }

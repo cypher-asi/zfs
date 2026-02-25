@@ -9,7 +9,7 @@ mod sector_traits;
 pub use config::{CompressionType, StorageConfig};
 pub use error::StorageError;
 pub use rocks::RocksStorage;
-pub use sector_traits::{SectorBatchEntry, SectorPutResult, SectorStorageStats, SectorStore};
+pub use sector_traits::{SectorStorageStats, SectorStore};
 
 #[cfg(test)]
 mod tests;

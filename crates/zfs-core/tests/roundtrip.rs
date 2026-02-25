@@ -174,38 +174,36 @@ fn zfs_error_io_has_no_code() {
     assert_eq!(err.error_code(), None);
 }
 
-// --- Sector protocol messages ---
+// --- Sector protocol messages (append model) ---
 
 #[test]
-fn sector_store_request_roundtrip() {
-    let req = SectorStoreRequest {
+fn sector_append_request_roundtrip() {
+    let req = SectorAppendRequest {
         program_id: ProgramId::from([0x11; 32]),
-        sector_id: SectorId::from_bytes(vec![1, 2, 3]),
-        payload: vec![0xAB; 64],
-        overwrite: false,
-        expected_hash: None,
+        sector_id: SectorId::from_bytes(vec![0xAA; 32]),
+        entry: vec![0xAB; 64],
     };
     let encoded = encode_canonical(&req).unwrap();
-    let decoded: SectorStoreRequest = decode_canonical(&encoded).unwrap();
+    let decoded: SectorAppendRequest = decode_canonical(&encoded).unwrap();
     assert_eq!(req, decoded);
 }
 
 #[test]
-fn sector_fetch_response_roundtrip() {
-    let resp = SectorFetchResponse {
-        payload: Some(vec![0xCD; 32]),
+fn sector_log_length_response_roundtrip() {
+    let resp = SectorLogLengthResponse {
+        length: 42,
         error_code: None,
     };
     let encoded = encode_canonical(&resp).unwrap();
-    let decoded: SectorFetchResponse = decode_canonical(&encoded).unwrap();
+    let decoded: SectorLogLengthResponse = decode_canonical(&encoded).unwrap();
     assert_eq!(resp, decoded);
 }
 
 #[test]
 fn sector_request_enum_roundtrip() {
-    let req = SectorRequest::Fetch(SectorFetchRequest {
+    let req = SectorRequest::LogLength(SectorLogLengthRequest {
         program_id: ProgramId::from([0x22; 32]),
-        sector_id: SectorId::from_bytes(vec![4, 5, 6]),
+        sector_id: SectorId::from_bytes(vec![0xBB; 32]),
     });
     let encoded = encode_canonical(&req).unwrap();
     let decoded: SectorRequest = decode_canonical(&encoded).unwrap();
@@ -213,14 +211,14 @@ fn sector_request_enum_roundtrip() {
 }
 
 #[test]
-fn gossip_sector_roundtrip() {
-    let gs = GossipSector {
+fn gossip_sector_append_roundtrip() {
+    let gs = GossipSectorAppend {
         program_id: ProgramId::from([0x33; 32]),
-        sector_id: SectorId::from_bytes(vec![7, 8]),
+        sector_id: SectorId::from_bytes(vec![0xCC; 32]),
+        index: 7,
         payload: vec![0xEF; 128],
-        overwrite: true,
     };
     let encoded = encode_canonical(&gs).unwrap();
-    let decoded: GossipSector = decode_canonical(&encoded).unwrap();
+    let decoded: GossipSectorAppend = decode_canonical(&encoded).unwrap();
     assert_eq!(gs, decoded);
 }

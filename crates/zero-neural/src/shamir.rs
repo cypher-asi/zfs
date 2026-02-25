@@ -24,16 +24,13 @@ impl ShamirShare {
         let raw = hex::decode(h)
             .map_err(|e| CryptoError::ShamirRecoveryFailed(format!("hex decode: {e}")))?;
         if raw.is_empty() {
-            return Err(CryptoError::ShamirRecoveryFailed(
-                "share is empty".into(),
-            ));
+            return Err(CryptoError::ShamirRecoveryFailed("share is empty".into()));
         }
         Ok(Self {
             index: raw[0],
             data: raw[1..].to_vec(),
         })
     }
-
 }
 
 impl core::fmt::Debug for ShamirShare {

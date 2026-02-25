@@ -1,159 +1,247 @@
-use sha2::{Digest, Sha256};
 use zfs_core::{ProgramId, SectorId};
 
 use crate::error::StorageError;
 use crate::rocks::{RocksStorage, CF_SECTORS};
-use crate::sector_traits::{SectorBatchEntry, SectorPutResult, SectorStorageStats, SectorStore};
+use crate::sector_traits::{SectorStorageStats, SectorStore};
+
+const PID_LEN: usize = 32;
+const SID_LEN: usize = 32;
+const IDX_LEN: usize = 8;
+const PREFIX_LEN: usize = PID_LEN + SID_LEN;
+const KEY_LEN: usize = PREFIX_LEN + IDX_LEN;
 
 impl SectorStore for RocksStorage {
-    fn put(
+    fn append(
         &self,
         program_id: &ProgramId,
         sector_id: &SectorId,
-        payload: &[u8],
-        overwrite: bool,
-        expected_hash: Option<&[u8]>,
-    ) -> Result<(), StorageError> {
-        let key = build_sector_key(program_id, sector_id);
+        entry: &[u8],
+    ) -> Result<u64, StorageError> {
+        validate_sector_id(sector_id)?;
         let cf = self.cf_handle(CF_SECTORS)?;
-
-        if !overwrite {
-            if self.db().get_cf(cf, &key)?.is_some() {
-                return Err(StorageError::SlotOccupied);
-            }
-            self.db().put_cf(cf, &key, payload)?;
-            return Ok(());
-        }
-
-        cas_put(self, cf, &key, payload, expected_hash)
+        let prefix = build_sector_prefix(program_id, sector_id);
+        let next_index = scan_max_index(self, cf, &prefix)?;
+        let key = build_entry_key(program_id, sector_id, next_index);
+        self.db().put_cf(cf, &key, entry)?;
+        Ok(next_index)
     }
 
-    fn get(
+    fn insert_at(
         &self,
         program_id: &ProgramId,
         sector_id: &SectorId,
-    ) -> Result<Option<Vec<u8>>, StorageError> {
-        let key = build_sector_key(program_id, sector_id);
+        index: u64,
+        entry: &[u8],
+    ) -> Result<bool, StorageError> {
+        validate_sector_id(sector_id)?;
         let cf = self.cf_handle(CF_SECTORS)?;
-        Ok(self.db().get_cf(cf, &key)?)
+        let key = build_entry_key(program_id, sector_id, index);
+        if self.db().get_cf(cf, &key)?.is_some() {
+            return Ok(false);
+        }
+        self.db().put_cf(cf, &key, entry)?;
+        Ok(true)
     }
 
-    fn batch_put(
+    fn read_log(
         &self,
         program_id: &ProgramId,
-        entries: &[SectorBatchEntry],
-    ) -> Result<Vec<SectorPutResult>, StorageError> {
-        let mut results = Vec::with_capacity(entries.len());
-        for (sector_id, payload, overwrite, expected_hash) in entries {
-            let hash_ref = expected_hash.as_deref();
-            match self.put(program_id, sector_id, payload, *overwrite, hash_ref) {
-                Ok(()) => results.push(SectorPutResult {
-                    ok: true,
-                    error: None,
-                }),
-                Err(e) => results.push(SectorPutResult {
-                    ok: false,
-                    error: Some(e),
-                }),
-            }
-        }
-        Ok(results)
+        sector_id: &SectorId,
+        from_index: u64,
+        max_entries: usize,
+    ) -> Result<Vec<Vec<u8>>, StorageError> {
+        validate_sector_id(sector_id)?;
+        let cf = self.cf_handle(CF_SECTORS)?;
+        let prefix = build_sector_prefix(program_id, sector_id);
+        let start = build_entry_key(program_id, sector_id, from_index);
+        read_entries(self, cf, &prefix, &start, max_entries)
     }
 
-    fn batch_get(
+    fn log_length(
         &self,
         program_id: &ProgramId,
-        sector_ids: &[SectorId],
-    ) -> Result<Vec<Option<Vec<u8>>>, StorageError> {
+        sector_id: &SectorId,
+    ) -> Result<u64, StorageError> {
+        validate_sector_id(sector_id)?;
         let cf = self.cf_handle(CF_SECTORS)?;
-        let mut results = Vec::with_capacity(sector_ids.len());
-        for sid in sector_ids {
-            let key = build_sector_key(program_id, sid);
-            results.push(self.db().get_cf(cf, &key)?);
-        }
-        Ok(results)
+        let prefix = build_sector_prefix(program_id, sector_id);
+        scan_max_index(self, cf, &prefix)
     }
 
     fn sector_stats(&self) -> Result<SectorStorageStats, StorageError> {
         let cf = self.cf_handle(CF_SECTORS)?;
-        let mut count = 0u64;
-        let mut size = 0u64;
-        let iter = self.db().iterator_cf(cf, rocksdb::IteratorMode::Start);
-        for item in iter {
-            let (_k, v) = item?;
-            count += 1;
-            size += v.len() as u64;
-        }
-        Ok(SectorStorageStats {
-            sector_count: count,
-            sector_size_bytes: size,
-        })
+        collect_stats(self, cf)
     }
 
     fn list_programs(&self) -> Result<Vec<ProgramId>, StorageError> {
         let cf = self.cf_handle(CF_SECTORS)?;
-        let mut programs = Vec::new();
-        let mut last_pid: Option<[u8; 32]> = None;
-        let iter = self.db().iterator_cf(cf, rocksdb::IteratorMode::Start);
-        for item in iter {
-            let (key, _) = item?;
-            if key.len() < 32 {
-                continue;
-            }
-            let pid_bytes: [u8; 32] = key[..32].try_into().unwrap();
-            if last_pid.as_ref() != Some(&pid_bytes) {
-                programs.push(ProgramId::from(pid_bytes));
-                last_pid = Some(pid_bytes);
-            }
-        }
-        Ok(programs)
+        collect_programs(self, cf)
     }
 
     fn list_sectors(&self, program_id: &ProgramId) -> Result<Vec<SectorId>, StorageError> {
         let cf = self.cf_handle(CF_SECTORS)?;
-        let prefix = program_id.as_bytes();
-        let iter = self.db().prefix_iterator_cf(cf, prefix);
-        let mut sectors = Vec::new();
-        for item in iter {
-            let (key, _) = item?;
-            if key.len() < 32 || &key[..32] != prefix {
-                break;
-            }
-            sectors.push(SectorId::from_bytes(key[32..].to_vec()));
-        }
-        Ok(sectors)
+        collect_sectors(self, cf, program_id)
     }
 }
 
-fn build_sector_key(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
-    let pid = program_id.as_bytes();
-    let sid = sector_id.as_bytes();
-    let mut key = Vec::with_capacity(pid.len() + sid.len());
-    key.extend_from_slice(pid);
-    key.extend_from_slice(sid);
+fn validate_sector_id(sector_id: &SectorId) -> Result<(), StorageError> {
+    if sector_id.as_bytes().len() != SID_LEN {
+        return Err(StorageError::Decode(format!(
+            "sector ID must be {SID_LEN} bytes, got {}",
+            sector_id.as_bytes().len()
+        )));
+    }
+    Ok(())
+}
+
+fn build_sector_prefix(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
+    let mut prefix = Vec::with_capacity(PREFIX_LEN);
+    prefix.extend_from_slice(program_id.as_bytes());
+    prefix.extend_from_slice(sector_id.as_bytes());
+    prefix
+}
+
+fn build_entry_key(program_id: &ProgramId, sector_id: &SectorId, index: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(KEY_LEN);
+    key.extend_from_slice(program_id.as_bytes());
+    key.extend_from_slice(sector_id.as_bytes());
+    key.extend_from_slice(&index.to_be_bytes());
     key
 }
 
-fn cas_put(
+/// Reverse-seek to find the highest stored index for a sector prefix.
+/// Returns `max_index + 1` (i.e. the next available index), or 0 if empty.
+fn scan_max_index(
     storage: &RocksStorage,
     cf: &rocksdb::ColumnFamily,
-    key: &[u8],
-    payload: &[u8],
-    expected_hash: Option<&[u8]>,
-) -> Result<(), StorageError> {
-    if let Some(expected) = expected_hash {
-        match storage.db().get_cf(cf, key)? {
-            Some(current) => {
-                let actual_hash = Sha256::digest(&current);
-                if actual_hash.as_slice() != expected {
-                    return Err(StorageError::ConditionFailed);
-                }
+    prefix: &[u8],
+) -> Result<u64, StorageError> {
+    let mut seek_key = prefix.to_vec();
+    seek_key.extend_from_slice(&u64::MAX.to_be_bytes());
+    let mode = rocksdb::IteratorMode::From(&seek_key, rocksdb::Direction::Reverse);
+    let mut iter = storage.db().iterator_cf(cf, mode);
+    match iter.next() {
+        Some(Ok((key, _))) if key.starts_with(prefix) => {
+            if key.len() != prefix.len() + IDX_LEN {
+                return Err(StorageError::Decode(
+                    "unexpected key length in sector log".into(),
+                ));
             }
-            None => {
-                return Err(StorageError::ConditionFailed);
-            }
+            // slice length validated above
+            let idx: [u8; IDX_LEN] = key[prefix.len()..]
+                .try_into()
+                .expect("slice is exactly IDX_LEN bytes");
+            Ok(u64::from_be_bytes(idx) + 1)
+        }
+        Some(Err(e)) => Err(StorageError::RocksDb(e)),
+        _ => Ok(0),
+    }
+}
+
+fn read_entries(
+    storage: &RocksStorage,
+    cf: &rocksdb::ColumnFamily,
+    prefix: &[u8],
+    start_key: &[u8],
+    max_entries: usize,
+) -> Result<Vec<Vec<u8>>, StorageError> {
+    let mode = rocksdb::IteratorMode::From(start_key, rocksdb::Direction::Forward);
+    let iter = storage.db().iterator_cf(cf, mode);
+    let mut entries = Vec::with_capacity(max_entries.min(64));
+    for item in iter {
+        if entries.len() >= max_entries {
+            break;
+        }
+        let (key, value) = item?;
+        if !key.starts_with(prefix) {
+            break;
+        }
+        entries.push(value.to_vec());
+    }
+    Ok(entries)
+}
+
+fn collect_stats(
+    storage: &RocksStorage,
+    cf: &rocksdb::ColumnFamily,
+) -> Result<SectorStorageStats, StorageError> {
+    let mut entry_count = 0u64;
+    let mut size = 0u64;
+    let mut sector_count = 0u64;
+    let mut last_sector: Option<Vec<u8>> = None;
+
+    let iter = storage.db().iterator_cf(cf, rocksdb::IteratorMode::Start);
+    for item in iter {
+        let (key, v) = item?;
+        if key.len() < PREFIX_LEN {
+            continue;
+        }
+        entry_count += 1;
+        size += v.len() as u64;
+
+        let sector_key = &key[..PREFIX_LEN];
+        let is_new = last_sector
+            .as_ref()
+            .is_none_or(|prev| prev.as_slice() != sector_key);
+        if is_new {
+            sector_count += 1;
+            last_sector = Some(sector_key.to_vec());
         }
     }
-    storage.db().put_cf(cf, key, payload)?;
-    Ok(())
+
+    Ok(SectorStorageStats {
+        sector_count,
+        entry_count,
+        sector_size_bytes: size,
+    })
+}
+
+fn collect_programs(
+    storage: &RocksStorage,
+    cf: &rocksdb::ColumnFamily,
+) -> Result<Vec<ProgramId>, StorageError> {
+    let mut programs = Vec::new();
+    let mut last_pid: Option<[u8; PID_LEN]> = None;
+    let iter = storage.db().iterator_cf(cf, rocksdb::IteratorMode::Start);
+    for item in iter {
+        let (key, _) = item?;
+        if key.len() < PID_LEN {
+            continue;
+        }
+        // length validated above
+        let pid: [u8; PID_LEN] = key[..PID_LEN]
+            .try_into()
+            .expect("slice is exactly PID_LEN bytes");
+        if last_pid.as_ref() != Some(&pid) {
+            programs.push(ProgramId::from(pid));
+            last_pid = Some(pid);
+        }
+    }
+    Ok(programs)
+}
+
+fn collect_sectors(
+    storage: &RocksStorage,
+    cf: &rocksdb::ColumnFamily,
+    program_id: &ProgramId,
+) -> Result<Vec<SectorId>, StorageError> {
+    let prefix = program_id.as_bytes().as_slice();
+    let iter = storage.db().prefix_iterator_cf(cf, prefix);
+    let mut sectors = Vec::new();
+    let mut last_sid: Option<[u8; SID_LEN]> = None;
+    for item in iter {
+        let (key, _) = item?;
+        if key.len() < PREFIX_LEN || &key[..PID_LEN] != prefix {
+            break;
+        }
+        // length validated above
+        let sid: [u8; SID_LEN] = key[PID_LEN..PREFIX_LEN]
+            .try_into()
+            .expect("slice is exactly SID_LEN bytes");
+        if last_sid.as_ref() != Some(&sid) {
+            sectors.push(SectorId::from_bytes(sid.to_vec()));
+            last_sid = Some(sid);
+        }
+    }
+    Ok(sectors)
 }

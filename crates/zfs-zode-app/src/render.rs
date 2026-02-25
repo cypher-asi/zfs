@@ -246,11 +246,7 @@ fn render_storage_status(ui: &mut egui::Ui, status: &zfs_zode::ZodeStatus) {
 fn render_metrics_status(ui: &mut egui::Ui, m: &zfs_zode::MetricsSnapshot) {
     section(ui, "Metrics", |ui| {
         info_grid(ui, "metrics_grid", |ui| {
-            kv_row(
-                ui,
-                "Sectors stored",
-                &format!("{}", m.sectors_stored_total),
-            );
+            kv_row(ui, "Sectors stored", &format!("{}", m.sectors_stored_total));
             kv_row(
                 ui,
                 "Rejections",
@@ -366,11 +362,7 @@ pub(crate) fn render_info(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapsh
             section(ui, "Zode Info", |ui| {
                 info_grid(ui, "info_grid", |ui| {
                     kv_row(ui, "Zode ID", &status.zode_id);
-                    kv_row(
-                        ui,
-                        "DB Size",
-                        &format_bytes(status.metrics.db_size_bytes),
-                    );
+                    kv_row(ui, "DB Size", &format_bytes(status.metrics.db_size_bytes));
                     kv_row(
                         ui,
                         "Sectors Stored",

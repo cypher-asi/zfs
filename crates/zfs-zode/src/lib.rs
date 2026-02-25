@@ -28,7 +28,7 @@ mod sector_handler;
 mod types;
 mod zode;
 
-pub use config::{DefaultProgramsConfig, SectorLimitsConfig, ZodeConfig};
+pub use config::{DefaultProgramsConfig, SectorFilter, SectorLimitsConfig, ZodeConfig};
 pub use error::ZodeError;
 pub use metrics::{MetricsSnapshot, ZodeMetrics};
 pub use types::{LogEvent, LogLevel, ZodeStatus};

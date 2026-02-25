@@ -46,12 +46,6 @@ pub mod testkit {
         capabilities: MachineKeyCapabilities,
     ) -> Result<MachineKeyPair, CryptoError> {
         let nk = NeuralKey::from_bytes(seed);
-        crate::derivation::derive_machine_keypair(
-            &nk,
-            identity_id,
-            machine_id,
-            epoch,
-            capabilities,
-        )
+        crate::derivation::derive_machine_keypair(&nk, identity_id, machine_id, epoch, capabilities)
     }
 }

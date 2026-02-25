@@ -110,25 +110,10 @@ pub(crate) struct DisplayMessage {
     pub timestamp_ms: u64,
 }
 
+/// Incremental update carrying only newly-discovered messages.
 pub(crate) struct ChatUpdate {
-    pub messages: Vec<DisplayMessage>,
+    pub new_messages: Vec<DisplayMessage>,
     pub error: Option<String>,
-}
-
-impl ChatUpdate {
-    pub fn empty() -> Self {
-        Self {
-            messages: Vec::new(),
-            error: None,
-        }
-    }
-
-    pub fn error(msg: String) -> Self {
-        Self {
-            messages: Vec::new(),
-            error: Some(msg),
-        }
-    }
 }
 
 pub(crate) struct ChatState {
@@ -138,6 +123,7 @@ pub(crate) struct ChatState {
     pub machine_did: String,
     pub channel_id: ChannelId,
     pub program_id: ProgramId,
+    /// Per-channel sector ID (one sector per channel in append model).
     pub sector_id: SectorId,
     pub error: Option<String>,
     pub initialized: bool,

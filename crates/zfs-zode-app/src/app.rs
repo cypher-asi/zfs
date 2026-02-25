@@ -214,7 +214,6 @@ impl ZodeApp {
     }
 }
 
-
 impl ZodeApp {
     fn sync_visualization(&mut self, state: &crate::state::StateSnapshot) {
         for event in &state.peer_events {
@@ -236,12 +235,7 @@ impl ZodeApp {
         }
     }
 
-    fn render_title_bar(
-        &mut self,
-        ctx: &egui::Context,
-        maximized: bool,
-        on_resize_edge: bool,
-    ) {
+    fn render_title_bar(&mut self, ctx: &egui::Context, maximized: bool, on_resize_edge: bool) {
         egui::TopBottomPanel::top("tabs")
             .frame(
                 egui::Frame::default()
@@ -266,18 +260,16 @@ impl ZodeApp {
 
                 ui.visuals_mut().widgets.active = ui.visuals().widgets.hovered;
                 ui.visuals_mut().selection.bg_fill = egui::Color32::TRANSPARENT;
-                ui.visuals_mut().selection.stroke =
-                    egui::Stroke::new(1.0, egui::Color32::WHITE);
+                ui.visuals_mut().selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
                 ui.visuals_mut().widgets.active.fg_stroke =
                     egui::Stroke::new(1.0, egui::Color32::WHITE);
 
                 ui.horizontal(|ui| {
                     self.render_tab_buttons(ui);
 
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| self.render_window_controls(ui),
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        self.render_window_controls(ui)
+                    });
                 });
 
                 Self::handle_title_bar_drag(ui, &title_resp, title_bar_rect, on_resize_edge);
@@ -363,10 +355,12 @@ impl ZodeApp {
         if on_resize_edge || title_resp.double_clicked() {
             return;
         }
-        let drag = ui.input(|i| match (i.pointer.press_origin(), i.pointer.hover_pos()) {
-            (Some(origin), Some(current)) => Some((origin, current)),
-            _ => None,
-        });
+        let drag = ui.input(
+            |i| match (i.pointer.press_origin(), i.pointer.hover_pos()) {
+                (Some(origin), Some(current)) => Some((origin, current)),
+                _ => None,
+            },
+        );
         if let Some((press_origin, current)) = drag {
             if title_bar_rect.contains(press_origin) && press_origin.distance(current) > 4.0 {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
@@ -374,11 +368,7 @@ impl ZodeApp {
         }
     }
 
-    fn render_central_panel(
-        &mut self,
-        ctx: &egui::Context,
-        state: &crate::state::StateSnapshot,
-    ) {
+    fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
         let central_frame = egui::Frame::default()
             .fill(egui::Color32::BLACK)
             .inner_margin(8.0);

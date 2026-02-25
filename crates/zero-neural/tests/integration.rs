@@ -1,11 +1,13 @@
-use zero_neural::testkit::{derive_identity_signing_key_from_seed, derive_machine_keypair_from_seed};
+use zero_neural::testkit::{
+    derive_identity_signing_key_from_seed, derive_machine_keypair_from_seed,
+};
 use zero_neural::*;
 
 fn test_identity() -> ([u8; 16], IdentitySigningKey) {
     let seed: [u8; 32] = rand::random();
     let identity_id: [u8; 16] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-        0x0f, 0x10,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10,
     ];
     let isk = derive_identity_signing_key_from_seed(seed, &identity_id).unwrap();
     (identity_id, isk)
@@ -13,12 +15,12 @@ fn test_identity() -> ([u8; 16], IdentitySigningKey) {
 
 fn test_machine_ids() -> ([u8; 16], [u8; 16]) {
     let identity_id: [u8; 16] = [
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
-        0x0f, 0x10,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+        0x10,
     ];
     let machine_id: [u8; 16] = [
-        0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE,
-        0xAF, 0xB0,
+        0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
+        0xB0,
     ];
     (identity_id, machine_id)
 }
@@ -46,10 +48,8 @@ fn deterministic_machine_key_derivation() {
     let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let mk1 =
-        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
-    let mk2 =
-        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk1 = derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk2 = derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
 
     assert_eq!(
         mk1.public_key().ed25519_bytes(),
@@ -64,10 +64,8 @@ fn different_epochs_produce_different_keys() {
     let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN;
 
-    let mk1 =
-        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
-    let mk2 =
-        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 2, caps).unwrap();
+    let mk1 = derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk2 = derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 2, caps).unwrap();
 
     assert_ne!(
         mk1.public_key().ed25519_bytes(),
@@ -98,8 +96,7 @@ fn machine_key_hybrid_sign_verify() {
     let (identity_id, machine_id) = test_machine_ids();
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let mk =
-        derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
+    let mk = derive_machine_keypair_from_seed(seed, &identity_id, &machine_id, 1, caps).unwrap();
     let pk = mk.public_key();
 
     let msg = b"machine key test message";
@@ -196,10 +193,8 @@ fn hybrid_encap_decap_round_trip() {
     let machine_b = [0x0Bu8; 16];
     let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
 
-    let mk_a =
-        derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
-    let mk_b =
-        derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
+    let mk_a = derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
+    let mk_b = derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
 
     let pk_b = mk_b.public_key();
     let (ss_sender, bundle) = pk_b.encapsulate(&mk_a).unwrap();
@@ -256,10 +251,8 @@ fn encap_bundle_round_trip_bytes() {
     let machine_b = [0x0Bu8; 16];
     let caps = MachineKeyCapabilities::all();
 
-    let mk_a =
-        derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
-    let mk_b =
-        derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
+    let mk_a = derive_machine_keypair_from_seed(seed_a, &identity_a, &machine_a, 1, caps).unwrap();
+    let mk_b = derive_machine_keypair_from_seed(seed_b, &identity_b, &machine_b, 1, caps).unwrap();
 
     let pk_b = mk_b.public_key();
     let (_, bundle) = pk_b.encapsulate(&mk_a).unwrap();

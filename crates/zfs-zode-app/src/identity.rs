@@ -289,20 +289,13 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
                     .fill(egui::Color32::from_rgb(20, 20, 22))
                     .rounding(0.0)
                     .inner_margin(8.0)
-                    .stroke(egui::Stroke::new(
-                        1.0,
-                        crate::components::colors::BORDER,
-                    ))
+                    .stroke(egui::Stroke::new(1.0, crate::components::colors::BORDER))
                     .show(ui, |ui| {
                         info_grid(ui, &format!("mk_{}", mk.did), |ui| {
                             kv_row_copyable(ui, "DID", &mk.did);
                             kv_row(ui, "Epoch", &mk.epoch.to_string());
                             kv_row(ui, "Caps", &format!("{:?}", mk.capabilities));
-                            kv_row(
-                                ui,
-                                "Machine ID",
-                                &hex::encode(mk.machine_id),
-                            );
+                            kv_row(ui, "Machine ID", &hex::encode(mk.machine_id));
                         });
                     });
                 ui.add_space(4.0);
@@ -351,7 +344,15 @@ fn derive_machine_key(app: &mut ZodeApp) {
     let result = std::thread::Builder::new()
         .name("neural-derive".into())
         .stack_size(8 * 1024 * 1024)
-        .spawn(move || derive_machine_keypair_from_shares(&shares, &identity_id, &machine_id_bytes, epoch, caps))
+        .spawn(move || {
+            derive_machine_keypair_from_shares(
+                &shares,
+                &identity_id,
+                &machine_id_bytes,
+                epoch,
+                caps,
+            )
+        })
         .expect("failed to spawn derivation thread")
         .join()
         .expect("derivation thread panicked");
