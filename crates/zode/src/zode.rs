@@ -43,22 +43,25 @@ impl Zode {
     /// unique storage path from the last 6 characters of the Zode ID,
     /// ensures proof keys exist, opens storage, and begins the event loop.
     pub async fn start(mut config: ZodeConfig) -> Result<Self, ZodeError> {
+        let has_keypair = config.network.keypair.is_some();
         let (network, zode_id, topic_strings, effective) = Self::start_network(&config).await?;
 
-        let zode_id_str = format_zode_id(&zode_id);
-        let suffix = &zode_id_str[zode_id_str.len().saturating_sub(6)..];
-        let base_name = config
-            .storage
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "zode-data".to_string());
-        let parent = config
-            .storage
-            .path
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."));
-        config.storage.path = parent.join(format!("{base_name}-{suffix}"));
+        if !has_keypair {
+            let zode_id_str = format_zode_id(&zode_id);
+            let suffix = &zode_id_str[zode_id_str.len().saturating_sub(6)..];
+            let base_name = config
+                .storage
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "zode-data".to_string());
+            let parent = config
+                .storage
+                .path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
+            config.storage.path = parent.join(format!("{base_name}-{suffix}"));
+        }
         let data_dir = config.storage.path.clone();
 
         let vk_dir = data_dir.join("proof_keys");
