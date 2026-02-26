@@ -195,7 +195,7 @@ impl NetworkVisualization {
         let (status_label, status_color) = if node.is_local {
             ("Local (YOU)", accent)
         } else if node.connected {
-            ("Connected", egui::Color32::from_rgb(100, 255, 100))
+            ("Connected", crate::components::colors::CONNECTED)
         } else {
             ("Discovered", egui::Color32::from_rgb(160, 160, 160))
         };

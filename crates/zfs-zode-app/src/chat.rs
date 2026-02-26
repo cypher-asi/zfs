@@ -523,15 +523,36 @@ fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
         ui.label(egui::RichText::new(format!("[{time}]")).monospace().weak());
         match msg.signature_status {
             SignatureStatus::Verified => {
-                ui.label(
-                    egui::RichText::new("\u{2713}")
-                        .color(egui::Color32::from_rgb(80, 200, 120)),
+                let size = 14.0;
+                let (resp, painter) = ui.allocate_painter(
+                    egui::Vec2::splat(size),
+                    egui::Sense::hover(),
                 );
+                let c = resp.rect.center();
+                painter.add(egui::Shape::line(
+                    vec![
+                        c + egui::vec2(-3.5, 0.5),
+                        c + egui::vec2(-1.0, 3.0),
+                        c + egui::vec2(4.5, -3.5),
+                    ],
+                    egui::Stroke::new(2.0, crate::components::colors::CONNECTED),
+                ));
             }
             SignatureStatus::Failed => {
-                ui.label(
-                    egui::RichText::new("\u{2717}")
-                        .color(egui::Color32::from_rgb(220, 60, 60)),
+                let size = 14.0;
+                let (resp, painter) = ui.allocate_painter(
+                    egui::Vec2::splat(size),
+                    egui::Sense::hover(),
+                );
+                let c = resp.rect.center();
+                let stroke = egui::Stroke::new(2.0, crate::components::colors::ERROR);
+                painter.line_segment(
+                    [c + egui::vec2(-3.0, -3.0), c + egui::vec2(3.0, 3.0)],
+                    stroke,
+                );
+                painter.line_segment(
+                    [c + egui::vec2(3.0, -3.0), c + egui::vec2(-3.0, 3.0)],
+                    stroke,
                 );
             }
             SignatureStatus::None => {}
