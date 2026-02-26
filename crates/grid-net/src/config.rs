@@ -13,6 +13,10 @@ pub struct NetworkConfig {
 
     /// Discovery settings (Kademlia DHT, mDNS).
     pub discovery: DiscoveryConfig,
+
+    /// Pre-existing libp2p keypair. When `Some`, the swarm reuses this
+    /// identity instead of generating a fresh one each launch.
+    pub keypair: Option<libp2p::identity::Keypair>,
 }
 
 /// Discovery configuration for Kademlia DHT and mDNS.
@@ -61,6 +65,7 @@ impl NetworkConfig {
             listen_addr,
             bootstrap_peers: Vec::new(),
             discovery: DiscoveryConfig::default(),
+            keypair: None,
         }
     }
 
@@ -73,6 +78,11 @@ impl NetworkConfig {
         self.discovery = discovery;
         self
     }
+
+    pub fn with_keypair(mut self, keypair: libp2p::identity::Keypair) -> Self {
+        self.keypair = Some(keypair);
+        self
+    }
 }
 
 impl Default for NetworkConfig {
@@ -83,6 +93,7 @@ impl Default for NetworkConfig {
                 .expect("well-known constant multiaddr"),
             bootstrap_peers: Vec::new(),
             discovery: DiscoveryConfig::default(),
+            keypair: None,
         }
     }
 }

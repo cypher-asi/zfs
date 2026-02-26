@@ -11,7 +11,9 @@ use crate::error::NetworkError;
 const GRID_SECTOR_PROTOCOL: &str = "/grid/sector/1.0.0";
 const GRID_KAD_PROTOCOL: &str = "/grid/kad/1.0.0";
 
-pub(crate) fn build_swarm() -> Result<libp2p::Swarm<GridBehaviour>, NetworkError> {
+pub(crate) fn build_swarm(
+    keypair: Option<libp2p::identity::Keypair>,
+) -> Result<libp2p::Swarm<GridBehaviour>, NetworkError> {
     let message_id_fn = |message: &gossipsub::Message| {
         let mut s = DefaultHasher::new();
         message.data.hash(&mut s);
@@ -25,7 +27,12 @@ pub(crate) fn build_swarm() -> Result<libp2p::Swarm<GridBehaviour>, NetworkError
         .build()
         .map_err(|e| NetworkError::Config(format!("{e}")))?;
 
-    let swarm = libp2p::SwarmBuilder::with_new_identity()
+    let builder = match keypair {
+        Some(kp) => libp2p::SwarmBuilder::with_existing_identity(kp),
+        None => libp2p::SwarmBuilder::with_new_identity(),
+    };
+
+    let swarm = builder
         .with_tokio()
         .with_tcp(
             libp2p::tcp::Config::default(),

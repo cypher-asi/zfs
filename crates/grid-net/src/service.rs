@@ -36,7 +36,7 @@ impl NetworkService {
         let max_discovery_dials = config.discovery.max_concurrent_discovery_dials;
         let kademlia_mode = config.discovery.kademlia_mode;
 
-        let mut swarm = build_swarm()?;
+        let mut swarm = build_swarm(config.keypair)?;
 
         if kademlia_enabled {
             let mode = match kademlia_mode {

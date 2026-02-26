@@ -34,6 +34,7 @@ pub use service::NetworkService;
 
 // Re-export libp2p types that appear in the public API so consumers
 // do not need a direct libp2p dependency.
+pub use libp2p::identity::Keypair;
 pub use libp2p::request_response::{OutboundRequestId, ResponseChannel};
 pub use libp2p::Multiaddr;
 
