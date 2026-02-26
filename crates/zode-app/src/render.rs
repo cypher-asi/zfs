@@ -153,75 +153,68 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
 // Status
 // ---------------------------------------------------------------------------
 
-const STATUS_FADE_DURATION: f64 = 0.6;
+const STATUS_FADE_DURATION: f64 = 0.5;
 
 pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
     let full_rect = ui.max_rect();
     let now = ui.input(|i| i.time);
-    let has_status = state.status.is_some();
 
-    if has_status && app.status_first_seen.is_none() {
+    if state.status.is_some() && app.status_first_seen.is_none() {
         app.status_first_seen = Some(now);
     }
+
+    let Some(ref status) = state.status else {
+        egui::Frame::default()
+            .fill(colors::SURFACE)
+            .rounding(0.0)
+            .inner_margin(0.0)
+            .outer_margin(egui::Margin::symmetric(1.0, 0.0))
+            .stroke(egui::Stroke::new(1.0, colors::BORDER))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_min_height(ui.available_height());
+                app.visualization.render(ui);
+            });
+        return;
+    };
+
+    egui::TopBottomPanel::bottom("status_sections_panel")
+        .resizable(false)
+        .frame(
+            egui::Frame::default()
+                .fill(egui::Color32::BLACK)
+                .inner_margin(egui::Margin {
+                    left: 1.0,
+                    right: 1.0,
+                    top: 8.0,
+                    bottom: 0.0,
+                }),
+        )
+        .show_inside(ui, |ui| {
+            render_zode_status(ui, status, state);
+            render_storage_status(ui, status);
+            render_metrics_status(ui, &status.metrics);
+        });
+
+    egui::Frame::default()
+        .fill(colors::SURFACE)
+        .rounding(0.0)
+        .inner_margin(0.0)
+        .outer_margin(egui::Margin::symmetric(1.0, 0.0))
+        .stroke(egui::Stroke::new(1.0, colors::BORDER))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_min_height(ui.available_height());
+            app.visualization.render(ui);
+        });
 
     let fade_t = app
         .status_first_seen
         .map(|start| ((now - start) / STATUS_FADE_DURATION).clamp(0.0, 1.0) as f32)
-        .unwrap_or(0.0);
+        .unwrap_or(1.0);
 
-    let fading = fade_t > 0.0 && fade_t < 1.0;
-    let show_grid_only = !has_status || (fading && fade_t < 0.5);
-
-    if show_grid_only {
-        egui::Frame::default()
-            .fill(colors::SURFACE)
-            .rounding(0.0)
-            .inner_margin(0.0)
-            .outer_margin(egui::Margin::symmetric(1.0, 0.0))
-            .stroke(egui::Stroke::new(1.0, colors::BORDER))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.set_min_height(ui.available_height());
-                app.visualization.render(ui);
-            });
-    } else if let Some(ref status) = state.status {
-        egui::TopBottomPanel::bottom("status_sections_panel")
-            .resizable(false)
-            .frame(
-                egui::Frame::default()
-                    .fill(egui::Color32::BLACK)
-                    .inner_margin(egui::Margin {
-                        left: 1.0,
-                        right: 1.0,
-                        top: 8.0,
-                        bottom: 0.0,
-                    }),
-            )
-            .show_inside(ui, |ui| {
-                render_zode_status(ui, status, state);
-                render_storage_status(ui, status);
-                render_metrics_status(ui, &status.metrics);
-            });
-
-        egui::Frame::default()
-            .fill(colors::SURFACE)
-            .rounding(0.0)
-            .inner_margin(0.0)
-            .outer_margin(egui::Margin::symmetric(1.0, 0.0))
-            .stroke(egui::Stroke::new(1.0, colors::BORDER))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.set_min_height(ui.available_height());
-                app.visualization.render(ui);
-            });
-    }
-
-    if fading {
-        let alpha = if fade_t < 0.5 {
-            (fade_t / 0.5 * 255.0) as u8
-        } else {
-            ((1.0 - (fade_t - 0.5) / 0.5) * 255.0) as u8
-        };
+    if fade_t < 1.0 {
+        let alpha = ((1.0 - fade_t) * 255.0) as u8;
         let painter = ui.ctx().layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::new("status_fade"),
