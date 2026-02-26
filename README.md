@@ -21,92 +21,13 @@ For the full wire format, cryptographic constructions, and behavioral rules, see
 
 ## Principles
 
-### Agency
-
-Users own their identity and data. The `zero-neural` crate generates identity
-key material entirely on the local device using Shamir secret sharing
-(`shamir-vault`). Shares are split across the user's own machines; no share
-ever leaves their control. The `grid-sdk` APIs `generate_identity` and
-`sign_with_shares` ensure that all signing happens client-side with no remote
-key custodian. There is no account creation flow and no server -- the user's
-key material **is** their account.
-
-### Privacy
-
-Data is encrypted before it leaves the client. `grid-crypto` applies Poseidon
-sponge encryption at the sector level over the BN254 scalar field, then wraps
-the per-sector symmetric key in a hybrid envelope (ChaCha20-Poly1305 + HKDF).
-Zode storage nodes only ever see opaque ciphertext; they cannot read sector
-contents. The `grid-proof-groth16` crate provides a Groth16 circuit that proves
-a sector is validly shaped and encrypted without revealing the plaintext,
-allowing the network to reject malformed data while preserving confidentiality.
-
-### Decentralization
-
-There is no central server or coordinator. `grid-net` runs a fully
-peer-to-peer libp2p stack over QUIC transport. Sectors propagate through
-GossipSub topics, direct sector exchanges happen over a request-response
-protocol, and peers discover each other through an optional Kademlia DHT. Every
-Zode node is equal; any node can join or leave the network without permission.
-
-### Post-Quantum Encryption
-
-Cryptographic primitives are chosen to resist quantum attacks. `zero-neural`
-implements a PQ-hybrid scheme that pairs classical Ed25519 signing with
-ML-DSA-65 (FIPS 204) and classical X25519 key agreement with ML-KEM-768
-(FIPS 203). Sector-level encryption uses the Poseidon hash over the BN254
-field (`ark-bn254`), producing ZK-friendly ciphertext that can be verified
-inside Groth16 circuits without conversion overhead.
-
-### Open Source
-
-The entire stack is MIT-licensed and published as a Rust workspace of
-composable crates. Every layer -- crypto, storage, networking, proofs, SDK, and
-UI -- is auditable and independently reusable. All crates enforce
-`#![forbid(unsafe_code)]`.
+- **Agency** -- Your key material is your account. Identity keys are generated on-device via Shamir secret sharing; shares never leave your machines. No server, no custodian.
+- **Privacy** -- Data is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope) before it touches the network. Groth16 proofs let nodes verify sector validity without seeing plaintext.
+- **Decentralization** -- Fully peer-to-peer over libp2p/QUIC. GossipSub propagation, request-response exchange, optional Kademlia DHT. No central server; any node can join or leave freely.
+- **Post-Quantum** -- PQ-hybrid cryptography: Ed25519 + ML-DSA-65 signing, X25519 + ML-KEM-768 key agreement. Sector encryption uses ZK-friendly Poseidon over BN254.
+- **Open Source** -- MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates enforce `#![forbid(unsafe_code)]`.
 
 ## Architecture
-
-```mermaid
-graph TD
-    ZeroNeural["zero-neural"]
-    GridCore["grid-core"]
-    GridCrypto["grid-crypto"]
-    GridStorage["grid-storage"]
-    GridProof["grid-proof"]
-    GridProofGroth16["grid-proof-groth16"]
-    GridNet["grid-net"]
-    GridSdk["grid-sdk"]
-    Zode["zode"]
-    ZodeApp["zode-app"]
-    ZodeCli["zode-cli"]
-    ProgramsZid["programs/zid"]
-    ProgramsInterlink["programs/interlink"]
-    ProgramsZfs["programs/zfs"]
-
-    ZeroNeural --> GridCore
-    GridCore --> GridCrypto
-    GridCore --> GridStorage
-    GridCore --> GridNet
-    GridCore --> ProgramsZid
-    GridCore --> ProgramsInterlink
-    GridCore --> ProgramsZfs
-    GridCrypto --> GridProof
-    GridCrypto --> GridProofGroth16
-    GridProof --> GridProofGroth16
-    GridCrypto --> GridSdk
-    GridNet --> GridSdk
-    GridNet --> Zode
-    GridStorage --> Zode
-    ProgramsZid --> Zode
-    ProgramsInterlink --> Zode
-    GridProof --> Zode
-    GridProofGroth16 --> Zode
-    GridSdk --> ZodeApp
-    Zode --> ZodeApp
-    Zode --> ZodeCli
-    GridNet --> ZodeCli
-```
 
 | Crate | Description |
 |---|---|
