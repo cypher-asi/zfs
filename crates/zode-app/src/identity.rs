@@ -9,7 +9,7 @@ use zid::{
 use crate::app::ZodeApp;
 use crate::components::{
     action_button, copy_button, editable_list, error_label, field_label, hint_label, info_grid,
-    kv_row, kv_row_copyable, section, section_heading, std_button,
+    kv_row, kv_row_copyable, section, std_button,
 };
 use crate::profile;
 use crate::state::DerivedMachineKey;
@@ -64,8 +64,6 @@ fn generate_new_identity(app: &mut ZodeApp) {
     let mut identity_id = [0u8; 16];
     rand::RngCore::fill_bytes(&mut rng, &mut identity_id);
 
-    // ML-DSA-65 key generation needs significant stack space; run on a
-    // dedicated thread to avoid overflowing the main (egui) thread stack.
     let result = std::thread::Builder::new()
         .name("neural-keygen".into())
         .stack_size(8 * 1024 * 1024)
@@ -86,6 +84,7 @@ fn generate_new_identity(app: &mut ZodeApp) {
             app.identity_state.did = Some(bundle.did);
             app.identity_state.show_shares = true;
             app.identity_state.error = None;
+            auto_derive_machine_key(app);
         }
         Err(e) => {
             app.identity_state.error = Some(format!("Generation failed: {e}"));
@@ -243,6 +242,7 @@ fn attempt_recovery(app: &mut ZodeApp) {
             app.identity_state.recovery_inputs.clear();
             app.identity_state.recovery_input.clear();
             app.identity_state.error = None;
+            auto_derive_machine_key(app);
         }
         Err(e) => {
             app.identity_state.error = Some(format!("Recovery failed: {e}"));
@@ -252,46 +252,13 @@ fn attempt_recovery(app: &mut ZodeApp) {
 
 fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "MACHINE KEYS", |ui| {
-        section_heading(ui, "DERIVE NEW KEY");
-        ui.add_space(6.0);
-
-        egui::Grid::new("machine_key_form")
-            .num_columns(2)
-            .spacing([12.0, 6.0])
-            .show(ui, |ui| {
-                field_label(ui, "Machine ID (hex)");
-                ui.add(
-                    egui::TextEdit::singleline(&mut app.identity_state.new_machine_id_hex)
-                        .desired_width(200.0)
-                        .hint_text("32 hex chars = 16 bytes"),
-                );
-                ui.end_row();
-
-                field_label(ui, "Epoch");
-                ui.add(egui::DragValue::new(&mut app.identity_state.new_epoch).range(0..=u64::MAX));
-                ui.end_row();
-            });
-
-        ui.add_space(4.0);
-
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut app.identity_state.cap_sign, "Sign");
-            ui.checkbox(&mut app.identity_state.cap_encrypt, "Encrypt");
-            ui.checkbox(&mut app.identity_state.cap_store, "Store");
-            ui.checkbox(&mut app.identity_state.cap_fetch, "Fetch");
-        });
-
-        ui.add_space(8.0);
-
-        if action_button(ui, "Derive Key") {
-            derive_machine_key(app);
-        }
-
-        if !app.identity_state.machine_keys.is_empty() {
-            ui.add_space(12.0);
-            section_heading(ui, "DERIVED KEYS");
-            ui.add_space(6.0);
-
+        if app.identity_state.machine_keys.is_empty() {
+            hint_label(ui, "No machine keys yet.");
+            ui.add_space(8.0);
+            if action_button(ui, "Derive Machine Key") {
+                auto_derive_machine_key(app);
+            }
+        } else {
             for mk in &app.identity_state.machine_keys {
                 egui::Frame::default()
                     .fill(egui::Color32::from_rgb(20, 20, 22))
@@ -303,51 +270,28 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
                             kv_row_copyable(ui, "DID", &mk.did);
                             kv_row(ui, "Epoch", &mk.epoch.to_string());
                             kv_row(ui, "Caps", &format!("{:?}", mk.capabilities));
-                            kv_row(ui, "Machine ID", &hex::encode(mk.machine_id));
                         });
                     });
                 ui.add_space(4.0);
+            }
+
+            if std_button(ui, "Derive Additional Key") {
+                auto_derive_machine_key(app);
             }
         }
     });
 }
 
-fn derive_machine_key(app: &mut ZodeApp) {
-    let hex_str = app.identity_state.new_machine_id_hex.trim();
-    let machine_id_bytes = match hex::decode(hex_str) {
-        Ok(b) if b.len() == 16 => {
-            let mut arr = [0u8; 16];
-            arr.copy_from_slice(&b);
-            arr
-        }
-        Ok(b) => {
-            app.identity_state.error =
-                Some(format!("Machine ID must be 16 bytes, got {}", b.len()));
-            return;
-        }
-        Err(e) => {
-            app.identity_state.error = Some(format!("Invalid hex: {e}"));
-            return;
-        }
-    };
+fn auto_derive_machine_key(app: &mut ZodeApp) {
+    let mut rng = rand::thread_rng();
+    let mut machine_id_bytes = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rng, &mut machine_id_bytes);
 
-    let mut caps = MachineKeyCapabilities::empty();
-    if app.identity_state.cap_sign {
-        caps |= MachineKeyCapabilities::SIGN;
-    }
-    if app.identity_state.cap_encrypt {
-        caps |= MachineKeyCapabilities::ENCRYPT;
-    }
-    if app.identity_state.cap_store {
-        caps |= MachineKeyCapabilities::STORE;
-    }
-    if app.identity_state.cap_fetch {
-        caps |= MachineKeyCapabilities::FETCH;
-    }
+    let caps = MachineKeyCapabilities::SIGN | MachineKeyCapabilities::ENCRYPT;
+    let epoch = (app.identity_state.machine_keys.len() as u64) + 1;
 
     let shares = app.identity_state.shares.clone();
     let identity_id = app.identity_state.identity_id;
-    let epoch = app.identity_state.new_epoch;
 
     let result = std::thread::Builder::new()
         .name("neural-derive".into())
@@ -372,7 +316,7 @@ fn derive_machine_key(app: &mut ZodeApp) {
             let keypair = Arc::new(kp);
             app.identity_state.machine_keys.push(DerivedMachineKey {
                 machine_id: machine_id_bytes,
-                epoch: app.identity_state.new_epoch,
+                epoch,
                 capabilities: caps,
                 did,
                 public_key: pk,
