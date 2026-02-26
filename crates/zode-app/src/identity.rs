@@ -24,9 +24,11 @@ pub(crate) fn render_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
         render_identity_info(app, ui);
         ui.add_space(4.0);
         render_machine_keys(app, ui);
+        ui.add_space(4.0);
         if app.identity_state.pending_save {
-            ui.add_space(4.0);
             render_save_profile(app, ui);
+        } else if app.active_profile_id.is_some() {
+            render_profile_panel(app, ui);
         }
     } else {
         render_no_identity(app, ui);
@@ -464,17 +466,55 @@ fn save_profile_to_disk(app: &mut ZodeApp) {
             },
         ) {
             Ok(meta) => {
-                app.active_profile_id = Some(meta.id);
+                app.active_profile_id = Some(meta.id.clone());
                 app.session_password = Some(password);
                 app.identity_state.save_password.clear();
                 app.identity_state.pending_save = false;
                 app.identity_state.save_status = Some("Profile saved.".into());
+                app.profiles.push(meta);
             }
             Err(e) => {
                 app.identity_state.save_status = Some(format!("Save failed: {e}"));
             }
         }
     }
+}
+
+fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    let profile_id = match app.active_profile_id.as_ref() {
+        Some(id) => id.clone(),
+        None => return,
+    };
+    let meta = app.profiles.iter().find(|p| p.id == profile_id).cloned();
+
+    section(ui, "PROFILE", |ui| {
+        if let Some(ref meta) = meta {
+            info_grid(ui, "profile_panel_grid", |ui| {
+                kv_row(ui, "Name", &meta.name);
+                if !meta.did.is_empty() {
+                    field_label(ui, "DID");
+                    ui.horizontal(|ui| {
+                        ui.monospace(truncate_did(&meta.did));
+                        copy_button(ui, &meta.did);
+                    });
+                    ui.end_row();
+                }
+                if !meta.peer_id.is_empty() {
+                    field_label(ui, "Peer");
+                    ui.horizontal(|ui| {
+                        ui.monospace(truncate_did(&meta.peer_id));
+                        copy_button(ui, &meta.peer_id);
+                    });
+                    ui.end_row();
+                }
+            });
+        }
+
+        if let Some(ref status) = app.identity_state.save_status {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(status).weak().italics());
+        }
+    });
 }
 
 fn truncate_did(did: &str) -> String {
