@@ -6,6 +6,8 @@ use tracing::{debug, error, info, warn};
 use zfs_core::ProofSystem;
 use zfs_net::{format_zode_id, NetworkEvent, NetworkService, ZodeId};
 use zfs_proof::{NoopVerifier, ProofVerifierRegistry};
+use zfs_proof_groth16::Groth16ShapeVerifier;
+use zfs_programs::ZChatDescriptor;
 use zfs_storage::{RocksStorage, SectorStore};
 
 use crate::config::ZodeConfig;
@@ -53,11 +55,27 @@ impl Zode {
 
         let mut proof_registry = ProofVerifierRegistry::new();
         proof_registry.register(ProofSystem::None, Arc::new(NoopVerifier));
-        // Groth16 verifier is registered externally when vks are loaded.
-        // Programs that require Groth16 will be added to program_proof_config.
+
+        let vk_dir = std::path::Path::new(&config.storage.path).join("proof_keys");
+        if vk_dir.exists() {
+            match Groth16ShapeVerifier::load(&vk_dir) {
+                Ok(verifier) => {
+                    info!(?vk_dir, "loaded Groth16 verifying keys");
+                    proof_registry
+                        .register(ProofSystem::Groth16, Arc::new(verifier));
+                }
+                Err(e) => {
+                    warn!(error = %e, "failed to load Groth16 verifying keys");
+                }
+            }
+        }
         let proof_registry = Arc::new(proof_registry);
 
-        let program_proof_config: HashMap<zfs_core::ProgramId, ProofSystem> = HashMap::new();
+        let mut program_proof_config: HashMap<zfs_core::ProgramId, ProofSystem> =
+            HashMap::new();
+        if let Ok(pid) = ZChatDescriptor::v2().program_id() {
+            program_proof_config.insert(pid, ProofSystem::Groth16);
+        }
 
         let sector_handler = SectorRequestHandler::new(
             Arc::clone(&storage),

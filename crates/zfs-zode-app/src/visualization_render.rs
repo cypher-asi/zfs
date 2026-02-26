@@ -2,6 +2,22 @@ use eframe::egui;
 
 use crate::visualization::{color_of, radius_of, Camera, GraphNode, NetworkVisualization};
 
+/// Produce a short, distinguishing label for a ZID.
+///
+/// Raw libp2p PeerIds share a common `"12D3KooW"` multicodec prefix, so
+/// the formatted `"Zx12D3KooW…"` string only becomes unique after 10
+/// characters.  We skip that prefix and show `"Zx..<unique>"` instead.
+fn short_zid(id: &str, unique_chars: usize) -> String {
+    const COMMON_PREFIX: &str = "Zx12D3KooW";
+    if id.starts_with(COMMON_PREFIX) {
+        let unique = &id[COMMON_PREFIX.len()..];
+        let tail = &unique[..unique_chars.min(unique.len())];
+        format!("Zx..{tail}")
+    } else {
+        id[..(unique_chars + 4).min(id.len())].to_string()
+    }
+}
+
 impl NetworkVisualization {
     pub fn render(&mut self, ui: &mut egui::Ui) {
         let peer_count = self
@@ -109,11 +125,11 @@ impl NetworkVisualization {
                 egui::Color32::WHITE,
             );
         } else if self.camera.zoom > 0.6 {
-            let short = &node.id[..8.min(node.id.len())];
+            let short = short_zid(&node.id, 6);
             painter.text(
                 sp + egui::vec2(0.0, r + 8.0),
                 egui::Align2::CENTER_TOP,
-                short,
+                &short,
                 egui::FontId::proportional(13.0),
                 egui::Color32::WHITE,
             );
@@ -130,13 +146,13 @@ impl NetworkVisualization {
         let node = &self.nodes[idx];
         let sp = self.world_to_screen(node.pos, center);
         let r = radius_of(node) * self.camera.zoom.sqrt();
-        let short = &node.id[..16.min(node.id.len())];
+        let short = short_zid(&node.id, 12);
         let tip = if node.is_local {
-            format!("YOU  {short}...")
+            format!("YOU  {short}")
         } else if node.connected {
-            format!("{short}...  connected")
+            format!("{short}  connected")
         } else {
-            format!("{short}...  discovered")
+            format!("{short}  discovered")
         };
         painter.text(
             sp + egui::vec2(r + 8.0, 0.0),

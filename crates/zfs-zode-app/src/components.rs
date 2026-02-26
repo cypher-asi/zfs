@@ -135,11 +135,6 @@ pub(crate) fn std_button(ui: &mut egui::Ui, label: &str) -> bool {
     styled_button(ui, label, egui::vec2(10.0, 4.0), 10.0)
 }
 
-/// Small button — same look, tighter padding for constrained spaces.
-pub(crate) fn std_button_small(ui: &mut egui::Ui, label: &str) -> bool {
-    styled_button(ui, label, egui::vec2(6.0, 3.0), 9.0)
-}
-
 /// Primary action button — uses standard style, slightly larger.
 pub(crate) fn action_button(ui: &mut egui::Ui, label: &str) -> bool {
     styled_button(ui, label, egui::vec2(12.0, 5.0), 11.0)
@@ -230,17 +225,30 @@ pub(crate) fn error_label(ui: &mut egui::Ui, text: &str) {
 // Editable list — text input + ADD button + removable monospace items
 // ---------------------------------------------------------------------------
 
+fn square_icon_button(ui: &mut egui::Ui, icon: &str) -> bool {
+    let size = egui::vec2(WIDGET_HEIGHT, WIDGET_HEIGHT);
+    ui.add(
+        egui::Button::new(egui::RichText::new(icon).size(ICON_SIZE).color(egui::Color32::WHITE))
+            .fill(egui::Color32::BLACK)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 60)))
+            .rounding(0.0)
+            .min_size(size),
+    )
+    .clicked()
+}
+
 pub(crate) fn editable_list(
     ui: &mut egui::Ui,
     items: &mut Vec<String>,
     input: &mut String,
     _input_width: f32,
 ) {
+    let btn_w = WIDGET_HEIGHT + ui.spacing().item_spacing.x;
+
     ui.horizontal(|ui| {
-        let button_space = 55.0;
-        let w = (ui.available_width() - button_space).max(80.0);
+        let w = (ui.available_width() - btn_w).max(80.0);
         let resp = ui.add(text_input(input, w));
-        if (std_button_small(ui, "Add")
+        if (square_icon_button(ui, egui_phosphor::regular::PLUS)
             || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
             && !input.trim().is_empty()
         {
@@ -252,13 +260,15 @@ pub(crate) fn editable_list(
     let mut remove_idx = None;
     for (i, item) in items.iter().enumerate() {
         ui.horizontal(|ui| {
-            ui.add(egui::Label::new(egui::RichText::new(item).monospace()).truncate())
-                .on_hover_text(item);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if std_button_small(ui, "×") {
-                    remove_idx = Some(i);
-                }
+            let label_w = ui.available_width() - btn_w;
+            let layout = egui::Layout::left_to_right(egui::Align::Center);
+            ui.allocate_ui_with_layout(egui::vec2(label_w, WIDGET_HEIGHT), layout, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(item).monospace()).truncate())
+                    .on_hover_text(item);
             });
+            if square_icon_button(ui, egui_phosphor::regular::X) {
+                remove_idx = Some(i);
+            }
         });
     }
     if let Some(idx) = remove_idx {

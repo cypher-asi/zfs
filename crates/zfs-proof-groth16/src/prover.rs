@@ -28,11 +28,12 @@ impl Groth16ShapeProver {
         Self { proving_keys: keys }
     }
 
-    /// Load proving keys from a directory. Files named `shape_pk_{bucket}.bin`.
+    /// Load proving keys from a directory. Files named `shape_pk_{bucket}_{version}.bin`.
     pub fn load(pk_dir: &Path) -> Result<Self, Groth16Error> {
+        let ver = crate::KEY_VERSION;
         let mut keys = HashMap::new();
         for bucket in &[1024u32, 4096] {
-            let path = pk_dir.join(format!("shape_pk_{bucket}.bin"));
+            let path = pk_dir.join(format!("shape_pk_{bucket}_{ver}.bin"));
             if path.exists() {
                 let data = std::fs::read(&path)
                     .map_err(|e| Groth16Error::SerializationError(e.to_string()))?;
@@ -113,12 +114,12 @@ impl Groth16ShapeProver {
 
         let mut ciphertext_elems = Vec::with_capacity(plaintext_elems.len());
         for chunk in plaintext_elems.chunks(2) {
-            for pt in chunk {
-                sponge.absorb(pt);
-            }
             let keystream: Vec<Fr> = sponge.squeeze_field_elements(chunk.len());
             for (pt, ks) in chunk.iter().zip(keystream.iter()) {
                 ciphertext_elems.push(*pt + *ks);
+            }
+            for pt in chunk {
+                sponge.absorb(pt);
             }
         }
 

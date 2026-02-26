@@ -16,6 +16,7 @@ zfs-programs = { path = "../zfs-programs" }
 zfs-net = { path = "../zfs-net" }
 zfs-crypto = { path = "../zfs-crypto" }
 zfs-sdk = { path = "../zfs-sdk" }
+zfs-proof-groth16 = { path = "../zfs-proof-groth16" }
 zero-neural = { path = "../zero-neural", features = ["testkit"] }
 rand = "0.8"
 eframe = "0.30"
@@ -29,3 +30,5 @@ anyhow = "1"
 hex = "0.4"
 hkdf = "0.12"
 sha2 = "0.10"
+ark-serialize = "0.5"
+ciborium = "0.2"

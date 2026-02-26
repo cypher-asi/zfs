@@ -31,11 +31,12 @@ impl Groth16ShapeVerifier {
         }
     }
 
-    /// Load verifying keys from a directory. Files named `shape_vk_{bucket}.bin`.
+    /// Load verifying keys from a directory. Files named `shape_vk_{bucket}_{version}.bin`.
     pub fn load(vk_dir: &Path) -> Result<Self, Groth16Error> {
+        let ver = crate::KEY_VERSION;
         let mut keys = HashMap::new();
         for bucket in &[1024u32, 4096] {
-            let path = vk_dir.join(format!("shape_vk_{bucket}.bin"));
+            let path = vk_dir.join(format!("shape_vk_{bucket}_{ver}.bin"));
             if path.exists() {
                 let data = std::fs::read(&path)
                     .map_err(|e| Groth16Error::SerializationError(e.to_string()))?;

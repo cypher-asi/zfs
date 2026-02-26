@@ -58,4 +58,21 @@ pub trait SectorStore {
 
     /// List all sector IDs stored for a given program.
     fn list_sectors(&self, program_id: &ProgramId) -> Result<Vec<SectorId>, StorageError>;
+
+    /// Persist a proof blob for a given sector log entry.
+    fn store_proof(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+        proof: &[u8],
+    ) -> Result<(), StorageError>;
+
+    /// Retrieve the proof blob for a given sector log entry, if any.
+    fn get_proof(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError>;
 }

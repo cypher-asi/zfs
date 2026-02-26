@@ -7628,6 +7628,7 @@ dependencies = [
 name = "zfs-zode"
 version = "0.1.0"
 dependencies = [
+ "ciborium",
  "serde",
  "serde_bytes",
  "tempfile",
@@ -7640,6 +7641,7 @@ dependencies = [
  "zfs-net",
  "zfs-programs",
  "zfs-proof",
+ "zfs-proof-groth16",
  "zfs-storage",
 ]
 
@@ -7648,6 +7650,8 @@ name = "zfs-zode-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-serialize",
+ "ciborium",
  "eframe",
  "egui-phosphor",
  "egui_extras",
@@ -7664,6 +7668,7 @@ dependencies = [
  "zfs-crypto",
  "zfs-net",
  "zfs-programs",
+ "zfs-proof-groth16",
  "zfs-sdk",
  "zfs-storage",
  "zfs-zode",

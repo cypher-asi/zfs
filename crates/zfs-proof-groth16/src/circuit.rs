@@ -7,7 +7,9 @@ use ark_ff::PrimeField;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 /// Bytes of usable data per BN254 field element.
-pub const BYTES_PER_ELEMENT: usize = 31;
+/// Must match the constant in `zfs-crypto::poseidon` — 30 data bytes
+/// keep the packed representation below the BN254 scalar-field modulus.
+pub const BYTES_PER_ELEMENT: usize = 30;
 
 /// Supported message-size buckets and corresponding max field elements.
 pub const BUCKET_1K: u32 = 1024;
@@ -76,13 +78,13 @@ impl ConstraintSynthesizer<Fr> for ShapeEncryptCircuit {
 
         let mut ciphertext_elems = Vec::with_capacity(self.plaintext_elems.len());
         for chunk in self.plaintext_elems.chunks(2) {
-            for pt in chunk {
-                sponge.absorb(pt);
-            }
             let keystream: Vec<Fr> = sponge.squeeze_field_elements(chunk.len());
             for (pt, ks) in chunk.iter().zip(keystream.iter()) {
                 let ct = *pt + *ks;
                 ciphertext_elems.push(ct);
+            }
+            for pt in chunk {
+                sponge.absorb(pt);
             }
         }
 

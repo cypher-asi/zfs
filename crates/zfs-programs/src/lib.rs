@@ -19,7 +19,7 @@ pub fn default_program_ids() -> Vec<(&'static str, ProgramId)> {
     if let Ok(pid) = ZidDescriptor::v1().program_id() {
         out.push(("ZID", pid));
     }
-    if let Ok(pid) = ZChatDescriptor::v1().program_id() {
+    if let Ok(pid) = ZChatDescriptor::v2().program_id() {
         out.push(("Interlink", pid));
     }
     out

@@ -38,7 +38,7 @@ impl DefaultProgramsConfig {
             }
         }
         if self.zchat {
-            if let Ok(pid) = ZChatDescriptor::v1().program_id() {
+            if let Ok(pid) = ZChatDescriptor::v2().program_id() {
                 set.insert(pid);
             }
         }

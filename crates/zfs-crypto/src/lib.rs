@@ -13,8 +13,8 @@ pub use encrypt::{decrypt_sector, encrypt_sector};
 pub use error::CryptoError;
 pub use padding::{pad_to_bucket, unpad_from_bucket};
 pub use poseidon::{
-    poseidon_decrypt, poseidon_decrypt_sector, poseidon_encrypt, poseidon_encrypt_sector,
-    poseidon_hash,
+    poseidon_ciphertext_hash, poseidon_decrypt, poseidon_decrypt_sector, poseidon_encrypt,
+    poseidon_encrypt_sector, poseidon_hash,
 };
 pub use sector_key::SectorKey;
 pub use wrap::{unwrap_sector_key, wrap_sector_key, KeyEnvelopeEntry};

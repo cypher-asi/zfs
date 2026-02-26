@@ -16,5 +16,5 @@ pub mod verifier;
 pub use circuit::ShapeEncryptCircuit;
 pub use error::Groth16Error;
 pub use prover::Groth16ShapeProver;
-pub use setup::generate_keys_for_bucket;
+pub use setup::{generate_keys_for_bucket, KEY_VERSION};
 pub use verifier::Groth16ShapeVerifier;

@@ -93,6 +93,17 @@ impl<S: SectorStore> SectorRequestHandler<S> {
         {
             Ok(index) => {
                 self.metrics.inc_sectors_stored();
+                if let Some(ref proof) = req.shape_proof {
+                    let mut buf = Vec::new();
+                    if ciborium::into_writer(proof, &mut buf).is_ok() {
+                        let _ = self.storage.store_proof(
+                            &req.program_id,
+                            &req.sector_id,
+                            index,
+                            &buf,
+                        );
+                    }
+                }
                 SectorAppendResponse {
                     ok: true,
                     index: Some(index),
@@ -262,6 +273,17 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             Ok(stored) => {
                 if stored {
                     self.metrics.inc_sectors_stored();
+                    if let Some(ref proof) = msg.shape_proof {
+                        let mut buf = Vec::new();
+                        if ciborium::into_writer(proof, &mut buf).is_ok() {
+                            let _ = self.storage.store_proof(
+                                &msg.program_id,
+                                &msg.sector_id,
+                                msg.index,
+                                &buf,
+                            );
+                        }
+                    }
                 }
                 true
             }
@@ -289,7 +311,13 @@ impl<S: SectorStore> SectorRequestHandler<S> {
 
         let shape_proof = proof.ok_or(ErrorCode::ProofInvalid)?;
 
-        let actual_ct_hash = zfs_crypto::poseidon_hash(entry);
+        let actual_ct_hash = match zfs_crypto::poseidon_ciphertext_hash(entry) {
+            Ok(h) => h,
+            Err(_) => {
+                debug!("failed to extract ciphertext elements for hash");
+                return Err(ErrorCode::ProofInvalid);
+            }
+        };
         if actual_ct_hash.as_slice() != shape_proof.ciphertext_hash.as_slice() {
             debug!("ciphertext hash mismatch — binding check failed");
             return Err(ErrorCode::ProofInvalid);

@@ -10,8 +10,12 @@ use crate::{CryptoError, SectorKey};
 const NONCE_LEN: usize = 32;
 const TAG_LEN: usize = 32;
 const RATE: usize = 2;
-/// Each BN254 field element holds at most 31 usable bytes.
-const BYTES_PER_ELEMENT: usize = 31;
+/// Each BN254 field element holds at most 30 usable data bytes.
+/// Position 0 is a length prefix, positions 1..=30 hold data, and
+/// position 31 (the LE MSB) is always zero — guaranteeing the 32-byte
+/// value is below the ~2^254 BN254 scalar-field modulus and
+/// `Fr::from_le_bytes_mod_order` is lossless.
+const BYTES_PER_ELEMENT: usize = 30;
 
 /// Poseidon sponge encryption.
 ///
@@ -147,6 +151,32 @@ pub fn poseidon_hash(data: &[u8]) -> [u8; 32] {
     }
     let out: Vec<Fr> = sponge.squeeze_field_elements(1);
     field_element_to_bytes_32(&out[0])
+}
+
+/// Compute the Poseidon hash of the ciphertext field elements inside a
+/// sealed blob (`nonce(32) || ct_elements || tag(32)`).
+///
+/// This matches the hash produced by the Groth16 prover/circuit, which
+/// absorbs the raw Fr ciphertext elements — **not** the length-prefixed
+/// byte packing used by [`poseidon_hash`].
+pub fn poseidon_ciphertext_hash(sealed: &[u8]) -> Result<[u8; 32], CryptoError> {
+    let min_len = NONCE_LEN + TAG_LEN;
+    if sealed.len() < min_len {
+        return Err(CryptoError::CiphertextTooShort {
+            len: sealed.len(),
+            min: min_len,
+        });
+    }
+    let ct_body = &sealed[NONCE_LEN..sealed.len() - TAG_LEN];
+    let ct_elems = bytes_to_field_elements_exact(ct_body)?;
+
+    let config = default_poseidon_config();
+    let mut sponge = PoseidonSponge::<Fr>::new(&config);
+    for e in &ct_elems {
+        sponge.absorb(e);
+    }
+    let out: Vec<Fr> = sponge.squeeze_field_elements(1);
+    Ok(field_element_to_bytes_32(&out[0]))
 }
 
 /// Encrypt plaintext for sector storage using Poseidon sponge.

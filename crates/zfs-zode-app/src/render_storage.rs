@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use eframe::egui;
+use zfs_core::ShapeProof;
 use zfs_storage::SectorStore;
 
 use crate::app::ZodeApp;
@@ -137,13 +138,21 @@ fn render_sector_entry(
                 muted_label(ui, "Empty sector log.");
             } else {
                 for (i, data) in entries.iter().enumerate() {
-                    render_log_entry(ui, i, data, &sid_hex);
+                    render_log_entry(ui, i, data, &sid_hex, zode, program_id, sector_id);
                 }
             }
         });
 }
 
-fn render_log_entry(ui: &mut egui::Ui, index: usize, data: &[u8], sid_hex: &str) {
+fn render_log_entry(
+    ui: &mut egui::Ui,
+    index: usize,
+    data: &[u8],
+    sid_hex: &str,
+    zode: &zfs_zode::Zode,
+    program_id: &zfs_core::ProgramId,
+    sector_id: &zfs_core::SectorId,
+) {
     let short = &sid_hex[..8.min(sid_hex.len())];
     let entry_id = format!("entry_{short}_{index}");
     let label = format!("  [{index}] {} bytes", data.len());
@@ -152,7 +161,70 @@ fn render_log_entry(ui: &mut egui::Ui, index: usize, data: &[u8], sid_hex: &str)
         .id_salt(&entry_id)
         .show(ui, |ui| {
             render_entry_content(ui, data, &format!("{short}_{index}"));
+            ui.add_space(4.0);
+            render_proof_section(ui, zode, program_id, sector_id, index, short);
         });
+}
+
+fn render_proof_section(
+    ui: &mut egui::Ui,
+    zode: &zfs_zode::Zode,
+    program_id: &zfs_core::ProgramId,
+    sector_id: &zfs_core::SectorId,
+    index: usize,
+    short_id: &str,
+) {
+    let proof_data = zode
+        .storage()
+        .get_proof(program_id, sector_id, index as u64)
+        .ok()
+        .flatten();
+
+    match proof_data {
+        Some(bytes) => match ciborium::from_reader::<ShapeProof, _>(&bytes[..]) {
+            Ok(proof) => {
+                let ct_hex = hex::encode(&proof.ciphertext_hash);
+                let schema_hex = hex::encode(&proof.schema_hash);
+                let system_label = match proof.proof_system {
+                    zfs_core::ProofSystem::Groth16 => "Groth16",
+                    zfs_core::ProofSystem::None => "None",
+                };
+
+                egui::CollapsingHeader::new(
+                    egui::RichText::new("Shape Proof")
+                        .color(egui::Color32::from_rgb(80, 200, 120)),
+                )
+                .id_salt(format!("proof_{short_id}_{index}"))
+                .show(ui, |ui| {
+                    info_grid(ui, &format!("proof_grid_{short_id}_{index}"), |ui| {
+                        kv_row(ui, "Proof System", system_label);
+                        kv_row(ui, "Size Bucket", &format!("{}", proof.size_bucket));
+                        kv_row(
+                            ui,
+                            "CT Hash",
+                            &ct_hex[..16.min(ct_hex.len())],
+                        );
+                        kv_row(
+                            ui,
+                            "Schema Hash",
+                            &schema_hex[..16.min(schema_hex.len())],
+                        );
+                        kv_row(
+                            ui,
+                            "Proof Bytes",
+                            &format!("{} bytes", proof.proof_bytes.len()),
+                        );
+                    });
+                });
+            }
+            Err(_) => {
+                muted_label(ui, "Proof data corrupted.");
+            }
+        },
+        None => {
+            muted_label(ui, "No proof attached.");
+        }
+    }
 }
 
 fn render_entry_content(ui: &mut egui::Ui, data: &[u8], label: &str) {

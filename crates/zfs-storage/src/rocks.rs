@@ -6,6 +6,7 @@ use crate::StorageConfig;
 
 const CF_METADATA: &str = "metadata";
 pub(crate) const CF_SECTORS: &str = "sectors";
+pub(crate) const CF_PROOFS: &str = "proofs";
 
 /// RocksDB-backed storage implementation.
 ///
@@ -33,7 +34,7 @@ impl RocksStorage {
             CompressionType::Zstd => rocksdb::DBCompressionType::Zstd,
         };
 
-        let cf_names = [CF_METADATA, CF_SECTORS];
+        let cf_names = [CF_METADATA, CF_SECTORS, CF_PROOFS];
         let cf_descriptors: Vec<ColumnFamilyDescriptor> = cf_names
             .iter()
             .map(|name| {

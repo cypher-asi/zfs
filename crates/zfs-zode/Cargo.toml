@@ -11,11 +11,13 @@ zfs-storage = { path = "../zfs-storage" }
 zfs-net = { path = "../zfs-net" }
 zfs-programs = { path = "../zfs-programs" }
 zfs-proof = { path = "../zfs-proof" }
+zfs-proof-groth16 = { path = "../zfs-proof-groth16" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
+ciborium = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

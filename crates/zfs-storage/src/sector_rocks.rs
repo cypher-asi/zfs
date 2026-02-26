@@ -1,7 +1,7 @@
 use zfs_core::{ProgramId, SectorId};
 
 use crate::error::StorageError;
-use crate::rocks::{RocksStorage, CF_SECTORS};
+use crate::rocks::{RocksStorage, CF_PROOFS, CF_SECTORS};
 use crate::sector_traits::{SectorStorageStats, SectorStore};
 
 const PID_LEN: usize = 32;
@@ -81,6 +81,30 @@ impl SectorStore for RocksStorage {
     fn list_sectors(&self, program_id: &ProgramId) -> Result<Vec<SectorId>, StorageError> {
         let cf = self.cf_handle(CF_SECTORS)?;
         collect_sectors(self, cf, program_id)
+    }
+
+    fn store_proof(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+        proof: &[u8],
+    ) -> Result<(), StorageError> {
+        let cf = self.cf_handle(CF_PROOFS)?;
+        let key = build_entry_key(program_id, sector_id, index);
+        self.db().put_cf(cf, &key, proof)?;
+        Ok(())
+    }
+
+    fn get_proof(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let cf = self.cf_handle(CF_PROOFS)?;
+        let key = build_entry_key(program_id, sector_id, index);
+        Ok(self.db().get_cf(cf, &key)?)
     }
 }
 
