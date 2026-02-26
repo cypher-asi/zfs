@@ -24,7 +24,7 @@ This document defines the Grid protocol in implementation-neutral terms. Any con
 | **SectorId** | An opaque 32-byte identifier. In the sector protocol, sector IDs MUST be exactly 32 bytes. |
 | **Entry** | A single encrypted blob appended to a sector log. Entries are indexed 0, 1, 2, ... |
 | **NeuralKey** | A 256-bit root secret from which all identity and machine keys are deterministically derived. |
-| **SectorKey** | A random 256-bit symmetric key used to encrypt sector entries. Algorithm is XChaCha20-Poly1305 or Poseidon sponge per program (§11). |
+| **SectorKey** | A random 256-bit symmetric key used to encrypt sector entries. Algorithm is XChaCha20-Poly1305 or Poseidon sponge per program (§6). |
 | **Topic** | A GossipSub topic string of the form `prog/<program_id_hex>`, used for subscription and data propagation. |
 
 ---
@@ -60,7 +60,7 @@ A CBOR map with at minimum:
 | `name` | text string | Short program name (e.g. `"zid"`, `"interlink"`) |
 | `version` | unsigned integer | Program version number |
 | `proof_required` | boolean | Whether Valid-Sector proofs are required |
-| `proof_system` | ProofSystem enum | Encryption and proof backend: `None` (XChaCha20-Poly1305) or `Groth16` (Poseidon sponge + shape proofs). See §11 and §17. |
+| `proof_system` | ProofSystem enum | Encryption and proof backend: `None` (XChaCha20-Poly1305) or `Groth16` (Poseidon sponge + shape proofs). See §6 and §13. |
 
 Program-specific descriptors MAY add additional fields. Two implementations that serialize the same descriptor fields to CBOR MUST produce the same ProgramId.
 
@@ -84,315 +84,9 @@ A libp2p PeerId. On the wire and in storage, the raw PeerId bytes are used. For 
 
 ---
 
-## 5. Topic Naming
+## 5. Cryptographic Primitives
 
-Programs are addressed on the network via GossipSub topics:
-
-```
-topic = "prog/" + hex(ProgramId)
-```
-
-Where `hex(ProgramId)` is the 64-character lowercase hex encoding of the 32-byte ProgramId.
-
-Zodes subscribe to one or more program topics and only accept requests for subscribed programs.
-
----
-
-## 6. Transport Layer
-
-### 6.1 Connection
-
-The Grid uses **libp2p** as its network substrate with the following transports:
-
-- **QUIC** (`/quic-v1`): Primary transport.
-- **TCP + Noise + Yamux**: Fallback transport.
-
-The default listen address is `/ip4/0.0.0.0/udp/0/quic-v1`.
-
-### 6.2 Protocols
-
-Three libp2p sub-protocols run on the same swarm:
-
-| Protocol String | Type | Purpose |
-|----------------|------|---------|
-| `/grid/sector/1.0.0` | Request-response (CBOR) | Client ↔ Zode sector operations |
-| `/grid/kad/1.0.0` | Kademlia DHT | Peer discovery |
-| GossipSub | Pub/sub | Data propagation across program topics |
-
-Sector requests and responses are serialized as CBOR and exchanged via libp2p's request-response protocol.
-
-### 6.3 GossipSub Configuration
-
-- **Message authentication**: Signed (libp2p keypair).
-- **Heartbeat interval**: 10 seconds.
-- **Validation mode**: Permissive.
-- **Message ID**: Derived from the hash of the message data (content-based deduplication).
-
-### 6.4 Peer Discovery
-
-#### 6.4.1 Bootstrap Peers
-
-Zodes accept a list of bootstrap peer multiaddrs in their configuration. On startup, the Zode dials each bootstrap peer.
-
-#### 6.4.2 Kademlia DHT
-
-When enabled, the Zode seeds the Kademlia routing table with bootstrap peers, triggers an initial `bootstrap()`, and periodically performs random walk queries (`get_closest_peers(random_peer_id)`) at a configurable interval (default: 30 seconds).
-
-Kademlia configuration:
-
-| Parameter | Default |
-|-----------|---------|
-| Protocol name | `/grid/kad/1.0.0` |
-| Query timeout | 60 seconds |
-| Mode | `Server` for Zodes, `Client` for SDK clients |
-| Random walk interval | 30 seconds |
-| Max concurrent discovery dials | 8 |
-
-Newly discovered peers are automatically dialed (up to the concurrency limit). Once connected, GossipSub and request-response operate automatically over the new peer.
-
----
-
-## 7. Sector Protocol — Wire Format
-
-The sector protocol is the primary client-to-Zode interface. It operates over `/grid/sector/1.0.0` as a request-response protocol.
-
-### 7.1 Request Envelope
-
-All requests are wrapped in a top-level enum:
-
-```
-SectorRequest = Append(SectorAppendRequest)
-              | ReadLog(SectorReadLogRequest)
-              | LogLength(SectorLogLengthRequest)
-              | BatchAppend(SectorBatchAppendRequest)
-              | BatchLogLength(SectorBatchLogLengthRequest)
-```
-
-### 7.2 Response Envelope
-
-```
-SectorResponse = Append(SectorAppendResponse)
-               | ReadLog(SectorReadLogResponse)
-               | LogLength(SectorLogLengthResponse)
-               | BatchAppend(SectorBatchAppendResponse)
-               | BatchLogLength(SectorBatchLogLengthResponse)
-```
-
-Response variants correspond 1:1 to request variants.
-
-### 7.3 Append
-
-Append a single encrypted entry to a sector log.
-
-**Request:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Target program |
-| `sector_id` | bytes(32) | Target sector |
-| `entry` | byte string | Encrypted payload |
-
-**Response:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ok` | boolean | Whether the append succeeded |
-| `index` | optional uint64 | The assigned log index (present on success) |
-| `error_code` | optional ErrorCode | Present on failure |
-
-### 7.4 ReadLog
-
-Read entries from a sector log starting at a given index.
-
-**Request:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Target program |
-| `sector_id` | bytes(32) | Target sector |
-| `from_index` | uint64 | First entry index to read |
-| `max_entries` | uint32 | Maximum entries to return (capped at 64) |
-
-**Response:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `entries` | array of byte strings | The requested entries, in index order |
-| `error_code` | optional ErrorCode | Present on failure |
-
-If the sector does not exist or `from_index` is past the end, an empty `entries` array is returned (not an error).
-
-### 7.5 LogLength
-
-Query the number of entries in a sector log.
-
-**Request:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Target program |
-| `sector_id` | bytes(32) | Target sector |
-
-**Response:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `length` | uint64 | Number of entries (0 if sector does not exist) |
-| `error_code` | optional ErrorCode | Present on failure |
-
-### 7.6 BatchAppend
-
-Append entries to multiple sectors under one program in a single round trip.
-
-**Request:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Target program (shared across all entries) |
-| `entries` | array of BatchAppendEntry | Up to 64 entries |
-
-Each `BatchAppendEntry`:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sector_id` | bytes(32) | Target sector |
-| `entry` | byte string | Encrypted payload |
-
-**Response:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `results` | array of AppendResult | Parallel to `entries` |
-
-Each `AppendResult`:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ok` | boolean | Success flag |
-| `index` | optional uint64 | Assigned index |
-| `error_code` | optional ErrorCode | Error detail |
-
-### 7.7 BatchLogLength
-
-Query log lengths for multiple sectors under one program.
-
-**Request:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Target program |
-| `sector_ids` | array of bytes(32) | Up to 64 sector IDs |
-
-**Response:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `results` | array of LogLengthResult | Parallel to `sector_ids` |
-| `error_code` | optional ErrorCode | Batch-level error only |
-
-Each `LogLengthResult`:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `length` | uint64 | Entry count |
-| `error_code` | optional ErrorCode | Per-sector error |
-
-### 7.8 Batch Limits
-
-- Maximum **64 entries** per batch request.
-- Maximum **4 MB total payload** per batch request.
-
-Zodes MUST reject batches exceeding these limits with `BatchTooLarge`.
-
-### 7.9 Error Codes
-
-Responses use a shared set of error codes:
-
-| Code | Meaning |
-|------|---------|
-| `StorageFull` | Zode's storage capacity exceeded |
-| `ProofInvalid` | Valid-Sector proof verification failed |
-| `PolicyReject` | Request rejected by Zode policy (program not subscribed, sector not in allowlist) |
-| `NotFound` | Requested data not present |
-| `InvalidPayload` | Malformed request or entry exceeds size limit |
-| `ProgramMismatch` | Program ID does not match subscription |
-| `SlotOccupied` | Reserved (write-once semantics) |
-| `BatchTooLarge` | Batch exceeds entry count or payload size limit |
-| `ConditionFailed` | Reserved (conditional write semantics) |
-
-Error codes are serialized as CBOR text strings.
-
----
-
-## 8. Gossip Replication
-
-When a Zode accepts an `Append` request from a client, it publishes a `GossipSectorAppend` message to the program's GossipSub topic (`prog/<program_id_hex>`). Other Zodes subscribed to that topic store the entry automatically.
-
-### 8.1 GossipSectorAppend
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `program_id` | bytes(32) | Program this entry belongs to |
-| `sector_id` | bytes(32) | Sector this entry belongs to |
-| `index` | uint64 | The assigned log index |
-| `payload` | byte string | The encrypted entry bytes |
-
-Serialized as canonical CBOR and published to GossipSub.
-
-### 8.2 Receiving Zode Behavior
-
-When a Zode receives a `GossipSectorAppend`:
-
-1. **Program check**: If the Zode does not serve `program_id`, discard.
-2. **Sector filter**: If the Zode uses an allowlist, check `sector_id`. Discard if not in the set.
-3. **Entry size check**: If the payload exceeds the Zode's max entry size limit, discard.
-4. **Idempotent insert**: Store the entry at the specified `index` if that index is not already occupied. If the index already exists, silently ignore (idempotent).
-5. **No re-gossip**: The Zode does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
-
----
-
-## 9. Zode Storage Model
-
-### 9.1 Append-Only Logs
-
-Each sector is an ordered sequence of entries indexed starting at 0. Sectors are identified by a composite key `(ProgramId, SectorId)`.
-
-### 9.2 Key Layout
-
-The storage key for a single entry is:
-
-```
-key = program_id (32 bytes) || sector_id (32 bytes) || index (8 bytes, big-endian)
-```
-
-Total key size: 72 bytes. All entries for a sector share the same 64-byte prefix.
-
-### 9.3 Operations
-
-| Operation | Behavior |
-|-----------|----------|
-| **append** | Find the maximum stored index via reverse-seek on the sector prefix, write at `max + 1`, return the new index. |
-| **insert_at** | Write at a specific index only if that index does not already exist (idempotent). Used for gossip replication. |
-| **read_log** | Forward-iterate from `from_index` within the sector prefix, return up to `max_entries` values. |
-| **log_length** | Reverse-seek to find the maximum stored index + 1. Returns 0 if the sector is empty. |
-
-### 9.4 Policy Enforcement
-
-Zodes enforce the following policies:
-
-| Policy | Description |
-|--------|-------------|
-| **Program allowlist** | Only serve programs in the effective topic set (enabled default programs + explicit configuration). Reject with `PolicyReject`. |
-| **Sector filter** | Optionally restrict to an explicit set of allowed sector IDs. Default: all sectors accepted. |
-| **Entry size limit** | Maximum payload size per entry. Default: 256 KB. Reject with `InvalidPayload`. |
-| **Batch limits** | Max 64 entries, max 4 MB total payload per batch. Reject with `BatchTooLarge`. |
-| **Per-program quota** | Optional maximum bytes per program. |
-
----
-
-## 10. Cryptographic Primitives
-
-### 10.1 Key Hierarchy
+### 5.1 Key Hierarchy
 
 All keys derive from a **NeuralKey** — a 256-bit secret generated by CSPRNG.
 
@@ -413,7 +107,7 @@ NeuralKey (256-bit CSPRNG)
 
 All four key types are always present in every MachineKeyPair. There is no classical-only mode.
 
-### 10.2 Key Derivation
+### 5.2 Key Derivation
 
 All derivation uses **HKDF-SHA256** with `salt = None` unless otherwise specified.
 
@@ -457,7 +151,7 @@ ML-KEM-768 keys are generated deterministically: the PQ encrypt seed is expanded
 
 These are passed to ML-KEM-768 deterministic key generation.
 
-### 10.3 Machine Key Capabilities
+### 5.3 Machine Key Capabilities
 
 Machine keys carry a bitflag:
 
@@ -470,7 +164,7 @@ Machine keys carry a bitflag:
 
 Capabilities are metadata and not enforced cryptographically — enforcement is at the application/policy layer.
 
-### 10.4 Hybrid Signatures
+### 5.4 Hybrid Signatures
 
 A **HybridSignature** always contains both components:
 
@@ -483,7 +177,7 @@ A **HybridSignature** always contains both components:
 
 Both components are produced by signing the same message. **Both MUST verify** for the signature to be considered valid. If either fails, the signature is rejected.
 
-### 10.5 Hybrid Key Encapsulation
+### 5.5 Hybrid Key Encapsulation
 
 Key agreement combines X25519 and ML-KEM-768:
 
@@ -509,7 +203,7 @@ The output is a `SharedSecret` (32 bytes) and an `EncapBundle`:
 
 An attacker must break **both** X25519 and ML-KEM-768 to recover the shared secret. If the X25519 DH produces an all-zero shared secret, the operation MUST fail.
 
-### 10.6 DID Encoding
+### 5.6 DID Encoding
 
 Ed25519 public keys are encoded as `did:key` identifiers:
 
@@ -519,7 +213,7 @@ did:key:z + base58btc(0xed01 || ed25519_public_key_bytes)
 
 The multicodec prefix `0xed01` identifies Ed25519 public keys.
 
-### 10.7 Shamir Secret Sharing
+### 5.7 Shamir Secret Sharing
 
 The NeuralKey MAY be split into Shamir shares for backup and recovery:
 
@@ -532,15 +226,15 @@ Identity generation, signing, and machine key derivation can all operate by **ep
 
 ---
 
-## 11. Sector Encryption
+## 6. Sector Encryption
 
-Sector encryption supports two algorithms. The choice is per-program via `proof_system` in the ProgramDescriptor (§4.2): `None` uses XChaCha20-Poly1305; `Groth16` uses Poseidon sponge (required for shape proofs, §17).
+Sector encryption supports two algorithms. The choice is per-program via `proof_system` in the ProgramDescriptor (§4.2): `None` uses XChaCha20-Poly1305; `Groth16` uses Poseidon sponge (required for shape proofs, §13).
 
-### 11.1 SectorKey
+### 6.1 SectorKey
 
-A SectorKey is a random 256-bit symmetric key generated via CSPRNG. It is the key material for encrypting and decrypting sector entries. Key wrapping (§11.5) is unchanged regardless of encryption algorithm.
+A SectorKey is a random 256-bit symmetric key generated via CSPRNG. It is the key material for encrypting and decrypting sector entries. Key wrapping (§6.5) is unchanged regardless of encryption algorithm.
 
-### 11.2 XChaCha20-Poly1305 (proof_system = None)
+### 6.2 XChaCha20-Poly1305 (proof_system = None)
 
 **Algorithm:** XChaCha20-Poly1305 (AEAD)
 
@@ -552,7 +246,7 @@ sealed = nonce (24 bytes) || ciphertext || tag (16 bytes)
 - **AAD** (Associated Authenticated Data): `program_id (32 bytes) || sector_id (32 bytes)`. This binds the ciphertext to its program and sector, preventing cross-program and cross-sector ciphertext relocation.
 - The nonce is prepended to the ciphertext in the sealed output.
 
-### 11.3 Poseidon Sponge (proof_system = Groth16)
+### 6.3 Poseidon Sponge (proof_system = Groth16)
 
 **Parameters:** BN254 scalar field, rate=2, capacity=1.
 
@@ -567,9 +261,9 @@ sealed = nonce (32 bytes) || ciphertext_elements (32 bytes each) || tag (32 byte
 - **Ciphertext**: Plaintext is split into 32-byte (256-bit) field elements; sponge absorbs key and nonce, then XORs/absorbs plaintext elements. Output elements form `ciphertext_elements`.
 - **Tag**: Final 32-byte output authenticates the entire encryption (AAD + ciphertext).
 
-The Poseidon sponge construction enables shape-proof circuits (§17) that prove ciphertext integrity without revealing plaintext.
+The Poseidon sponge construction enables shape-proof circuits (§13) that prove ciphertext integrity without revealing plaintext.
 
-### 11.4 Padding
+### 6.4 Padding
 
 Before encryption, content MUST be padded to fixed-size buckets to resist payload-size analysis. Buckets grow in powers of two (2× progression):
 
@@ -596,13 +290,13 @@ padded = content_length (4 bytes, little-endian) || content || 0x00 * (bucket_si
 
 On decryption, the receiver reads the 4-byte length prefix, extracts `content[0..length]`, and discards trailing zeros.
 
-### 11.5 Key Wrapping
+### 6.5 Key Wrapping
 
 To share a SectorKey with a recipient, the sender performs a two-step wrap:
 
 **Step 1 — Hybrid key agreement:**
 
-Performed between the sender's MachineKeyPair and the recipient's MachinePublicKey using the hybrid encapsulation described in §10.5. This produces a `SharedSecret` and an `EncapBundle`.
+Performed between the sender's MachineKeyPair and the recipient's MachinePublicKey using the hybrid encapsulation described in §5.5. This produces a `SharedSecret` and an `EncapBundle`.
 
 **Step 2 — Context-bound wrapping:**
 
@@ -631,7 +325,7 @@ The result is a **KeyEnvelopeEntry**:
 
 Each entry is approximately 1,192 bytes (dominated by the ML-KEM ciphertext).
 
-### 11.6 Sector ID Derivation
+### 6.6 Sector ID Derivation
 
 For metadata-private storage, sector IDs are derived client-side via two-step HKDF:
 
@@ -672,9 +366,432 @@ Examples:
 
 ---
 
-## 12. Standard Programs
+## 7. Message Signing
 
-### 12.1 ZID (Zero Identity)
+Message signing provides authenticity and integrity for entries within the encrypted blob. Signatures are PQ-hybrid (Ed25519 + ML-DSA-65) and are produced before encryption, verified after decryption.
+
+### 7.1 Placement
+
+Signatures live **inside** the encrypted payload. The Zode never sees plaintext; signature verification is end-to-end between sender and recipient. Only parties with the SectorKey can decrypt and verify.
+
+### 7.2 Signable Bytes
+
+For a message with a signature field:
+
+```
+signable_bytes = canonical_cbor(all_fields_except_signature)
+```
+
+Fields MUST be serialized in deterministic CBOR order. The signature field is excluded from the input to the signing function.
+
+### 7.3 HybridSignature Format
+
+| Component | Size | Description |
+|-----------|------|-------------|
+| Ed25519 | 64 bytes | Classical signature |
+| ML-DSA-65 | 3,309 bytes | Post-quantum signature |
+
+**Binary format:** `Ed25519 (64) || ML-DSA-65 (3309)` = 3,373 bytes total
+
+Both components sign the same `signable_bytes`. **Both MUST verify** for the signature to be valid.
+
+### 7.4 Signing and Verification Flow
+
+1. **Signing**: Client computes `signable_bytes`, signs with Ed25519 and ML-DSA-65, appends `HybridSignature` to the message, then encrypts the full blob.
+2. **Verification**: Recipient decrypts, extracts the signature, recomputes `signable_bytes` from the remaining fields, and verifies both Ed25519 and ML-DSA-65.
+
+### 7.5 Ed25519-Only Fallback (v1)
+
+For version 1 compatibility, programs MAY support **Ed25519-only** signatures (64 bytes). Recipients that support hybrid verification SHOULD accept Ed25519-only if ML-DSA-65 is absent and the program descriptor indicates v1 fallback mode.
+
+---
+
+## 8. Zode Storage Model
+
+### 8.1 Append-Only Logs
+
+Each sector is an ordered sequence of entries indexed starting at 0. Sectors are identified by a composite key `(ProgramId, SectorId)`.
+
+### 8.2 Key Layout
+
+The storage key for a single entry is:
+
+```
+key = program_id (32 bytes) || sector_id (32 bytes) || index (8 bytes, big-endian)
+```
+
+Total key size: 72 bytes. All entries for a sector share the same 64-byte prefix.
+
+### 8.3 Operations
+
+| Operation | Behavior |
+|-----------|----------|
+| **append** | Find the maximum stored index via reverse-seek on the sector prefix, write at `max + 1`, return the new index. |
+| **insert_at** | Write at a specific index only if that index does not already exist (idempotent). Used for gossip replication. |
+| **read_log** | Forward-iterate from `from_index` within the sector prefix, return up to `max_entries` values. |
+| **log_length** | Reverse-seek to find the maximum stored index + 1. Returns 0 if the sector is empty. |
+
+### 8.4 Policy Enforcement
+
+Zodes enforce the following policies:
+
+| Policy | Description |
+|--------|-------------|
+| **Program allowlist** | Only serve programs in the effective topic set (enabled default programs + explicit configuration). Reject with `PolicyReject`. |
+| **Sector filter** | Optionally restrict to an explicit set of allowed sector IDs. Default: all sectors accepted. |
+| **Entry size limit** | Maximum payload size per entry. Default: 256 KB. Reject with `InvalidPayload`. |
+| **Batch limits** | Max 64 entries, max 4 MB total payload per batch. Reject with `BatchTooLarge`. |
+| **Per-program quota** | Optional maximum bytes per program. |
+
+---
+
+## 9. Topic Naming
+
+Programs are addressed on the network via GossipSub topics:
+
+```
+topic = "prog/" + hex(ProgramId)
+```
+
+Where `hex(ProgramId)` is the 64-character lowercase hex encoding of the 32-byte ProgramId.
+
+Zodes subscribe to one or more program topics and only accept requests for subscribed programs.
+
+---
+
+## 10. Transport Layer
+
+### 10.1 Connection
+
+The Grid uses **libp2p** as its network substrate with the following transports:
+
+- **QUIC** (`/quic-v1`): Primary transport.
+- **TCP + Noise + Yamux**: Fallback transport.
+
+The default listen address is `/ip4/0.0.0.0/udp/0/quic-v1`.
+
+### 10.2 Protocols
+
+Three libp2p sub-protocols run on the same swarm:
+
+| Protocol String | Type | Purpose |
+|----------------|------|---------|
+| `/grid/sector/1.0.0` | Request-response (CBOR) | Client ↔ Zode sector operations |
+| `/grid/kad/1.0.0` | Kademlia DHT | Peer discovery |
+| GossipSub | Pub/sub | Data propagation across program topics |
+
+Sector requests and responses are serialized as CBOR and exchanged via libp2p's request-response protocol.
+
+### 10.3 GossipSub Configuration
+
+- **Message authentication**: Signed (libp2p keypair).
+- **Heartbeat interval**: 10 seconds.
+- **Validation mode**: Permissive.
+- **Message ID**: Derived from the hash of the message data (content-based deduplication).
+
+### 10.4 Peer Discovery
+
+#### 10.4.1 Bootstrap Peers
+
+Zodes accept a list of bootstrap peer multiaddrs in their configuration. On startup, the Zode dials each bootstrap peer.
+
+#### 10.4.2 Kademlia DHT
+
+When enabled, the Zode seeds the Kademlia routing table with bootstrap peers, triggers an initial `bootstrap()`, and periodically performs random walk queries (`get_closest_peers(random_peer_id)`) at a configurable interval (default: 30 seconds).
+
+Kademlia configuration:
+
+| Parameter | Default |
+|-----------|---------|
+| Protocol name | `/grid/kad/1.0.0` |
+| Query timeout | 60 seconds |
+| Mode | `Server` for Zodes, `Client` for SDK clients |
+| Random walk interval | 30 seconds |
+| Max concurrent discovery dials | 8 |
+
+Newly discovered peers are automatically dialed (up to the concurrency limit). Once connected, GossipSub and request-response operate automatically over the new peer.
+
+---
+
+## 11. Sector Protocol — Wire Format
+
+The sector protocol is the primary client-to-Zode interface. It operates over `/grid/sector/1.0.0` as a request-response protocol.
+
+### 11.1 Request Envelope
+
+All requests are wrapped in a top-level enum:
+
+```
+SectorRequest = Append(SectorAppendRequest)
+              | ReadLog(SectorReadLogRequest)
+              | LogLength(SectorLogLengthRequest)
+              | BatchAppend(SectorBatchAppendRequest)
+              | BatchLogLength(SectorBatchLogLengthRequest)
+```
+
+### 11.2 Response Envelope
+
+```
+SectorResponse = Append(SectorAppendResponse)
+               | ReadLog(SectorReadLogResponse)
+               | LogLength(SectorLogLengthResponse)
+               | BatchAppend(SectorBatchAppendResponse)
+               | BatchLogLength(SectorBatchLogLengthResponse)
+```
+
+Response variants correspond 1:1 to request variants.
+
+### 11.3 Append
+
+Append a single encrypted entry to a sector log.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Target program |
+| `sector_id` | bytes(32) | Target sector |
+| `entry` | byte string | Encrypted payload |
+
+**Response:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | boolean | Whether the append succeeded |
+| `index` | optional uint64 | The assigned log index (present on success) |
+| `error_code` | optional ErrorCode | Present on failure |
+
+### 11.4 ReadLog
+
+Read entries from a sector log starting at a given index.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Target program |
+| `sector_id` | bytes(32) | Target sector |
+| `from_index` | uint64 | First entry index to read |
+| `max_entries` | uint32 | Maximum entries to return (capped at 64) |
+
+**Response:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entries` | array of byte strings | The requested entries, in index order |
+| `error_code` | optional ErrorCode | Present on failure |
+
+If the sector does not exist or `from_index` is past the end, an empty `entries` array is returned (not an error).
+
+### 11.5 LogLength
+
+Query the number of entries in a sector log.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Target program |
+| `sector_id` | bytes(32) | Target sector |
+
+**Response:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `length` | uint64 | Number of entries (0 if sector does not exist) |
+| `error_code` | optional ErrorCode | Present on failure |
+
+### 11.6 BatchAppend
+
+Append entries to multiple sectors under one program in a single round trip.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Target program (shared across all entries) |
+| `entries` | array of BatchAppendEntry | Up to 64 entries |
+
+Each `BatchAppendEntry`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sector_id` | bytes(32) | Target sector |
+| `entry` | byte string | Encrypted payload |
+
+**Response:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `results` | array of AppendResult | Parallel to `entries` |
+
+Each `AppendResult`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | boolean | Success flag |
+| `index` | optional uint64 | Assigned index |
+| `error_code` | optional ErrorCode | Error detail |
+
+### 11.7 BatchLogLength
+
+Query log lengths for multiple sectors under one program.
+
+**Request:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Target program |
+| `sector_ids` | array of bytes(32) | Up to 64 sector IDs |
+
+**Response:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `results` | array of LogLengthResult | Parallel to `sector_ids` |
+| `error_code` | optional ErrorCode | Batch-level error only |
+
+Each `LogLengthResult`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `length` | uint64 | Entry count |
+| `error_code` | optional ErrorCode | Per-sector error |
+
+### 11.8 Batch Limits
+
+- Maximum **64 entries** per batch request.
+- Maximum **4 MB total payload** per batch request.
+
+Zodes MUST reject batches exceeding these limits with `BatchTooLarge`.
+
+### 11.9 Error Codes
+
+Responses use a shared set of error codes:
+
+| Code | Meaning |
+|------|---------|
+| `StorageFull` | Zode's storage capacity exceeded |
+| `ProofInvalid` | Valid-Sector proof verification failed |
+| `PolicyReject` | Request rejected by Zode policy (program not subscribed, sector not in allowlist) |
+| `NotFound` | Requested data not present |
+| `InvalidPayload` | Malformed request or entry exceeds size limit |
+| `ProgramMismatch` | Program ID does not match subscription |
+| `SlotOccupied` | Reserved (write-once semantics) |
+| `BatchTooLarge` | Batch exceeds entry count or payload size limit |
+| `ConditionFailed` | Reserved (conditional write semantics) |
+
+Error codes are serialized as CBOR text strings.
+
+---
+
+## 12. Gossip Replication
+
+When a Zode accepts an `Append` request from a client, it publishes a `GossipSectorAppend` message to the program's GossipSub topic (`prog/<program_id_hex>`). Other Zodes subscribed to that topic store the entry automatically.
+
+### 12.1 GossipSectorAppend
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `program_id` | bytes(32) | Program this entry belongs to |
+| `sector_id` | bytes(32) | Sector this entry belongs to |
+| `index` | uint64 | The assigned log index |
+| `payload` | byte string | The encrypted entry bytes |
+
+Serialized as canonical CBOR and published to GossipSub.
+
+### 12.2 Receiving Zode Behavior
+
+When a Zode receives a `GossipSectorAppend`:
+
+1. **Program check**: If the Zode does not serve `program_id`, discard.
+2. **Sector filter**: If the Zode uses an allowlist, check `sector_id`. Discard if not in the set.
+3. **Entry size check**: If the payload exceeds the Zode's max entry size limit, discard.
+4. **Idempotent insert**: Store the entry at the specified `index` if that index is not already occupied. If the index already exists, silently ignore (idempotent).
+5. **No re-gossip**: The Zode does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
+
+---
+
+## 13. Shape Proofs
+
+Shape proofs allow clients to prove that an encrypted blob conforms to a declared schema without revealing plaintext. Programs with `proof_system = Groth16` use Poseidon sponge encryption (§6.3) and MAY attach a shape proof to each entry.
+
+### 13.1 ProofSystem Enum
+
+| Variant | Encryption | Shape proofs |
+|---------|------------|--------------|
+| `None` | XChaCha20-Poly1305 | Not supported |
+| `Groth16` | Poseidon sponge | Supported |
+
+### 13.2 FieldSchema
+
+Message structure is described by a **FieldSchema** for use in circuits and verification:
+
+| Type | Description |
+|------|-------------|
+| `CborType` | CBOR type identifier (integer, text, bytes, array, map, etc.) |
+| `FieldDef` | Named field: `(name, CborType)` |
+| `FieldSchema` | Sequence of `FieldDef` defining the message shape |
+
+**Schema hash:**
+
+```
+schema_hash = SHA-256(canonical_cbor(schema))
+```
+
+### 13.3 ShapeProof Wire Format
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `proof_system` | enum | `Groth16` |
+| `ciphertext_hash` | bytes(32) | Poseidon(C) — hash of the ciphertext C |
+| `proof_bytes` | byte string | Groth16 proof |
+| `schema_hash` | bytes(32) | SHA-256 of canonical CBOR schema |
+| `size_bucket` | enum | Message-size bucket (see §13.6) |
+
+### 13.4 Universal Circuit
+
+The shape-proof circuit proves three predicates:
+
+1. **shape(B)** — Decrypted plaintext B conforms to the declared FieldSchema.
+2. **Poseidon_encrypt(B, K, N, AAD) = C** — Ciphertext C is the Poseidon encryption of B under key K, nonce N, and AAD.
+3. **Poseidon(C) = ciphertext_hash** — The public `ciphertext_hash` matches Poseidon(C).
+
+AAD = `program_id || sector_id` as in §6.3.
+
+### 13.5 Strong Binding
+
+The Zode computes `Poseidon(received_ciphertext)` and MUST verify that it equals the attested `ciphertext_hash`. This binds the proof to the exact ciphertext stored; tampering invalidates the binding.
+
+### 13.6 Message-Size Buckets
+
+Proofs are generated per size bucket. One trusted setup (proving key, verification key) exists per bucket.
+
+| Bucket | Max message size |
+|--------|------------------|
+| 1 KB | 1,024 bytes |
+| 4 KB | 4,096 bytes |
+| 16 KB | 16,384 bytes |
+| 64 KB | 65,536 bytes |
+
+**Version 1:** Only 1 KB and 4 KB buckets are supported.
+
+### 13.7 Trusted Setup
+
+One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply across programs using the same bucket.
+
+### 13.8 Verification Rules
+
+1. **Proof validity**: Groth16 proof verifies against the vk for the declared `size_bucket`.
+2. **Ciphertext binding**: `Poseidon(received_ciphertext) == ciphertext_hash` from the proof.
+3. **Schema consistency**: `schema_hash` matches the program's declared schema for the message type.
+4. **Bucket match**: Entry size (post-padding) fits within `size_bucket`.
+
+---
+
+## 14. Standard Programs
+
+### 14.1 ZID (Zero Identity)
 
 **Descriptor:**
 
@@ -692,7 +809,7 @@ Examples:
 | `display_name` | optional text string | Human-readable name |
 | `timestamp_ms` | uint64 | Milliseconds since Unix epoch |
 
-### 12.2 Interlink
+### 14.2 Interlink
 
 **Descriptor:**
 
@@ -731,9 +848,9 @@ Both ZID and Interlink are **default programs**: Zodes subscribe to them out of 
 
 ---
 
-## 13. Zode Behavior
+## 15. Zode Behavior
 
-### 13.1 Startup Sequence
+### 15.1 Startup Sequence
 
 1. Open persistent storage.
 2. Start the network (libp2p swarm with GossipSub, request-response, and optionally Kademlia).
@@ -743,7 +860,7 @@ Both ZID and Interlink are **default programs**: Zodes subscribe to them out of 
 6. If Kademlia is enabled, seed the routing table and trigger initial bootstrap.
 7. Enter the event loop.
 
-### 13.2 Event Loop
+### 15.2 Event Loop
 
 The Zode continuously processes:
 
@@ -754,7 +871,7 @@ The Zode continuously processes:
 - **Publish queue**: Drain outbound gossip publishes.
 - **Shutdown signal**: Graceful exit.
 
-### 13.3 Append + Gossip Flow
+### 15.3 Append + Gossip Flow
 
 When a Zode accepts an Append request:
 
@@ -768,7 +885,7 @@ The client is responsible for triggering the gossip publish by calling the Zode'
 
 ---
 
-## 14. Visibility and Privacy Properties
+## 16. Visibility and Privacy Properties
 
 ### What a Zode can see
 
@@ -793,28 +910,7 @@ The client is responsible for triggering the gossip publish by calling the Zode'
 
 ---
 
-## 15. Interoperability Requirements
-
-A conforming Grid implementation MUST:
-
-1. Serialize all protocol messages as deterministic CBOR (RFC 8949 §4.2.1).
-2. Derive ProgramIds as `SHA-256(CBOR(ProgramDescriptor))` using identical CBOR encoding.
-3. Use the protocol string `/grid/sector/1.0.0` for sector request-response.
-4. Use the protocol string `/grid/kad/1.0.0` for Kademlia DHT.
-5. Format GossipSub topics as `prog/<64_hex_chars>`.
-6. Serialize `GossipSectorAppend` as CBOR for gossip propagation.
-7. Use XChaCha20-Poly1305 (proof_system=None) or Poseidon sponge (proof_system=Groth16) for sector encryption, per ProgramDescriptor. XChaCha20-Poly1305 uses 192-bit random nonces; Poseidon uses the format in §11.3.
-8. Implement the padding bucket scheme (§11.4) for all encrypted payloads.
-9. Use HKDF-SHA256 with the exact domain separation strings specified in §10.2 for key derivation.
-10. Produce hybrid signatures containing both Ed25519 (64 bytes) and ML-DSA-65 (3,309 bytes) components, and require both to verify.
-11. Perform hybrid key encapsulation using X25519 + ML-KEM-768 combined via HKDF (§10.5).
-12. Reject sector IDs that are not exactly 32 bytes.
-13. Enforce batch limits: 64 entries maximum, 4 MB total payload maximum.
-14. Accept `GossipSectorAppend` idempotently: store at the given index only if not already occupied.
-
----
-
-## 16. Security Considerations
+## 17. Security Considerations
 
 - **No transport anonymity.** IP addresses are visible to Zodes and network observers. Onion routing is out of scope.
 - **Timing correlation.** A Zode can correlate writes and reads from the same connection. Batch requests reveal co-accessed sector IDs.
@@ -825,117 +921,21 @@ A conforming Grid implementation MUST:
 
 ---
 
-## 17. Shape Proofs
+## 18. Interoperability Requirements
 
-Shape proofs allow clients to prove that an encrypted blob conforms to a declared schema without revealing plaintext. Programs with `proof_system = Groth16` use Poseidon sponge encryption (§11.3) and MAY attach a shape proof to each entry.
+A conforming Grid implementation MUST:
 
-### 17.1 ProofSystem Enum
-
-| Variant | Encryption | Shape proofs |
-|---------|------------|--------------|
-| `None` | XChaCha20-Poly1305 | Not supported |
-| `Groth16` | Poseidon sponge | Supported |
-
-### 17.2 FieldSchema
-
-Message structure is described by a **FieldSchema** for use in circuits and verification:
-
-| Type | Description |
-|------|-------------|
-| `CborType` | CBOR type identifier (integer, text, bytes, array, map, etc.) |
-| `FieldDef` | Named field: `(name, CborType)` |
-| `FieldSchema` | Sequence of `FieldDef` defining the message shape |
-
-**Schema hash:**
-
-```
-schema_hash = SHA-256(canonical_cbor(schema))
-```
-
-### 17.3 ShapeProof Wire Format
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `proof_system` | enum | `Groth16` |
-| `ciphertext_hash` | bytes(32) | Poseidon(C) — hash of the ciphertext C |
-| `proof_bytes` | byte string | Groth16 proof |
-| `schema_hash` | bytes(32) | SHA-256 of canonical CBOR schema |
-| `size_bucket` | enum | Message-size bucket (see §17.6) |
-
-### 17.4 Universal Circuit
-
-The shape-proof circuit proves three predicates:
-
-1. **shape(B)** — Decrypted plaintext B conforms to the declared FieldSchema.
-2. **Poseidon_encrypt(B, K, N, AAD) = C** — Ciphertext C is the Poseidon encryption of B under key K, nonce N, and AAD.
-3. **Poseidon(C) = ciphertext_hash** — The public `ciphertext_hash` matches Poseidon(C).
-
-AAD = `program_id || sector_id` as in §11.3.
-
-### 17.5 Strong Binding
-
-The Zode computes `Poseidon(received_ciphertext)` and MUST verify that it equals the attested `ciphertext_hash`. This binds the proof to the exact ciphertext stored; tampering invalidates the binding.
-
-### 17.6 Message-Size Buckets
-
-Proofs are generated per size bucket. One trusted setup (proving key, verification key) exists per bucket.
-
-| Bucket | Max message size |
-|--------|------------------|
-| 1 KB | 1,024 bytes |
-| 4 KB | 4,096 bytes |
-| 16 KB | 16,384 bytes |
-| 64 KB | 65,536 bytes |
-
-**Version 1:** Only 1 KB and 4 KB buckets are supported.
-
-### 17.7 Trusted Setup
-
-One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply across programs using the same bucket.
-
-### 17.8 Verification Rules
-
-1. **Proof validity**: Groth16 proof verifies against the vk for the declared `size_bucket`.
-2. **Ciphertext binding**: `Poseidon(received_ciphertext) == ciphertext_hash` from the proof.
-3. **Schema consistency**: `schema_hash` matches the program's declared schema for the message type.
-4. **Bucket match**: Entry size (post-padding) fits within `size_bucket`.
-
----
-
-## 18. Message Signing
-
-Message signing provides authenticity and integrity for entries within the encrypted blob. Signatures are PQ-hybrid (Ed25519 + ML-DSA-65) and are produced before encryption, verified after decryption.
-
-### 18.1 Placement
-
-Signatures live **inside** the encrypted payload. The Zode never sees plaintext; signature verification is end-to-end between sender and recipient. Only parties with the SectorKey can decrypt and verify.
-
-### 18.2 Signable Bytes
-
-For a message with a signature field:
-
-```
-signable_bytes = canonical_cbor(all_fields_except_signature)
-```
-
-Fields MUST be serialized in deterministic CBOR order. The signature field is excluded from the input to the signing function.
-
-### 18.3 HybridSignature Format
-
-| Component | Size | Description |
-|-----------|------|-------------|
-| Ed25519 | 64 bytes | Classical signature |
-| ML-DSA-65 | 3,309 bytes | Post-quantum signature |
-
-**Binary format:** `Ed25519 (64) || ML-DSA-65 (3309)` = 3,373 bytes total
-
-Both components sign the same `signable_bytes`. **Both MUST verify** for the signature to be valid.
-
-### 18.4 Signing and Verification Flow
-
-1. **Signing**: Client computes `signable_bytes`, signs with Ed25519 and ML-DSA-65, appends `HybridSignature` to the message, then encrypts the full blob.
-2. **Verification**: Recipient decrypts, extracts the signature, recomputes `signable_bytes` from the remaining fields, and verifies both Ed25519 and ML-DSA-65.
-
-### 18.5 Ed25519-Only Fallback (v1)
-
-For version 1 compatibility, programs MAY support **Ed25519-only** signatures (64 bytes). Recipients that support hybrid verification SHOULD accept Ed25519-only if ML-DSA-65 is absent and the program descriptor indicates v1 fallback mode.
+1. Serialize all protocol messages as deterministic CBOR (RFC 8949 §4.2.1).
+2. Derive ProgramIds as `SHA-256(CBOR(ProgramDescriptor))` using identical CBOR encoding.
+3. Use the protocol string `/grid/sector/1.0.0` for sector request-response.
+4. Use the protocol string `/grid/kad/1.0.0` for Kademlia DHT.
+5. Format GossipSub topics as `prog/<64_hex_chars>`.
+6. Serialize `GossipSectorAppend` as CBOR for gossip propagation.
+7. Use XChaCha20-Poly1305 (proof_system=None) or Poseidon sponge (proof_system=Groth16) for sector encryption, per ProgramDescriptor. XChaCha20-Poly1305 uses 192-bit random nonces; Poseidon uses the format in §6.3.
+8. Implement the padding bucket scheme (§6.4) for all encrypted payloads.
+9. Use HKDF-SHA256 with the exact domain separation strings specified in §5.2 for key derivation.
+10. Produce hybrid signatures containing both Ed25519 (64 bytes) and ML-DSA-65 (3,309 bytes) components, and require both to verify.
+11. Perform hybrid key encapsulation using X25519 + ML-KEM-768 combined via HKDF (§5.5).
+12. Reject sector IDs that are not exactly 32 bytes.
+13. Enforce batch limits: 64 entries maximum, 4 MB total payload maximum.
+14. Accept `GossipSectorAppend` idempotently: store at the given index only if not already occupied.

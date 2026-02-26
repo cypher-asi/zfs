@@ -16,6 +16,9 @@ Two frontends ship in this workspace:
 - **zode-app** -- a standalone desktop GUI built with eframe / egui.
 - **zode-cli** -- a console TUI built with ratatui / crossterm.
 
+For the full wire format, cryptographic constructions, and behavioral rules, see the
+[Grid Protocol Specification](docs/grid-protocol.md).
+
 ## Principles
 
 ### Agency
