@@ -19,7 +19,7 @@ use crate::components::{
     error_label, field_label, info_grid, kv_row, section, std_button, text_input,
 };
 use crate::helpers::format_timestamp_ms;
-use crate::state::{ChatState, ChatUpdate, DisplayMessage, SignatureStatus};
+use crate::state::{InterlinkState, InterlinkUpdate, DisplayMessage, SignatureStatus};
 
 fn derive_test_sector_key() -> SectorKey {
     let hk = Hkdf::<Sha256>::new(None, b"interlink-main-channel-v1");
@@ -29,7 +29,7 @@ fn derive_test_sector_key() -> SectorKey {
     SectorKey::from_bytes(key_bytes)
 }
 
-fn derive_test_machine_identity(zode_id: &str) -> (Box<zero_neural::MachineKeyPair>, String) {
+fn derive_test_machine_identity(zode_id: &str) -> (Arc<zero_neural::MachineKeyPair>, String) {
     use sha2::Digest;
     let hash: [u8; 32] =
         sha2::Sha256::digest(format!("interlink-main-machine:{zode_id}").as_bytes()).into();
@@ -39,26 +39,37 @@ fn derive_test_machine_identity(zode_id: &str) -> (Box<zero_neural::MachineKeyPa
     let kp = derive_machine_keypair_from_seed(hash, &identity_id, &machine_id, 0, caps)
         .expect("deterministic derivation cannot fail");
     let did = ed25519_to_did_key(&kp.public_key().ed25519_bytes());
-    (Box::new(kp), did)
+    (Arc::new(kp), did)
 }
 
 // ---------------------------------------------------------------------------
-// ZodeApp chat lifecycle
+// ZodeApp interlink lifecycle
 // ---------------------------------------------------------------------------
 
 impl ZodeApp {
-    pub(crate) fn init_chat(&mut self) {
+    pub(crate) fn init_interlink(&mut self) {
         let sector_key = derive_test_sector_key();
         let zode_id = self
             .zode
             .as_ref()
             .map(|z| z.status().zode_id)
             .unwrap_or_default();
-        let data_dir = self.settings.data_dir.clone();
-        let (signing_keypair, machine_did) =
+
+        let real_key = self
+            .identity_state
+            .machine_keys
+            .iter()
+            .find(|mk| mk.capabilities.contains(MachineKeyCapabilities::SIGN));
+
+        let (signing_keypair, machine_did) = if let Some(mk) = real_key {
+            (Arc::clone(&mk.keypair), mk.did.clone())
+        } else {
             std::thread::spawn(move || derive_test_machine_identity(&zode_id))
                 .join()
-                .expect("key derivation thread panicked");
+                .expect("key derivation thread panicked")
+        };
+
+        let data_dir = self.settings.data_dir.clone();
         let channel_id = ChannelId::from_str_id(TEST_CHANNEL_ID);
         let program_id = InterlinkDescriptor::v2()
             .program_id()
@@ -67,11 +78,11 @@ impl ZodeApp {
 
         let prover = load_or_generate_prover(&data_dir);
 
-        let (update_tx, update_rx) = tokio::sync::mpsc::channel::<ChatUpdate>(4);
+        let (update_tx, update_rx) = tokio::sync::mpsc::channel::<InterlinkUpdate>(4);
         let (refresh_tx, refresh_rx) = tokio::sync::mpsc::channel::<()>(4);
 
         if let Some(ref zode) = self.zode {
-            Self::spawn_chat_updater(
+            Self::spawn_interlink_updater(
                 &self.rt,
                 zode,
                 &sector_key,
@@ -82,7 +93,7 @@ impl ZodeApp {
             );
         }
 
-        self.chat_state = Some(ChatState {
+        self.interlink_state = Some(InterlinkState {
             messages: Vec::new(),
             compose: String::new(),
             sector_key,
@@ -101,13 +112,13 @@ impl ZodeApp {
         });
     }
 
-    fn spawn_chat_updater(
+    fn spawn_interlink_updater(
         rt: &tokio::runtime::Runtime,
         zode: &Arc<zode::Zode>,
         sector_key: &SectorKey,
         program_id: ProgramId,
         sector_id: SectorId,
-        update_tx: tokio::sync::mpsc::Sender<ChatUpdate>,
+        update_tx: tokio::sync::mpsc::Sender<InterlinkUpdate>,
         mut refresh_rx: tokio::sync::mpsc::Receiver<()>,
     ) {
         let bg_storage = Arc::clone(zode.storage());
@@ -134,76 +145,76 @@ impl ZodeApp {
 
     pub(crate) fn send_message(&mut self) {
         let Some(ref zode) = self.zode else {
-            if let Some(ref mut chat) = self.chat_state {
-                chat.error = Some("Zode is not running".into());
+            if let Some(ref mut il) = self.interlink_state {
+                il.error = Some("Zode is not running".into());
             }
             return;
         };
         let storage = Arc::clone(zode.storage());
-        let chat = self.chat_state.as_mut().unwrap();
-        let text = chat.compose.trim().to_string();
+        let il = self.interlink_state.as_mut().unwrap();
+        let text = il.compose.trim().to_string();
         if text.is_empty() {
             return;
         }
-        chat.compose.clear();
+        il.compose.clear();
 
-        let msg = match build_chat_message(chat, text) {
+        let msg = match build_interlink_message(il, text) {
             Ok(m) => m,
             Err(e) => {
-                chat.error = Some(e);
+                il.error = Some(e);
                 return;
             }
         };
 
         match encrypt_message(
             &msg,
-            &chat.sector_key,
-            &chat.program_id,
-            &chat.sector_id,
-            &chat.prover,
+            &il.sector_key,
+            &il.program_id,
+            &il.sector_id,
+            &il.prover,
         ) {
             Ok((ciphertext, proof)) => {
-                do_append(chat, &storage, zode, ciphertext, Some(proof));
+                do_append(il, &storage, zode, ciphertext, Some(proof));
             }
             Err(e) => {
-                chat.error = Some(e);
+                il.error = Some(e);
             }
         }
     }
 }
 
 fn do_append(
-    chat: &mut ChatState,
+    il: &mut InterlinkState,
     storage: &Arc<grid_storage::RocksStorage>,
     zode: &Arc<zode::Zode>,
     ciphertext: Vec<u8>,
     shape_proof: Option<ShapeProof>,
 ) {
-    match storage.append(&chat.program_id, &chat.sector_id, &ciphertext) {
+    match storage.append(&il.program_id, &il.sector_id, &ciphertext) {
         Ok(index) => {
             if let Some(ref proof) = shape_proof {
                 if let Ok(proof_bytes) = encode_proof_cbor(proof) {
                     let _ = storage.store_proof(
-                        &chat.program_id,
-                        &chat.sector_id,
+                        &il.program_id,
+                        &il.sector_id,
                         index,
                         &proof_bytes,
                     );
                 }
             }
-            chat.error = None;
+            il.error = None;
             broadcast_gossip(
                 zode,
-                chat.program_id,
-                chat.sector_id.clone(),
+                il.program_id,
+                il.sector_id.clone(),
                 index,
                 ciphertext,
                 shape_proof,
             );
-            let _ = chat.refresh_tx.try_send(());
+            let _ = il.refresh_tx.try_send(());
         }
         Err(e) => {
-            chat.error = Some(format!("Sector append failed: {e}"));
+            il.error = Some(format!("Sector append failed: {e}"));
         }
     }
 }
@@ -212,17 +223,17 @@ fn do_append(
 // Message construction and encryption
 // ---------------------------------------------------------------------------
 
-fn build_chat_message(chat: &ChatState, text: String) -> Result<ZMessage, String> {
+fn build_interlink_message(il: &InterlinkState, text: String) -> Result<ZMessage, String> {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
     ZMessage::new_signed(
-        chat.machine_did.clone(),
-        chat.channel_id.clone(),
+        il.machine_did.clone(),
+        il.channel_id.clone(),
         text,
         now_ms,
-        |signable| chat.signing_keypair.sign(signable).to_bytes(),
+        |signable| il.signing_keypair.sign(signable).to_bytes(),
     )
     .map_err(|e| format!("Sign failed: {e}"))
 }
@@ -252,7 +263,7 @@ async fn poll_new_entries(
     program_id: &ProgramId,
     sector_id: &SectorId,
     known_len: u64,
-    update_tx: &tokio::sync::mpsc::Sender<ChatUpdate>,
+    update_tx: &tokio::sync::mpsc::Sender<InterlinkUpdate>,
 ) -> u64 {
     let current_len = storage
         .log_length(program_id, sector_id)
@@ -279,7 +290,7 @@ fn decrypt_entries(
     sector_key: &SectorKey,
     program_id: &ProgramId,
     sector_id: &SectorId,
-) -> ChatUpdate {
+) -> InterlinkUpdate {
     let mut display: Vec<DisplayMessage> = Vec::new();
     let mut first_error: Option<String> = None;
     for ct in &entries {
@@ -289,7 +300,7 @@ fn decrypt_entries(
             Err(_) => {}
         }
     }
-    ChatUpdate {
+    InterlinkUpdate {
         new_messages: display,
         error: first_error,
     }
@@ -373,26 +384,26 @@ fn encode_proof_cbor(proof: &ShapeProof) -> Result<Vec<u8>, String> {
 // UI rendering
 // ---------------------------------------------------------------------------
 
-pub(crate) fn render_chat(app: &mut ZodeApp, ui: &mut egui::Ui) {
-    if app.chat_state.is_none() || !app.chat_state.as_ref().unwrap().initialized {
-        app.init_chat();
+pub(crate) fn render_interlink(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    if app.interlink_state.is_none() || !app.interlink_state.as_ref().unwrap().initialized {
+        app.init_interlink();
     }
-    render_chat_header(app, ui);
-    drain_chat_updates(app);
-    render_chat_messages(app, ui);
-    render_chat_compose(app, ui);
+    render_interlink_header(app, ui);
+    drain_interlink_updates(app);
+    render_interlink_messages(app, ui);
+    render_interlink_compose(app, ui);
 }
 
-fn render_chat_header(app: &ZodeApp, ui: &mut egui::Ui) {
-    let chat = app.chat_state.as_ref().unwrap();
-    let key_preview: String = chat.sector_key.as_bytes()[..8]
+fn render_interlink_header(app: &ZodeApp, ui: &mut egui::Ui) {
+    let il = app.interlink_state.as_ref().unwrap();
+    let key_preview: String = il.sector_key.as_bytes()[..8]
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let ch_display = String::from_utf8_lossy(chat.channel_id.as_bytes()).to_string();
+    let ch_display = String::from_utf8_lossy(il.channel_id.as_bytes()).to_string();
 
     section(ui, "INTERLINK", |ui| {
-        info_grid(ui, "chat_info_grid", |ui| {
+        info_grid(ui, "interlink_info_grid", |ui| {
             kv_row(ui, "Channel", &ch_display);
 
             field_label(ui, "Sector Key");
@@ -403,25 +414,25 @@ fn render_chat_header(app: &ZodeApp, ui: &mut egui::Ui) {
             );
             ui.end_row();
 
-            kv_row(ui, "Messages", &format!("{}", chat.messages.len()));
+            kv_row(ui, "Messages", &format!("{}", il.messages.len()));
             kv_row(ui, "Protocol", "/grid/sector/2.0.0");
         });
     });
 
-    if let Some(ref err) = chat.error {
+    if let Some(ref err) = il.error {
         error_label(ui, err);
     }
 }
 
-fn drain_chat_updates(app: &mut ZodeApp) {
-    let chat = app.chat_state.as_mut().unwrap();
-    while let Ok(upd) = chat.update_rx.try_recv() {
+fn drain_interlink_updates(app: &mut ZodeApp) {
+    let il = app.interlink_state.as_mut().unwrap();
+    while let Ok(upd) = il.update_rx.try_recv() {
         if upd.error.is_some() {
-            chat.error = upd.error;
+            il.error = upd.error;
         }
         if !upd.new_messages.is_empty() {
-            chat.messages.extend(upd.new_messages);
-            chat.scroll_to_bottom = true;
+            il.messages.extend(upd.new_messages);
+            il.scroll_to_bottom = true;
         }
     }
 }
@@ -434,10 +445,10 @@ fn short_sender(did: &str) -> String {
     }
 }
 
-fn render_chat_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
-    let chat = app.chat_state.as_mut().unwrap();
-    let should_scroll = chat.scroll_to_bottom;
-    chat.scroll_to_bottom = false;
+fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    let il = app.interlink_state.as_mut().unwrap();
+    let should_scroll = il.scroll_to_bottom;
+    il.scroll_to_bottom = false;
 
     let available = ui.available_height() - 40.0;
     egui::ScrollArea::vertical()
@@ -445,15 +456,15 @@ fn render_chat_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
         .auto_shrink([false, false])
         .stick_to_bottom(true)
         .show(ui, |ui| {
-            let chat = app.chat_state.as_ref().unwrap();
-            if chat.messages.is_empty() {
+            let il = app.interlink_state.as_ref().unwrap();
+            if il.messages.is_empty() {
                 ui.label(
                     egui::RichText::new("No messages yet. Type something below!")
                         .weak()
                         .italics(),
                 );
             } else {
-                for msg in &chat.messages {
+                for msg in &il.messages {
                     render_single_message(ui, msg);
                 }
             }
@@ -509,14 +520,14 @@ fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
     });
 }
 
-fn render_chat_compose(app: &mut ZodeApp, ui: &mut egui::Ui) {
+fn render_interlink_compose(app: &mut ZodeApp, ui: &mut egui::Ui) {
     let mut do_send = false;
     ui.horizontal(|ui| {
-        let chat = app.chat_state.as_mut().unwrap();
-        let should_focus = chat.focus_compose;
-        chat.focus_compose = false;
+        let il = app.interlink_state.as_mut().unwrap();
+        let should_focus = il.focus_compose;
+        il.focus_compose = false;
         let resp = ui.add(
-            text_input(&mut chat.compose, ui.available_width() - 70.0)
+            text_input(&mut il.compose, ui.available_width() - 70.0)
                 .hint_text("Type a message..."),
         );
         if should_focus {

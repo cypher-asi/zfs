@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use eframe::egui;
 use zero_neural::{
     derive_machine_keypair_from_shares, ed25519_to_did_key, generate_identity, verify_shares,
@@ -361,12 +363,14 @@ fn derive_machine_key(app: &mut ZodeApp) {
         Ok(kp) => {
             let pk = kp.public_key();
             let did = ed25519_to_did_key(&pk.ed25519_bytes());
+            let keypair = Arc::new(kp);
             app.identity_state.machine_keys.push(DerivedMachineKey {
                 machine_id: machine_id_bytes,
                 epoch: app.identity_state.new_epoch,
                 capabilities: caps,
                 did,
                 public_key: pk,
+                keypair,
             });
             app.identity_state.error = None;
         }

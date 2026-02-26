@@ -19,7 +19,7 @@ pub(crate) struct ZodeApp {
     pub settings_error: Option<String>,
     pub shutdown_tx: Option<tokio::sync::mpsc::Sender<()>>,
     pub poller_handle: Option<tokio::task::JoinHandle<()>>,
-    pub chat_state: Option<crate::state::ChatState>,
+    pub interlink_state: Option<crate::state::InterlinkState>,
     pub identity_state: crate::state::IdentityState,
     pub visualization: crate::visualization::NetworkVisualization,
     icon_texture: Option<egui::TextureHandle>,
@@ -37,7 +37,7 @@ impl ZodeApp {
             settings_error: None,
             shutdown_tx: None,
             poller_handle: None,
-            chat_state: None,
+            interlink_state: None,
             identity_state: Default::default(),
             visualization: Default::default(),
             icon_texture: None,
@@ -172,7 +172,7 @@ impl ZodeApp {
             let _ = self.rt.block_on(handle);
         }
         self.zode = None;
-        self.chat_state = None;
+        self.interlink_state = None;
     }
 
     fn handle_resize_edges(ctx: &egui::Context) -> bool {
@@ -292,7 +292,7 @@ impl ZodeApp {
         ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
         ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
         ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
-        ui.selectable_value(&mut self.tab, Tab::Chat, "INTERLINK");
+        ui.selectable_value(&mut self.tab, Tab::Interlink, "INTERLINK");
         ui.selectable_value(&mut self.tab, Tab::Info, "INFO");
     }
 
@@ -390,9 +390,9 @@ impl ZodeApp {
                     });
                     return;
                 }
-                if self.tab == Tab::Chat && self.prev_tab != Tab::Chat {
-                    if let Some(ref mut chat) = self.chat_state {
-                        chat.focus_compose = true;
+                if self.tab == Tab::Interlink && self.prev_tab != Tab::Interlink {
+                    if let Some(ref mut il) = self.interlink_state {
+                        il.focus_compose = true;
                     }
                 }
                 self.prev_tab = self.tab;
@@ -402,7 +402,7 @@ impl ZodeApp {
                     Tab::Storage => crate::render_storage::render_storage(self, ui, state),
                     Tab::Peers => crate::render::render_peers(self, ui, state),
                     Tab::Log => crate::render::render_log(ui, state),
-                    Tab::Chat => crate::chat::render_chat(self, ui),
+                    Tab::Interlink => crate::interlink::render_interlink(self, ui),
                     Tab::Info => crate::render::render_info(self, ui, state),
                     Tab::Settings => crate::render::render_settings(self, ui),
                     Tab::Identity => crate::identity::render_identity(self, ui),

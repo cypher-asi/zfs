@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use grid_core::{ProgramId, SectorId};
 use grid_crypto::SectorKey;
@@ -45,7 +46,7 @@ pub(crate) enum Tab {
     Storage,
     Peers,
     Log,
-    Chat,
+    Interlink,
     Info,
     Settings,
     Identity,
@@ -102,6 +103,7 @@ pub(crate) struct DerivedMachineKey {
     pub capabilities: zero_neural::MachineKeyCapabilities,
     pub did: String,
     pub public_key: zero_neural::MachinePublicKey,
+    pub keypair: Arc<zero_neural::MachineKeyPair>,
 }
 
 pub(crate) struct DisplayMessage {
@@ -120,17 +122,17 @@ pub(crate) enum SignatureStatus {
 }
 
 /// Incremental update carrying only newly-discovered messages.
-pub(crate) struct ChatUpdate {
+pub(crate) struct InterlinkUpdate {
     pub new_messages: Vec<DisplayMessage>,
     pub error: Option<String>,
 }
 
-pub(crate) struct ChatState {
+pub(crate) struct InterlinkState {
     pub messages: Vec<DisplayMessage>,
     pub compose: String,
     pub sector_key: SectorKey,
     pub machine_did: String,
-    pub signing_keypair: Box<zero_neural::MachineKeyPair>,
+    pub signing_keypair: Arc<zero_neural::MachineKeyPair>,
     pub channel_id: ChannelId,
     pub program_id: ProgramId,
     /// Per-channel sector ID (one sector per channel in append model).
@@ -140,6 +142,6 @@ pub(crate) struct ChatState {
     pub initialized: bool,
     pub scroll_to_bottom: bool,
     pub focus_compose: bool,
-    pub update_rx: tokio::sync::mpsc::Receiver<ChatUpdate>,
+    pub update_rx: tokio::sync::mpsc::Receiver<InterlinkUpdate>,
     pub refresh_tx: tokio::sync::mpsc::Sender<()>,
 }
