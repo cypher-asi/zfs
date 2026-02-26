@@ -276,30 +276,70 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             .storage
             .insert_at(&msg.program_id, &msg.sector_id, msg.index, &msg.payload)
         {
-            Ok(stored) => {
-                if stored {
-                    self.metrics.inc_sectors_stored();
-                    if let Some(ref proof) = msg.shape_proof {
-                        let mut buf = Vec::new();
-                        if ciborium::into_writer(proof, &mut buf).is_ok() {
-                            let _ = self.storage.store_proof(
-                                &msg.program_id,
-                                &msg.sector_id,
-                                msg.index,
-                                &buf,
-                            );
-                        }
-                    }
-                    GossipAppendResult::Stored
-                } else {
-                    GossipAppendResult::Duplicate
-                }
+            Ok(true) => {
+                self.metrics.inc_sectors_stored();
+                self.store_proof_if_present(msg);
+                GossipAppendResult::Stored
+            }
+            Ok(false) => {
+                self.handle_index_conflict(msg)
             }
             Err(e) => {
                 warn!(error = %e, "gossip append store failed");
                 GossipAppendResult::Rejected(GossipRejectReason::StorageError {
                     detail: e.to_string(),
                 })
+            }
+        }
+    }
+
+    /// When `insert_at` returns false, check whether the existing entry at
+    /// that index is identical (true duplicate from gossip retry) or a
+    /// different message (multi-writer index conflict). On conflict, fall
+    /// back to `append()` so the message is not lost.
+    fn handle_index_conflict(
+        &self,
+        msg: &GossipSectorAppend,
+    ) -> crate::types::GossipAppendResult {
+        use crate::types::{GossipAppendResult, GossipRejectReason};
+
+        let existing = self
+            .storage
+            .get_entry(&msg.program_id, &msg.sector_id, msg.index);
+
+        match existing {
+            Ok(Some(ref data)) if data == &msg.payload => GossipAppendResult::Duplicate,
+            _ => {
+                match self
+                    .storage
+                    .append(&msg.program_id, &msg.sector_id, &msg.payload)
+                {
+                    Ok(_new_index) => {
+                        self.metrics.inc_sectors_stored();
+                        self.store_proof_if_present(msg);
+                        GossipAppendResult::Stored
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "gossip append (conflict fallback) failed");
+                        GossipAppendResult::Rejected(GossipRejectReason::StorageError {
+                            detail: e.to_string(),
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    fn store_proof_if_present(&self, msg: &GossipSectorAppend) {
+        if let Some(ref proof) = msg.shape_proof {
+            let mut buf = Vec::new();
+            if ciborium::into_writer(proof, &mut buf).is_ok() {
+                let _ = self.storage.store_proof(
+                    &msg.program_id,
+                    &msg.sector_id,
+                    msg.index,
+                    &buf,
+                );
             }
         }
     }

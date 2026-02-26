@@ -83,6 +83,18 @@ impl SectorStore for RocksStorage {
         collect_sectors(self, cf, program_id)
     }
 
+    fn get_entry(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        validate_sector_id(sector_id)?;
+        let cf = self.cf_handle(CF_SECTORS)?;
+        let key = build_entry_key(program_id, sector_id, index);
+        Ok(self.db().get_cf(cf, &key)?)
+    }
+
     fn store_proof(
         &self,
         program_id: &ProgramId,

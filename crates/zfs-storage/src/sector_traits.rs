@@ -68,6 +68,15 @@ pub trait SectorStore {
         proof: &[u8],
     ) -> Result<(), StorageError>;
 
+    /// Read a single entry at a specific index. Returns `None` if no entry
+    /// exists at that index.
+    fn get_entry(
+        &self,
+        program_id: &ProgramId,
+        sector_id: &SectorId,
+        index: u64,
+    ) -> Result<Option<Vec<u8>>, StorageError>;
+
     /// Retrieve the proof blob for a given sector log entry, if any.
     fn get_proof(
         &self,
