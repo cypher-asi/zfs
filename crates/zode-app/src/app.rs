@@ -29,6 +29,7 @@ pub(crate) struct ZodeApp {
     pub unlock_password: String,
     pub unlock_error: Option<String>,
     pub reveal_start: Option<f64>,
+    pub status_first_seen: Option<f64>,
     pub active_profile_id: Option<String>,
     pub session_password: Option<String>,
 }
@@ -67,6 +68,7 @@ impl ZodeApp {
             unlock_password: String::new(),
             unlock_error: None,
             reveal_start: None,
+            status_first_seen: None,
             active_profile_id: None,
             session_password: None,
         };
@@ -329,6 +331,7 @@ impl ZodeApp {
         self.unlock_error = None;
         self.active_profile_id = None;
         self.session_password = None;
+        self.status_first_seen = None;
         self.identity_state = Default::default();
         self.shared = std::sync::Arc::new(tokio::sync::Mutex::new(
             crate::state::AppState::default(),
