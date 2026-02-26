@@ -6,6 +6,7 @@ mod interlink;
 mod components;
 mod helpers;
 mod identity;
+mod profile;
 mod render;
 mod render_storage;
 mod settings;
