@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ark_serialize::CanonicalSerialize;
 use eframe::egui;
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -11,7 +10,7 @@ use zero_neural::testkit::derive_machine_keypair_from_seed;
 use zero_neural::MachineKeyCapabilities;
 use zfs_core::{GossipSectorAppend, ProgramId, SectorId, ShapeProof};
 use zfs_crypto::SectorKey;
-use zfs_proof_groth16::{generate_keys_for_bucket, Groth16ShapeProver};
+use zfs_proof_groth16::Groth16ShapeProver;
 use zfs_programs::zchat::{ChannelId, ZChatDescriptor, ZChatMessage, TEST_CHANNEL_ID};
 use zfs_storage::SectorStore;
 
@@ -350,62 +349,10 @@ fn broadcast_gossip(
 // Proof key loading / generation
 // ---------------------------------------------------------------------------
 
-const PROOF_BUCKETS: &[u32] = &[1024, 4096];
-
 /// Ensure the Groth16 proving and verifying key files exist on disk.
-///
-/// Must be called **before** `Zode::start()` so the verifier can load
-/// the VKs at boot time.
-pub(crate) fn ensure_proof_keys(data_dir: &str) {
-    let ver = zfs_proof_groth16::KEY_VERSION;
+fn ensure_proof_keys(data_dir: &str) {
     let key_dir = PathBuf::from(data_dir).join("proof_keys");
-    std::fs::create_dir_all(&key_dir).ok();
-
-    let all_exist = PROOF_BUCKETS.iter().all(|b| {
-        key_dir.join(format!("shape_pk_{b}_{ver}.bin")).exists()
-            && key_dir.join(format!("shape_vk_{b}_{ver}.bin")).exists()
-    });
-    if all_exist {
-        return;
-    }
-
-    info!(
-        "generating Groth16 keys for buckets {:?} (first launch)...",
-        PROOF_BUCKETS
-    );
-    let dir = key_dir;
-    std::thread::Builder::new()
-        .name("groth16-keygen".into())
-        .stack_size(8 * 1024 * 1024)
-        .spawn(move || {
-            for &bucket in PROOF_BUCKETS {
-                if dir.join(format!("shape_pk_{bucket}_{ver}.bin")).exists()
-                    && dir.join(format!("shape_vk_{bucket}_{ver}.bin")).exists()
-                {
-                    continue;
-                }
-                info!(bucket, "generating Groth16 keys...");
-                let (pk, vk) =
-                    generate_keys_for_bucket(bucket).expect("Groth16 key generation failed");
-
-                let mut pk_bytes = Vec::new();
-                pk.serialize_compressed(&mut pk_bytes)
-                    .expect("PK serialization failed");
-                std::fs::write(dir.join(format!("shape_pk_{bucket}_{ver}.bin")), &pk_bytes)
-                    .expect("failed to write proving key");
-
-                let mut vk_bytes = Vec::new();
-                vk.serialize_compressed(&mut vk_bytes)
-                    .expect("VK serialization failed");
-                std::fs::write(dir.join(format!("shape_vk_{bucket}_{ver}.bin")), &vk_bytes)
-                    .expect("failed to write verifying key");
-            }
-        })
-        .expect("failed to spawn keygen thread")
-        .join()
-        .expect("keygen thread panicked");
-
-    info!("Groth16 key generation complete");
+    zfs_proof_groth16::ensure_keys(&key_dir);
 }
 
 fn load_or_generate_prover(data_dir: &str) -> Box<Groth16ShapeProver> {

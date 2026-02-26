@@ -27,6 +27,7 @@ pub struct Zode {
     storage: Arc<RocksStorage>,
     network: Arc<Mutex<NetworkService>>,
     zode_id: ZodeId,
+    data_dir: std::path::PathBuf,
     topics: Vec<String>,
     connected_peers: Arc<RwLock<Vec<String>>>,
     event_tx: broadcast::Sender<LogEvent>,
@@ -38,14 +39,34 @@ pub struct Zode {
 impl Zode {
     /// Start the Zode with the given configuration.
     ///
-    /// Opens storage, starts the network, subscribes to topics, and begins
-    /// the event loop in a background task.
-    pub async fn start(config: ZodeConfig) -> Result<Self, ZodeError> {
+    /// Starts the network first to obtain the peer ID, then derives a
+    /// unique storage path from the last 6 characters of the Zode ID,
+    /// ensures proof keys exist, opens storage, and begins the event loop.
+    pub async fn start(mut config: ZodeConfig) -> Result<Self, ZodeError> {
+        let (network, zode_id, topic_strings, effective) = Self::start_network(&config).await?;
+
+        let zode_id_str = format_zode_id(&zode_id);
+        let suffix = &zode_id_str[zode_id_str.len().saturating_sub(6)..];
+        let base_name = config
+            .storage
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "zfs-zode-data".to_string());
+        let parent = config
+            .storage
+            .path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        config.storage.path = parent.join(format!("{base_name}-{suffix}"));
+        let data_dir = config.storage.path.clone();
+
+        let vk_dir = data_dir.join("proof_keys");
+        zfs_proof_groth16::ensure_keys(&vk_dir);
+
         let storage =
             Arc::new(RocksStorage::open(config.storage.clone()).map_err(ZodeError::Storage)?);
         info!(path = ?config.storage.path, "storage opened");
-
-        let (network, zode_id, topic_strings, effective) = Self::start_network(&config).await?;
 
         let (event_tx, _) = broadcast::channel(256);
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
@@ -56,7 +77,6 @@ impl Zode {
         let mut proof_registry = ProofVerifierRegistry::new();
         proof_registry.register(ProofSystem::None, Arc::new(NoopVerifier));
 
-        let vk_dir = std::path::Path::new(&config.storage.path).join("proof_keys");
         if vk_dir.exists() {
             match Groth16ShapeVerifier::load(&vk_dir) {
                 Ok(verifier) => {
@@ -103,6 +123,7 @@ impl Zode {
             storage,
             network,
             zode_id,
+            data_dir,
             topics: topic_strings,
             connected_peers,
             event_tx,
@@ -190,6 +211,11 @@ impl Zode {
     /// Access the metrics (for direct reads from atomic counters).
     pub fn metrics(&self) -> &Arc<ZodeMetrics> {
         &self.metrics
+    }
+
+    /// The actual data directory (unique per peer ID).
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
     }
 
     /// Access the underlying storage (for advanced queries).

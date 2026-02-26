@@ -73,14 +73,13 @@ impl ZodeApp {
         self.settings_error = None;
         self.stop_zode();
 
-        crate::chat::ensure_proof_keys(&self.settings.data_dir);
-
         let shared = Arc::new(Mutex::new(AppState::default()));
         self.shared = Arc::clone(&shared);
 
         let start_result = self.rt.block_on(async { Zode::start(config).await });
         match start_result {
             Ok(zode) => {
+                self.settings.data_dir = zode.data_dir().to_string_lossy().to_string();
                 let zode = Arc::new(zode);
                 self.zode = Some(Arc::clone(&zode));
                 let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -173,6 +172,7 @@ impl ZodeApp {
             let _ = self.rt.block_on(handle);
         }
         self.zode = None;
+        self.chat_state = None;
     }
 
     fn handle_resize_edges(ctx: &egui::Context) -> bool {
