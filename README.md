@@ -1,6 +1,6 @@
 # THE GRID
 
-**The Global Resilient Internet Datastore**
+**The Global Resilient Internet Datalink**
 
 A decentralized compute network powered by zero-knowledge proofs and post-quantum cryptography.
 
