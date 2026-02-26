@@ -1005,6 +1005,9 @@ impl ZodeApp {
                         .hint_text("Enter your password")
                         .margin(egui::Margin::symmetric(8.0, 6.0)),
                 );
+                if self.unlock_password.is_empty() && !resp.has_focus() {
+                    resp.request_focus();
+                }
                 if resp.lost_focus()
                     && ui.input(|i| i.key_pressed(egui::Key::Enter))
                 {
