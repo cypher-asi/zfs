@@ -28,6 +28,8 @@ pub(crate) struct ZodeApp {
     pub profiles: Vec<ProfileMeta>,
     pub unlock_password: String,
     pub unlock_error: Option<String>,
+    pub unlock_rendered: bool,
+    pub reveal_start: Option<f64>,
     pub active_profile_id: Option<String>,
     pub session_password: Option<String>,
 }
@@ -65,6 +67,8 @@ impl ZodeApp {
             profiles,
             unlock_password: String::new(),
             unlock_error: None,
+            unlock_rendered: false,
+            reveal_start: None,
             active_profile_id: None,
             session_password: None,
         };
@@ -159,10 +163,14 @@ impl ZodeApp {
                 } else {
                     self.boot_zode();
                 }
-                self.phase = AppPhase::Running;
+                self.phase = AppPhase::Revealing;
+                self.reveal_start = None;
             }
             Err(e) => {
                 self.unlock_error = Some(e.to_string());
+                self.phase = AppPhase::Unlock {
+                    profile_id: profile_id.to_string(),
+                };
             }
         }
     }
@@ -687,7 +695,20 @@ impl eframe::App for ZodeApp {
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
                 return;
             }
-            AppPhase::Running => {}
+            AppPhase::Unlocking { profile_id } => {
+                self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
+                self.render_unlocking_screen(ctx, &profile_id);
+                Self::render_window_border(ctx, maximized);
+                if self.unlock_rendered {
+                    self.unlock_rendered = false;
+                    self.attempt_unlock(&profile_id);
+                } else {
+                    self.unlock_rendered = true;
+                    ctx.request_repaint();
+                }
+                return;
+            }
+            AppPhase::Revealing | AppPhase::Running => {}
         }
 
         let state = self
@@ -699,11 +720,154 @@ impl eframe::App for ZodeApp {
         self.render_title_bar(ctx, maximized, on_resize_edge);
         self.render_central_panel(ctx, &state);
         Self::render_window_border(ctx, maximized);
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+
+        if matches!(self.phase, AppPhase::Revealing) {
+            let start = *self
+                .reveal_start
+                .get_or_insert_with(|| ctx.input(|i| i.time));
+            let now = ctx.input(|i| i.time);
+            let t = ((now - start) / Self::REVEAL_DURATION).clamp(0.0, 1.0) as f32;
+            if t < 1.0 {
+                Self::render_reveal_overlay(ctx, t);
+                ctx.request_repaint();
+            } else {
+                self.phase = AppPhase::Running;
+                self.reveal_start = None;
+                ctx.request_repaint_after(std::time::Duration::from_millis(500));
+            }
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
     }
 }
 
 impl ZodeApp {
+    const REVEAL_DURATION: f64 = 0.75;
+
+    fn render_unlocking_screen(&mut self, ctx: &egui::Context, profile_id: &str) {
+        let profile_name = self
+            .profiles
+            .iter()
+            .find(|p| p.id == profile_id)
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| profile_id.to_string());
+
+        let tex = self.icon_texture(ctx);
+        let frame = egui::Frame::default()
+            .fill(egui::Color32::BLACK)
+            .inner_margin(32.0);
+
+        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+            let rect = ui.max_rect();
+            ui.vertical_centered(|ui| {
+                let content_height = 160.0;
+                ui.add_space(((rect.height() - content_height) / 2.0).max(20.0));
+
+                ui.add(
+                    egui::Image::new(&tex)
+                        .fit_to_exact_size(egui::vec2(56.0, 56.0))
+                        .rounding(8.0),
+                );
+                ui.add_space(16.0);
+
+                ui.label(
+                    egui::RichText::new(&profile_name)
+                        .size(13.0)
+                        .color(egui::Color32::from_rgb(160, 160, 165)),
+                );
+                ui.add_space(20.0);
+
+                ui.spinner();
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Unlocking\u{2026}")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(100, 100, 108)),
+                );
+            });
+        });
+    }
+
+    fn render_reveal_overlay(ctx: &egui::Context, progress: f32) {
+        fn ease_out_cubic(t: f32) -> f32 {
+            1.0 - (1.0 - t).powi(3)
+        }
+
+        let eased = ease_out_cubic(progress);
+        let screen = ctx.screen_rect();
+        let center_x = screen.center().x;
+        let half_w = screen.width() / 2.0;
+        let offset = half_w * eased;
+
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("reveal_overlay"),
+        ));
+
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(screen.left() - offset, screen.top()),
+                egui::pos2(center_x - offset, screen.bottom()),
+            ),
+            0.0,
+            egui::Color32::BLACK,
+        );
+
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(center_x + offset, screen.top()),
+                egui::pos2(screen.right() + offset, screen.bottom()),
+            ),
+            0.0,
+            egui::Color32::BLACK,
+        );
+
+        let glow_strength = (1.0 - eased).powi(2);
+        if glow_strength > 0.01 {
+            let left_edge = center_x - offset;
+            let right_edge = center_x + offset;
+            let edge_alpha = (glow_strength * 200.0) as u8;
+
+            let edge_color =
+                egui::Color32::from_rgba_unmultiplied(46, 230, 176, edge_alpha);
+            painter.line_segment(
+                [
+                    egui::pos2(left_edge, screen.top()),
+                    egui::pos2(left_edge, screen.bottom()),
+                ],
+                egui::Stroke::new(1.5, edge_color),
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(right_edge, screen.top()),
+                    egui::pos2(right_edge, screen.bottom()),
+                ],
+                egui::Stroke::new(1.5, edge_color),
+            );
+
+            for i in 1..=6u8 {
+                let falloff = 1.0 - (i as f32 / 7.0);
+                let a = (edge_alpha as f32 * falloff * 0.35) as u8;
+                let w = i as f32 * 2.5;
+                let c = egui::Color32::from_rgba_unmultiplied(46, 230, 176, a);
+                painter.line_segment(
+                    [
+                        egui::pos2(left_edge - w, screen.top()),
+                        egui::pos2(left_edge - w, screen.bottom()),
+                    ],
+                    egui::Stroke::new(2.0, c),
+                );
+                painter.line_segment(
+                    [
+                        egui::pos2(right_edge + w, screen.top()),
+                        egui::pos2(right_edge + w, screen.bottom()),
+                    ],
+                    egui::Stroke::new(2.0, c),
+                );
+            }
+        }
+    }
+
     fn render_profile_select(&mut self, ctx: &egui::Context) {
         let tex = self.icon_texture(ctx);
         let frame = egui::Frame::default()
@@ -758,8 +922,9 @@ impl ZodeApp {
                     )
                     .clicked()
                 {
-                    self.phase = AppPhase::Running;
                     self.boot_zode();
+                    self.phase = AppPhase::Revealing;
+                    self.reveal_start = None;
                 }
             });
         });
@@ -861,14 +1026,18 @@ impl ZodeApp {
                 {
                     self.unlock_password.clear();
                     self.unlock_error = None;
-                    self.phase = AppPhase::Running;
                     self.boot_zode();
+                    self.phase = AppPhase::Revealing;
+                    self.reveal_start = None;
                 }
             });
         });
 
         if do_unlock {
-            self.attempt_unlock(&profile_id);
+            self.phase = AppPhase::Unlocking {
+                profile_id: profile_id.clone(),
+            };
+            self.unlock_rendered = false;
         }
     }
 }
