@@ -6,7 +6,7 @@ A decentralized compute network powered by zero-knowledge proofs and post-quantu
 
 ## ZODE
 
-ZODE is the reference implementation of the Grid protocol. It is a peer-to-peer
+ZODE is the reference implementation of The GRID protocol. It is a peer-to-peer
 node that receives, validates, and serves encrypted data sectors over a libp2p
 network. Sectors are organized by **programs** — application-level topics such
 as identity (ZID) and messaging (Interlink). Each sector is encrypted
@@ -23,7 +23,7 @@ Two frontends ship in this workspace:
 - **zode-cli** — a console TUI built with ratatui / crossterm.
 
 For the full wire format, cryptographic constructions, and behavioral rules, see the
-[Grid Protocol Specification](docs/grid-protocol.md).
+[The GRID Protocol Specification](docs/grid-protocol.md).
 
 ## Principles
 
@@ -31,7 +31,7 @@ For the full wire format, cryptographic constructions, and behavioral rules, see
 - **Privacy:** Data is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope) before it touches the network. Zero-knowledge proofs let nodes verify sector validity without seeing plaintext.
 - **Decentralization:** Fully peer-to-peer over libp2p/QUIC. GossipSub propagation, request-response exchange, optional Kademlia DHT. No central server; any node can join or leave freely.
 - **Post-Quantum:** PQ-hybrid cryptography: Ed25519 + ML-DSA-65 signing, X25519 + ML-KEM-768 key agreement. Sector encryption uses ZK-friendly Poseidon over BN254.
-- **Open Source:** MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates enforce `#![forbid(unsafe_code)]`.
+- **Open Source:** MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates except `grid-proof-groth16` enforce `#![forbid(unsafe_code)]`.
 
 ## Architecture
 
@@ -40,15 +40,15 @@ For the full wire format, cryptographic constructions, and behavioral rules, see
 | `zero-neural` | PQ-hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation |
 | `grid-core` | Shared types, canonical CBOR serialization, and protocol messages |
 | `grid-crypto` | Client-side encryption: Poseidon sponge sector encryption and hybrid key wrapping |
-| `grid-storage` | Storage abstraction over RocksDB with BlockStore, HeadStore, and ProgramIndex |
+| `grid-storage` | Storage abstraction over RocksDB: `SectorStore` trait, `RocksStorage` backend, sector stats |
 | `grid-proof` | Pluggable Valid-Sector proof verification trait |
 | `grid-proof-groth16` | Groth16 shape+encrypt circuit, prover, verifier, and trusted setup |
 | `grid-net` | libp2p network abstraction: QUIC transport, GossipSub topics, request-response protocol, Kademlia DHT |
 | `grid-sdk` | Client SDK: identity, encrypt, sign, upload, fetch |
 | `zode` | Core node logic tying together storage, network, proof, and programs |
-| `programs/zid` | ZID (Zero Identity) program descriptor and messages |
-| `programs/interlink` | Interlink (chat) program descriptor and messages |
-| `programs/zfs` | ZFS file-system program (placeholder) |
+| `grid-programs/zid` | ZID (Zero Identity) program descriptor and messages |
+| `grid-programs/interlink` | Interlink (chat) program descriptor and messages |
+| `grid-programs/zfs` | ZFS file-system program (placeholder) |
 | `zode-app` | Standalone desktop GUI for the Zode |
 | `zode-cli` | Console TUI for the Zode |
 
@@ -57,8 +57,8 @@ For the full wire format, cryptographic constructions, and behavioral rules, see
 ### All platforms
 
 - **Rust** stable toolchain (edition 2021). Install via [rustup](https://rustup.rs/).
-- **C/C++ compiler** -- required by the `rocksdb` crate which builds RocksDB from source.
-- **CMake** -- required on some platforms for the RocksDB build.
+- **C/C++ compiler** — required by the `rocksdb` crate which builds RocksDB from source.
+- **CMake** — required on some platforms for the RocksDB build.
 
 ### Windows
 
@@ -130,7 +130,7 @@ RUST_LOG=info cargo run -p zode-cli
 ## Building Release Binaries
 
 All release builds use the same command pattern. Run the build **natively** on
-each target platform -- there is no cross-compilation configuration.
+each target platform — there is no cross-compilation configuration.
 
 ### Windows (x86\_64-pc-windows-msvc)
 
@@ -196,7 +196,7 @@ zfs/
     zode/                 # core node logic
     zode-app/             # desktop GUI (eframe/egui)
     zode-cli/             # console TUI (ratatui/crossterm)
-    programs/
+    grid-programs/
       zid/                # Zero Identity program
       interlink/          # chat program
       zfs/                # file-system program (placeholder)
