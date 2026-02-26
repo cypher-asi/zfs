@@ -53,10 +53,10 @@ pub(crate) enum Tab {
 }
 
 pub(crate) struct IdentityState {
-    pub shares: Vec<zero_neural::ShamirShare>,
+    pub shares: Vec<zid::ShamirShare>,
     pub threshold: usize,
     pub identity_id: [u8; 16],
-    pub verifying_key: Option<zero_neural::IdentityVerifyingKey>,
+    pub verifying_key: Option<zid::IdentityVerifyingKey>,
     pub did: Option<String>,
     pub show_shares: bool,
     pub recovery_mode: bool,
@@ -100,10 +100,10 @@ impl Default for IdentityState {
 pub(crate) struct DerivedMachineKey {
     pub machine_id: [u8; 16],
     pub epoch: u64,
-    pub capabilities: zero_neural::MachineKeyCapabilities,
+    pub capabilities: zid::MachineKeyCapabilities,
     pub did: String,
-    pub public_key: zero_neural::MachinePublicKey,
-    pub keypair: Arc<zero_neural::MachineKeyPair>,
+    pub public_key: zid::MachinePublicKey,
+    pub keypair: Arc<zid::MachineKeyPair>,
 }
 
 pub(crate) struct DisplayMessage {
@@ -132,7 +132,7 @@ pub(crate) struct InterlinkState {
     pub compose: String,
     pub sector_key: SectorKey,
     pub machine_did: String,
-    pub signing_keypair: Arc<zero_neural::MachineKeyPair>,
+    pub signing_keypair: Arc<zid::MachineKeyPair>,
     pub channel_id: ChannelId,
     pub program_id: ProgramId,
     /// Per-channel sector ID (one sector per channel in append model).

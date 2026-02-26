@@ -5,9 +5,9 @@ use eframe::egui;
 use hkdf::Hkdf;
 use sha2::Sha256;
 use tracing::info;
-use zero_neural::ed25519_to_did_key;
-use zero_neural::testkit::derive_machine_keypair_from_seed;
-use zero_neural::MachineKeyCapabilities;
+use zid::ed25519_to_did_key;
+use zid::testkit::derive_machine_keypair_from_seed;
+use zid::MachineKeyCapabilities;
 use grid_core::{GossipSectorAppend, ProgramId, SectorId, ShapeProof};
 use grid_crypto::SectorKey;
 use grid_proof_groth16::Groth16ShapeProver;
@@ -29,7 +29,7 @@ fn derive_test_sector_key() -> SectorKey {
     SectorKey::from_bytes(key_bytes)
 }
 
-fn derive_test_machine_identity(zode_id: &str) -> (Arc<zero_neural::MachineKeyPair>, String) {
+fn derive_test_machine_identity(zode_id: &str) -> (Arc<zid::MachineKeyPair>, String) {
     use sha2::Digest;
     let hash: [u8; 32] =
         sha2::Sha256::digest(format!("interlink-main-machine:{zode_id}").as_bytes()).into();
@@ -317,7 +317,7 @@ fn decrypt_one(
             .map_err(|e| format!("Decrypt: {e}"))?;
     let msg = ZMessage::decode_canonical(&plaintext).map_err(|e| format!("Decode: {e}"))?;
     let sig_status = match msg.verify_signature(|signable, sig_bytes| {
-        zero_neural::verify_did_ed25519(&msg.sender_did, signable, sig_bytes).is_ok()
+        zid::verify_did_ed25519(&msg.sender_did, signable, sig_bytes).is_ok()
     }) {
         Ok(true) => SignatureStatus::Verified,
         Ok(false) => SignatureStatus::None,

@@ -3,7 +3,7 @@ use chacha20poly1305::{AeadCore, XChaCha20Poly1305};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use zero_neural::{ed25519_to_did_key, MachineKeyPair, MachinePublicKey};
+use zid::{ed25519_to_did_key, MachineKeyPair, MachinePublicKey};
 use grid_core::{ProgramId, SectorId};
 
 use crate::{CryptoError, SectorKey};
@@ -48,7 +48,7 @@ fn derive_wrap_key(
 
 /// Wrap a SectorKey for a recipient using hybrid key agreement.
 ///
-/// 1. Performs hybrid key agreement (`zero-neural` X25519 + ML-KEM-768 encapsulation)
+/// 1. Performs hybrid key agreement (`zid` X25519 + ML-KEM-768 encapsulation)
 ///    between sender and recipient.
 /// 2. Derives a context-bound wrap key via HKDF with `program_id || sector_id`.
 /// 3. Encrypts the SectorKey with XChaCha20-Poly1305.
@@ -95,12 +95,12 @@ pub fn unwrap_sector_key(
     program_id: &ProgramId,
     sector_id: &SectorId,
 ) -> Result<SectorKey, CryptoError> {
-    let bundle = zero_neural::EncapBundle {
+    let bundle = zid::EncapBundle {
         x25519_public: entry
             .sender_x25519_public
             .as_slice()
             .try_into()
-            .map_err(|_| zero_neural::CryptoError::InvalidKeyLength {
+            .map_err(|_| zid::CryptoError::InvalidKeyLength {
                 expected: 32,
                 got: entry.sender_x25519_public.len(),
             })?,

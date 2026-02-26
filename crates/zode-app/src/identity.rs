@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use zero_neural::{
+use zid::{
     derive_machine_keypair_from_shares, ed25519_to_did_key, generate_identity, verify_shares,
     MachineKeyCapabilities, ShamirShare,
 };

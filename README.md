@@ -37,7 +37,7 @@ For the full wire format, cryptographic constructions, and behavioral rules, see
 
 | Crate | Description |
 |---|---|
-| `zero-neural` | PQ-hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation |
+| `zid` | PQ-hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation |
 | `grid-core` | Shared types, canonical CBOR serialization, and protocol messages |
 | `grid-crypto` | Client-side encryption: Poseidon sponge sector encryption and hybrid key wrapping |
 | `grid-storage` | Storage abstraction over RocksDB: `SectorStore` trait, `RocksStorage` backend, sector stats |
@@ -185,7 +185,7 @@ cargo test --workspace
 zfs/
   Cargo.toml              # workspace root
   crates/
-    zero-neural/          # PQ-hybrid key generation and signing
+    zid/                  # PQ-hybrid key generation and signing
     grid-core/            # shared types, CBOR, protocol messages
     grid-crypto/          # Poseidon encryption, hybrid key wrapping
     grid-storage/         # RocksDB storage backend

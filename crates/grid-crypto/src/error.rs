@@ -13,8 +13,8 @@ pub enum CryptoError {
     HkdfExpandFailed,
     /// Padding or unpadding failed.
     PaddingError(String),
-    /// Error from the underlying `zero-neural` crate.
-    Neural(zero_neural::CryptoError),
+    /// Error from the underlying `zid` crate.
+    Neural(zid::CryptoError),
 }
 
 impl fmt::Display for CryptoError {
@@ -42,8 +42,8 @@ impl std::error::Error for CryptoError {
     }
 }
 
-impl From<zero_neural::CryptoError> for CryptoError {
-    fn from(e: zero_neural::CryptoError) -> Self {
+impl From<zid::CryptoError> for CryptoError {
+    fn from(e: zid::CryptoError) -> Self {
         Self::Neural(e)
     }
 }

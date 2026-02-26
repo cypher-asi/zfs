@@ -1,7 +1,7 @@
-use zero_neural::testkit::{
+use zid::testkit::{
     derive_identity_signing_key_from_seed, derive_machine_keypair_from_seed,
 };
-use zero_neural::*;
+use zid::*;
 
 fn test_identity() -> ([u8; 16], IdentitySigningKey) {
     let seed: [u8; 32] = rand::random();
@@ -81,7 +81,7 @@ fn isk_hybrid_sign_verify() {
     let (_, isk) = test_identity();
     let vk = isk.verifying_key();
 
-    let msg = b"hello, zero-neural";
+    let msg = b"hello, zid";
     let sig = isk.sign(msg);
 
     assert!(

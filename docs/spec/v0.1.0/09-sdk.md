@@ -2,15 +2,15 @@
 
 ## Purpose
 
-The **grid-sdk** crate is the **client SDK**: manage identity and machine keys, connect to Zodes, compute program_id and topic, encrypt sectors, sign operations, optionally generate Valid-Sector proofs, upload to R Zodes, fetch by CID, and manage heads. It includes built-in ZID and Interlink helpers. The SDK wraps `zero-neural`, `grid-net`, `grid-crypto`, `grid-proof`, and program crates; it does **not** use RocksDB.
+The **grid-sdk** crate is the **client SDK**: manage identity and machine keys, connect to Zodes, compute program_id and topic, encrypt sectors, sign operations, optionally generate Valid-Sector proofs, upload to R Zodes, fetch by CID, and manage heads. It includes built-in ZID and Interlink helpers. The SDK wraps `zid`, `grid-net`, `grid-crypto`, `grid-proof`, and program crates; it does **not** use RocksDB.
 
 ## Requirements
 
-- **Identity and keys:** Create identity via `zero-neural` (NeuralKey, IdentitySigningKey, MachineKeyPair). Machine enrollment per device.
+- **Identity and keys:** Create identity via `zid` (NeuralKey, IdentitySigningKey, MachineKeyPair). Machine enrollment per device.
 - **Connect / discover Zodes:** Via `grid-net` (bootstrap peers, config). See [12-protocol](12-protocol.md).
 - **Compute program_id and topic:** Via program crates (ProgramDescriptor, program_id(), topic()).
 - **Encrypt sector:** Via `grid-crypto` (SectorKey generation, wrapping, encrypt_sector). See [10-crypto](10-crypto.md).
-- **Sign operations:** All uploads are signed with the machine's hybrid key (Ed25519 + ML-DSA-65) via `zero-neural`.
+- **Sign operations:** All uploads are signed with the machine's hybrid key (Ed25519 + ML-DSA-65) via `zid`.
 - **Generate Valid-Sector proof (optional):** Via `grid-proof` if program requires; optional per program.
 - **Upload to R Zodes:** Send signed StoreRequest to R Zodes; replication factor R is a parameter. See [12-protocol](12-protocol.md) (replication semantics).
 - **Fetch by CID:** Send FetchRequest; receive FetchResponse (ciphertext or head).
@@ -144,9 +144,9 @@ stateDiagram-v2
 
 ## Implementation
 
-- **Crate:** `grid-sdk`. Deps: zero-neural, grid-core, grid-crypto, grid-proof, grid-net.
+- **Crate:** `grid-sdk`. Deps: zid, grid-core, grid-crypto, grid-proof, grid-net.
 - **No direct RocksDB:** All persistence is on Zode side; SDK only sends store/fetch.
 - **Replication factor R:** Parameter to upload (e.g. `replication_factor: usize`); semantics per [12-protocol](12-protocol.md) (at least one success).
-- **Signing:** Every upload is signed by the caller's `MachineKeyPair` producing a `HybridSignature`. The `machine_did` is derived from the machine's Ed25519 public key via `ed25519_to_did_key` (provided by `zero-neural`).
-- **SectorKey derivation:** SectorKeys are random 256-bit keys, wrapped per-recipient using the two-step hybrid key wrapping scheme in [10-crypto](10-crypto.md) (step 1: `zero-neural` hybrid encapsulation; step 2: `grid-crypto` sector-context-bound wrapping).
+- **Signing:** Every upload is signed by the caller's `MachineKeyPair` producing a `HybridSignature`. The `machine_did` is derived from the machine's Ed25519 public key via `ed25519_to_did_key` (provided by `zid`).
+- **SectorKey derivation:** SectorKeys are random 256-bit keys, wrapped per-recipient using the two-step hybrid key wrapping scheme in [10-crypto](10-crypto.md) (step 1: `zid` hybrid encapsulation; step 2: `grid-crypto` sector-context-bound wrapping).
 - **ZID and Interlink:** Helper APIs in SDK that use ProgramDescriptor and message types from [05-standard-programs](05-standard-programs.md); same encoding (CBOR) and proof rules.

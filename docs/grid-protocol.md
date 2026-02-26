@@ -58,9 +58,9 @@ A CBOR map with at minimum:
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | text string | Short program name (e.g. `"zid"`, `"interlink"`) |
-| `version` | unsigned integer | Program version number |
+| `version` | unsigned integer (u32) | Program version number |
 | `proof_required` | boolean | Whether Valid-Sector proofs are required |
-| `proof_system` | ProofSystem enum | Encryption and proof backend: `None` (XChaCha20-Poly1305) or `Groth16` (Poseidon sponge + shape proofs). See §6 and §13. |
+| `proof_system` | optional ProofSystem enum | Encryption and proof backend. Absent or `None` selects XChaCha20-Poly1305; `Groth16` selects Poseidon sponge + shape proofs. See §6 and §13. Omitted from CBOR when absent. |
 
 Program-specific descriptors MAY add additional fields. Two implementations that serialize the same descriptor fields to CBOR MUST produce the same ProgramId.
 
@@ -188,7 +188,7 @@ x25519_ss  = X25519(sender_x25519_secret, recipient_x25519_public)
 shared_secret = HKDF-SHA256(
     ikm  = x25519_ss || mlkem_ss,
     salt = None,
-    info = "zero-neural:encap:v1"
+    info = "zid:encap:v1"
 ) → 32 bytes
 ```
 
@@ -258,8 +258,9 @@ sealed = nonce (32 bytes) || ciphertext_elements (32 bytes each) || tag (32 byte
 
 - **Nonce**: 256-bit, randomly generated per encryption.
 - **AAD**: `program_id (32 bytes) || sector_id (32 bytes)` absorbed into the sponge before the plaintext.
-- **Ciphertext**: Plaintext is split into 32-byte (256-bit) field elements; sponge absorbs key and nonce, then XORs/absorbs plaintext elements. Output elements form `ciphertext_elements`.
-- **Tag**: Final 32-byte output authenticates the entire encryption (AAD + ciphertext).
+- **Field element packing**: Plaintext is split into chunks of **30 data bytes** each. Each chunk is packed into a 32-byte field element as `[1-byte length][up to 30 bytes of data][zero-pad]`. The length prefix and zero MSB ensure the value is below the BN254 scalar-field modulus (~2^254), making `Fr::from_le_bytes_mod_order` lossless. Ciphertext elements are serialized as 32 bytes each (little-endian).
+- **Duplex mode**: The sponge absorbs key, nonce, and AAD elements. For each rate-sized chunk of plaintext elements, the sponge squeezes keystream elements, adds them to the plaintext elements to produce ciphertext elements, then absorbs the plaintext elements.
+- **Tag**: Final 32-byte squeeze output authenticates the entire encryption (key + nonce + AAD + plaintext).
 
 The Poseidon sponge construction enables shape-proof circuits (§13) that prove ciphertext integrity without revealing plaintext.
 
@@ -441,6 +442,7 @@ Zodes enforce the following policies:
 | **Sector filter** | Optionally restrict to an explicit set of allowed sector IDs. Default: all sectors accepted. |
 | **Entry size limit** | Maximum payload size per entry. Default: 256 KB. Reject with `InvalidPayload`. |
 | **Batch limits** | Max 64 entries, max 4 MB total payload per batch. Reject with `BatchTooLarge`. |
+| **Shape proof verification** | When a program's `proof_system` is `Groth16`, verify the attached `ShapeProof` (§13). Reject with `ProofInvalid` if verification fails or if a required proof is missing. |
 | **Per-program quota** | Optional maximum bytes per program. |
 
 ---
@@ -552,6 +554,7 @@ Append a single encrypted entry to a sector log.
 | `program_id` | bytes(32) | Target program |
 | `sector_id` | bytes(32) | Target sector |
 | `entry` | byte string | Encrypted payload |
+| `shape_proof` | optional ShapeProof | Shape proof attesting to ciphertext integrity (§13). Omitted when `proof_system = None`. |
 
 **Response:**
 
@@ -618,6 +621,7 @@ Each `BatchAppendEntry`:
 |-------|------|-------------|
 | `sector_id` | bytes(32) | Target sector |
 | `entry` | byte string | Encrypted payload |
+| `shape_proof` | optional ShapeProof | Shape proof for this entry (§13). Omitted when `proof_system = None`. |
 
 **Response:**
 
@@ -697,6 +701,7 @@ When a Zode accepts an `Append` request from a client, it publishes a `GossipSec
 | `sector_id` | bytes(32) | Sector this entry belongs to |
 | `index` | uint64 | The assigned log index |
 | `payload` | byte string | The encrypted entry bytes |
+| `shape_proof` | optional ShapeProof | Shape proof for this entry (§13). Omitted when `proof_system = None`. |
 
 Serialized as canonical CBOR and published to GossipSub.
 
@@ -707,8 +712,11 @@ When a Zode receives a `GossipSectorAppend`:
 1. **Program check**: If the Zode does not serve `program_id`, discard.
 2. **Sector filter**: If the Zode uses an allowlist, check `sector_id`. Discard if not in the set.
 3. **Entry size check**: If the payload exceeds the Zode's max entry size limit, discard.
-4. **Idempotent insert**: Store the entry at the specified `index` if that index is not already occupied. If the index already exists, silently ignore (idempotent).
-5. **No re-gossip**: The Zode does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
+4. **Shape proof verification**: If the program requires proofs, verify the attached `shape_proof` (see §13). Discard if verification fails or if a required proof is missing.
+5. **Idempotent insert with conflict resolution**: Attempt to store the entry at the specified `index`. If the index is unoccupied, store it. If the index is already occupied:
+   - If the existing entry is byte-identical to the incoming payload, treat as a duplicate and silently ignore.
+   - If the existing entry differs (multi-writer conflict), fall back to an `append` at the next available index so the message is not lost.
+6. **No re-gossip**: The Zode does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
 
 ---
 
@@ -743,11 +751,11 @@ schema_hash = SHA-256(canonical_cbor(schema))
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `proof_system` | enum | `Groth16` |
+| `proof_system` | ProofSystem enum | `Groth16` |
 | `ciphertext_hash` | bytes(32) | Poseidon(C) — hash of the ciphertext C |
 | `proof_bytes` | byte string | Groth16 proof |
 | `schema_hash` | bytes(32) | SHA-256 of canonical CBOR schema |
-| `size_bucket` | enum | Message-size bucket (see §13.6) |
+| `size_bucket` | uint32 | Max message size of the circuit bucket used (e.g. `1024`, `4096`). See §13.6. |
 
 ### 13.4 Universal Circuit
 
@@ -808,16 +816,28 @@ One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply acr
 | `owner_did` | text string | DID of the identity owner |
 | `display_name` | optional text string | Human-readable name |
 | `timestamp_ms` | uint64 | Milliseconds since Unix epoch |
+| `signature` | byte string | PQ-hybrid signature over signable bytes (§7). `Ed25519 (64) \|\| ML-DSA-65 (3309)`. Empty when unsigned. |
 
 ### 14.2 Interlink
 
-**Descriptor:**
+**v1 Descriptor (legacy):**
 
 | Field | Value |
 |-------|-------|
 | `name` | `"interlink"` |
 | `version` | `1` |
 | `proof_required` | `false` |
+
+**v2 Descriptor (current default):**
+
+| Field | Value |
+|-------|-------|
+| `name` | `"interlink"` |
+| `version` | `2` |
+| `proof_required` | `true` |
+| `proof_system` | `Groth16` |
+
+Zodes subscribe to the **v2** descriptor by default. The v1 descriptor is retained for backward compatibility but is not subscribed out of the box.
 
 **ZMessage:**
 
@@ -827,6 +847,7 @@ One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply acr
 | `channel_id` | byte string | Channel identifier |
 | `content` | text string | Message text (UTF-8) |
 | `timestamp_ms` | uint64 | Milliseconds since Unix epoch |
+| `signature` | byte string | PQ-hybrid signature over signable bytes (§7). `Ed25519 (64) \|\| ML-DSA-65 (3309)`. Empty when unsigned. |
 
 Maximum encoded message size: 64 KB.
 
@@ -844,7 +865,7 @@ SectorId = SHA-256("interlink/msg/" || channel_id_bytes || "/" || timestamp_ms_l
 
 **Reserved test channel:** `"INTERLINK-MAIN"` — used for test traffic in development.
 
-Both ZID and Interlink are **default programs**: Zodes subscribe to them out of the box. Operators can individually disable either program.
+ZID (v1) and Interlink (v2) are **default programs**: Zodes subscribe to them out of the box. Operators can individually disable either program.
 
 ---
 
@@ -865,7 +886,7 @@ Both ZID and Interlink are **default programs**: Zodes subscribe to them out of 
 The Zode continuously processes:
 
 - **Incoming sector requests** (`/grid/sector/1.0.0`): Dispatch to the appropriate handler (Append, ReadLog, LogLength, BatchAppend, BatchLogLength), enforce policy, store if accepted, and send the response.
-- **Gossip messages** (GossipSub): Deserialize `GossipSectorAppend` from CBOR, store via idempotent `insert_at`.
+- **Gossip messages** (GossipSub): Deserialize `GossipSectorAppend` from CBOR, verify shape proof if required, and store via `insert_at` with conflict resolution (§12.2).
 - **Peer events**: Track connected/disconnected peers.
 - **Discovery events** (Kademlia): Auto-dial newly discovered peers.
 - **Publish queue**: Drain outbound gossip publishes.
@@ -873,15 +894,13 @@ The Zode continuously processes:
 
 ### 15.3 Append + Gossip Flow
 
-When a Zode accepts an Append request:
+When a Zode receives an Append request:
 
-1. Validate program, sector filter, and entry size.
+1. Validate program, sector filter, entry size, and shape proof (if required).
 2. Append the entry to local storage, receiving the assigned index.
 3. Send `SectorAppendResponse(ok=true, index)` to the client.
-4. Serialize a `GossipSectorAppend` with the program_id, sector_id, assigned index, and payload.
-5. Publish to `prog/<program_id_hex>` via GossipSub.
 
-The client is responsible for triggering the gossip publish by calling the Zode's publish interface after a successful append.
+The Zode does **not** automatically publish the entry to GossipSub. Gossip propagation is **client-triggered**: after receiving a successful append response, the client serializes a `GossipSectorAppend` (with `program_id`, `sector_id`, the assigned `index`, the `payload`, and optionally the `shape_proof`) and publishes it to the Zode's GossipSub topic `prog/<program_id_hex>` via the Zode's publish interface. This design keeps the Zode stateless with respect to gossip fan-out and allows clients to control propagation timing.
 
 ---
 
@@ -938,4 +957,4 @@ A conforming Grid implementation MUST:
 11. Perform hybrid key encapsulation using X25519 + ML-KEM-768 combined via HKDF (§5.5).
 12. Reject sector IDs that are not exactly 32 bytes.
 13. Enforce batch limits: 64 entries maximum, 4 MB total payload maximum.
-14. Accept `GossipSectorAppend` idempotently: store at the given index only if not already occupied.
+14. Accept `GossipSectorAppend` with conflict resolution: store at the given index if unoccupied; if occupied with identical data, silently ignore; if occupied with different data, fall back to append at the next available index (§12.2).

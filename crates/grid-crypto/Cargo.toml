@@ -13,7 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-zero-neural = { path = "../zero-neural" }
+zid = { path = "../zid" }
 grid-core = { path = "../grid-core" }
 ark-ff = "0.5"
 ark-bn254 = "0.5"
@@ -22,4 +22,4 @@ ark-crypto-primitives = { version = "0.5", features = ["sponge"] }
 
 [dev-dependencies]
 rand = "0.8"
-zero-neural = { path = "../zero-neural", features = ["testkit"] }
+zid = { path = "../zid", features = ["testkit"] }

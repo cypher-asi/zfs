@@ -1,6 +1,6 @@
 use crate::{decrypt_sector, encrypt_sector, unwrap_sector_key, wrap_sector_key, SectorKey};
-use zero_neural::testkit::derive_machine_keypair_from_seed;
-use zero_neural::MachineKeyCapabilities;
+use zid::testkit::derive_machine_keypair_from_seed;
+use zid::MachineKeyCapabilities;
 use grid_core::{ProgramDescriptor, ProgramId, SectorId};
 
 fn test_aad(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
@@ -10,7 +10,7 @@ fn test_aad(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
     aad
 }
 
-fn make_keypair(seed: u8) -> zero_neural::MachineKeyPair {
+fn make_keypair(seed: u8) -> zid::MachineKeyPair {
     let mut nk_bytes = [0u8; 32];
     nk_bytes[0] = seed;
     let identity_id = [seed; 16];

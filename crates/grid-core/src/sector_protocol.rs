@@ -36,7 +36,7 @@ pub struct ShapeProof {
 // Top-level request / response enums
 // ---------------------------------------------------------------------------
 
-/// Client → Zode: sector request sent over `/grid/sector/2.0.0`.
+/// Client → Zode: sector request sent over `/grid/sector/1.0.0`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SectorRequest {
     Append(SectorAppendRequest),
@@ -46,7 +46,7 @@ pub enum SectorRequest {
     BatchLogLength(SectorBatchLogLengthRequest),
 }
 
-/// Zode → Client: sector response sent over `/grid/sector/2.0.0`.
+/// Zode → Client: sector response sent over `/grid/sector/1.0.0`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SectorResponse {
     Append(SectorAppendResponse),

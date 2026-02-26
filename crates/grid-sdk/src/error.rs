@@ -13,7 +13,7 @@ pub enum SdkError {
     Core(#[from] grid_core::GridError),
 
     #[error("neural error: {0}")]
-    Neural(#[from] zero_neural::CryptoError),
+    Neural(#[from] zid::CryptoError),
 
     #[error("proof error: {0}")]
     Proof(#[from] grid_proof_groth16::Groth16Error),

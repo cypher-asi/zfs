@@ -1,12 +1,12 @@
 [package]
-name = "zero-neural"
+name = "zid"
 version = "0.2.0"
 edition = "2021"
 description = "PQ-Hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation (zero-id compatible)"
 license = "MIT OR Apache-2.0"
 
 [lib]
-name = "zero_neural"
+name = "zid"
 
 [features]
 testkit = []
@@ -30,4 +30,4 @@ thiserror = "2"
 shamir-vault = "1.3"
 
 [dev-dependencies]
-zero-neural = { path = ".", features = ["testkit"] }
+zid = { path = ".", features = ["testkit"] }

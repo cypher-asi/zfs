@@ -140,5 +140,5 @@ fn combine_shared_secrets(x25519_ss: &[u8], mlkem_ss: &[u8]) -> Result<[u8; 32],
     ikm.extend_from_slice(x25519_ss);
     ikm.extend_from_slice(mlkem_ss);
 
-    hkdf_derive_32(&ikm, b"zero-neural:encap:v1")
+    hkdf_derive_32(&ikm, b"zid:encap:v1")
 }

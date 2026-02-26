@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/zero-neural",
+  "crates/zid",
   "crates/grid-core",
   "crates/grid-crypto",
   "crates/grid-storage",

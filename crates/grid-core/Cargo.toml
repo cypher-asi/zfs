@@ -12,6 +12,6 @@ serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 sha2 = "0.10"
 thiserror = "2"
-zero-neural = { path = "../zero-neural" }
+zid = { path = "../zid" }
 
 [dev-dependencies]

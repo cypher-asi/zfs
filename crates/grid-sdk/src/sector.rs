@@ -93,7 +93,7 @@ pub fn sector_decrypt_and_verify<F>(
     resolve_key: F,
 ) -> Result<(Vec<u8>, SignatureStatus), SdkError>
 where
-    F: FnOnce(&str) -> Option<zero_neural::IdentityVerifyingKey>,
+    F: FnOnce(&str) -> Option<zid::IdentityVerifyingKey>,
 {
     let plaintext = sector_decrypt_poseidon(ciphertext, sector_key, program_id, sector_id)?;
     let msg: grid_programs_interlink::ZMessage =
@@ -106,7 +106,7 @@ where
     let status = match resolve_key(&msg.sender_did) {
         Some(vk) => {
             let signable = msg.signable_bytes().map_err(SdkError::Core)?;
-            let sig = zero_neural::HybridSignature::from_bytes(&msg.signature)
+            let sig = zid::HybridSignature::from_bytes(&msg.signature)
                 .map_err(|e| SdkError::Other(format!("bad signature bytes: {e}")))?;
             match vk.verify(&signable, &sig) {
                 Ok(()) => SignatureStatus::Verified,

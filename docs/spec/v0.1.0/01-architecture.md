@@ -14,9 +14,9 @@ This document defines the language, crate-per-layer layout, API and tooling rule
 
 | Crate | Path | Purpose | Grid deps |
 |-------|------|---------|----------|
-| zero-neural | `crates/zero-neural` | PQ-Hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation, DID:key encoding/decoding (zero-id compatible) | (none) |
+| zid | `crates/zid` | PQ-Hybrid key generation, HKDF derivation, Ed25519 + ML-DSA-65 signing, ML-KEM-768 encapsulation, DID:key encoding/decoding (zero-id compatible) | (none) |
 | grid-core | `crates/grid-core` | Shared types, identifiers, serialization, hashing | (none) |
-| grid-crypto | `crates/grid-crypto` | Client-side encryption; ciphertext-at-rest; SectorKey wrapping | zero-neural, grid-core |
+| grid-crypto | `crates/grid-crypto` | Client-side encryption; ciphertext-at-rest; SectorKey wrapping | zid, grid-core |
 | grid-storage | `crates/grid-storage` | RocksDB abstraction; only crate that touches RocksDB | grid-core |
 | programs-zid | `crates/programs-zid` | ZID program identity, descriptors | grid-core |
 | programs-interlink | `crates/programs-interlink` | Interlink program identity, descriptors | grid-core |
@@ -27,16 +27,16 @@ This document defines the language, crate-per-layer layout, API and tooling rule
 | zode | `crates/zode` | Zode node: libp2p, storage, proof, policy, metrics | grid-core, grid-crypto, grid-proof, grid-net, grid-storage |
 | zode-cli | `crates/zode-cli` | Console-only Zode: CLI/TUI | grid-core, zode |
 | zode-app | `crates/zode-app` | Standalone Zode application (desktop/tray) | grid-core, zode |
-| grid-sdk | `crates/grid-sdk` | Client SDK: connect, encrypt, prove, upload, fetch, heads; identity + signing | zero-neural, grid-core, grid-crypto, grid-proof, grid-net |
+| grid-sdk | `crates/grid-sdk` | Client SDK: connect, encrypt, prove, upload, fetch, heads; identity + signing | zid, grid-core, grid-crypto, grid-proof, grid-net |
 
 **Build order:**
-`zero-neural` (standalone) → `grid-core` → `grid-crypto`, `grid-storage`, `programs-zid`, `programs-interlink`, `programs-zfs` → `grid-proof`, `grid-net` → `zode`, `grid-sdk` → `zode-cli`, `zode-app`.
+`zid` (standalone) → `grid-core` → `grid-crypto`, `grid-storage`, `programs-zid`, `programs-interlink`, `programs-zfs` → `grid-proof`, `grid-net` → `zode`, `grid-sdk` → `zode-cli`, `zode-app`.
 
 ## Crate dependency diagram (Mermaid)
 
 ```mermaid
 flowchart TB
-    zn[zero-neural]
+    zn[zid]
     core[grid-core]
     crypto[grid-crypto]
     storage[grid-storage]
@@ -70,7 +70,7 @@ flowchart TB
 
 ## Crate boundaries (rules)
 
-- **zero-neural:** No Grid dependencies. Shared with zid and any other project needing the PQ-Hybrid key hierarchy. Public API: `NeuralKey`, `IdentitySigningKey`, `IdentityVerifyingKey`, `MachineKeyPair`, `MachinePublicKey`, `MachineKeyCapabilities`, `HybridSignature`, `SharedSecret`, `EncapBundle`, `CryptoError`; top-level functions `derive_identity_signing_key`, `derive_machine_keypair`, `ed25519_to_did_key`, `did_key_to_ed25519`. `grid-crypto` and `grid-sdk` depend on it; Zodes verify signatures using `MachinePublicKey::verify()` re-exported through `grid-crypto`.
+- **zid:** No Grid dependencies. Shared with zid and any other project needing the PQ-Hybrid key hierarchy. Public API: `NeuralKey`, `IdentitySigningKey`, `IdentityVerifyingKey`, `MachineKeyPair`, `MachinePublicKey`, `MachineKeyCapabilities`, `HybridSignature`, `SharedSecret`, `EncapBundle`, `CryptoError`; top-level functions `derive_identity_signing_key`, `derive_machine_keypair`, `ed25519_to_did_key`, `did_key_to_ed25519`. `grid-crypto` and `grid-sdk` depend on it; Zodes verify signatures using `MachinePublicKey::verify()` re-exported through `grid-crypto`.
 - **RocksDB:** No RocksDB outside `grid-storage`. All block/head/index persistence goes through `grid-storage` APIs.
 - **libp2p:** No direct libp2p outside `grid-net`. Zode and SDK use `grid-net` for discovery, connect, send/receive, and topic subscription.
 - **Public APIs:** Each crate exposes a minimal, stable public API; internal modules may change without semver bump for non-public items.
@@ -78,7 +78,7 @@ flowchart TB
 ## Workspace layout
 
 - **Root:** Single Cargo workspace at repo root.
-- **Members:** All Grid crates under `crates/`, e.g. `crates/zero-neural`, `crates/grid-core`, `crates/grid-crypto`, …
+- **Members:** All Grid crates under `crates/`, e.g. `crates/zid`, `crates/grid-core`, `crates/grid-crypto`, …
 - **Binaries:** Only crates that are runnable have `[[bin]]`:
   - `zode-cli`: binary for console-only Zode (e.g. `zode` or `zode-cli`).
   - `zode-app`: binary for standalone Zode application (desktop or system-tray).
@@ -89,7 +89,7 @@ Example root `Cargo.toml`:
 [workspace]
 resolver = "2"
 members = [
-  "crates/zero-neural",
+  "crates/zid",
   "crates/grid-core",
   "crates/grid-crypto",
   "crates/grid-storage",

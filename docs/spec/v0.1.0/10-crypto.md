@@ -8,11 +8,11 @@ The `grid-crypto` crate provides client-side encryption for sector payloads. The
 
 - **Ciphertext-only at rest:** Zode stores and serves ciphertext. No key material is stored on the Zode.
 - **Client encrypts before upload:** SDK (or client using the crate) encrypts the sector payload before sending a StoreRequest.
-- **Key hierarchy:** Key derivation is rooted in `zero-neural` — a standalone PQ-Hybrid key crate. `grid-crypto` depends on `zero-neural` for `MachineKeyPair`, `MachinePublicKey`, hybrid key encapsulation, and HKDF.
+- **Key hierarchy:** Key derivation is rooted in `zid` — a standalone PQ-Hybrid key crate. `grid-crypto` depends on `zid` for `MachineKeyPair`, `MachinePublicKey`, hybrid key encapsulation, and HKDF.
 
 ## Key hierarchy
 
-All keys derive from a **NeuralKey** (256-bit root secret) via HKDF-SHA256 with zero-id-compatible domain separation. The full hierarchy is defined in the `zero-neural` crate; `grid-crypto` consumes the derived Machine Key Pairs.
+All keys derive from a **NeuralKey** (256-bit root secret) via HKDF-SHA256 with zero-id-compatible domain separation. The full hierarchy is defined in the `zid` crate; `grid-crypto` consumes the derived Machine Key Pairs.
 
 ```
 NeuralKey (256-bit CSPRNG)
@@ -85,7 +85,7 @@ All HKDF derivations use `salt = None` and SHA-256. The info strings follow a `c
 | Machine ML-KEM-768 | `"cypher:shared:machine:pq-encrypt:v1" \|\| machine_id` |
 | ML-KEM-768 d parameter | `"mlkem768:d"` (from PQ encrypt seed) |
 | ML-KEM-768 z parameter | `"mlkem768:z"` (from PQ encrypt seed) |
-| Hybrid encap combine | `"zero-neural:encap:v1"` |
+| Hybrid encap combine | `"zid:encap:v1"` |
 
 ## Sector encryption
 
@@ -118,7 +118,7 @@ flowchart TB
     subgraph wrap ["KeyEnvelope (per recipient)"]
         DH["X25519 DH shared secret"]
         KEM["ML-KEM-768 shared secret"]
-        COMBINE["HKDF(x25519_ss || mlkem_ss, 'zero-neural:encap:v1')"]
+        COMBINE["HKDF(x25519_ss || mlkem_ss, 'zid:encap:v1')"]
         SS["SharedSecret (32 bytes)"]
         WK["wrap_key = HKDF(SharedSecret, sector context)"]
         WSK["Wrapped SectorKey"]
@@ -132,9 +132,9 @@ flowchart TB
 
 ### Key wrapping — always hybrid
 
-Key wrapping is a **two-step** process that separates the key agreement (in `zero-neural`) from the sector-specific wrapping (in `grid-crypto`):
+Key wrapping is a **two-step** process that separates the key agreement (in `zid`) from the sector-specific wrapping (in `grid-crypto`):
 
-**Step 1 — Hybrid key agreement (`zero-neural`):**
+**Step 1 — Hybrid key agreement (`zid`):**
 
 The sender performs X25519 DH and ML-KEM-768 encapsulation against the recipient's public key, then combines both shared secrets via HKDF:
 
@@ -145,7 +145,7 @@ x25519_ss  = X25519(sender_machine_x25519_secret, recipient_x25519_public)
 shared_secret = HKDF-SHA256(
     ikm  = x25519_ss || mlkem_ss,
     salt = None,
-    info = "zero-neural:encap:v1"
+    info = "zid:encap:v1"
 )
 ```
 
@@ -197,7 +197,7 @@ Each envelope entry is ~1,192 bytes (the ML-KEM ciphertext dominates). The sende
 
 ## DID encoding
 
-`zero-neural` provides `did:key` encoding and decoding for Ed25519 public keys (see [Interfaces](#did-encoding-1) for signatures):
+`zid` provides `did:key` encoding and decoding for Ed25519 public keys (see [Interfaces](#did-encoding-1) for signatures):
 
 - **Encode:** `ed25519_to_did_key(pk: &[u8; 32]) -> String` — produces `"did:key:z" + base58btc(0xed01 || pk)`
 - **Decode:** `did_key_to_ed25519(did: &str) -> Result<[u8; 32], CryptoError>` — parses and validates
@@ -250,9 +250,9 @@ pub fn unwrap_sector_key(
 ) -> Result<SectorKey, CryptoError>;
 ```
 
-### zero-neural types and functions (implemented)
+### zid types and functions (implemented)
 
-These are the `zero-neural` primitives used by `grid-crypto` and `grid-sdk`. All types listed here are publicly exported from the `zero-neural` crate.
+These are the `zid` primitives used by `grid-crypto` and `grid-sdk`. All types listed here are publicly exported from the `zid` crate.
 
 #### NeuralKey
 
@@ -262,7 +262,7 @@ pub struct NeuralKey([u8; 32]); // Zeroize + ZeroizeOnDrop
 impl NeuralKey {
     pub fn generate(rng: &mut (impl RngCore + CryptoRng)) -> Self;
     pub fn from_bytes(bytes: [u8; 32]) -> Self;
-    // as_bytes() is pub(crate) only — not exposed outside zero-neural
+    // as_bytes() is pub(crate) only — not exposed outside zid
 }
 ```
 
@@ -419,8 +419,8 @@ stateDiagram-v2
 
 ## Implementation
 
-- **Crate:** `grid-crypto`. Deps: `zero-neural`, `grid-core`.
+- **Crate:** `grid-crypto`. Deps: `zid`, `grid-core`.
 - **Use only in:** SDK and client code. Zode does **not** use this crate for payload crypto.
 - **Algorithm:** XChaCha20-Poly1305 for sector encryption and key wrapping. Hybrid (X25519 + ML-KEM-768) for key agreement.
-- **Two-step wrapping:** Step 1 (key agreement) is in `zero-neural`; step 2 (sector-context-bound wrapping) is in `grid-crypto`.
+- **Two-step wrapping:** Step 1 (key agreement) is in `zid`; step 2 (sector-context-bound wrapping) is in `grid-crypto`.
 - **Errors:** `CryptoError` for decryption failure, invalid length, etc.; do not leak key material.

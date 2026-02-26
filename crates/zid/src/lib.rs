@@ -22,7 +22,7 @@ pub use shares_api::{
 pub use signing::{HybridSignature, IdentitySigningKey, IdentityVerifyingKey};
 
 /// Test-only helpers for deterministic key derivation from raw seeds.
-/// External crates add `zero-neural = { ..., features = ["testkit"] }` in `[dev-dependencies]`.
+/// External crates add `zid = { ..., features = ["testkit"] }` in `[dev-dependencies]`.
 #[cfg(feature = "testkit")]
 pub mod testkit {
     use crate::error::CryptoError;

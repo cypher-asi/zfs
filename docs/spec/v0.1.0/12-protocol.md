@@ -39,7 +39,7 @@ pub struct StoreRequest {
 ### Signed payload
 
 - **What is signed:** canonical CBOR encoding of `(program_id, cid, optional head hash, timestamp)` — prevents replay and binds the signature to the content.
-- **Signature format:** `HybridSignature` from `zero-neural` — always contains both Ed25519 (64 bytes) and ML-DSA-65 (3,309 bytes). Raw binary serialization: `ed25519 (64 B) || ml_dsa (3,309 B)` via `HybridSignature::to_bytes()`/`from_bytes()`. Within CBOR protocol messages, the signature fields (`ed25519: [u8; 64]`, `ml_dsa: Vec<u8>`) are encoded as CBOR byte strings.
+- **Signature format:** `HybridSignature` from `zid` — always contains both Ed25519 (64 bytes) and ML-DSA-65 (3,309 bytes). Raw binary serialization: `ed25519 (64 B) || ml_dsa (3,309 B)` via `HybridSignature::to_bytes()`/`from_bytes()`. Within CBOR protocol messages, the signature fields (`ed25519: [u8; 64]`, `ml_dsa: Vec<u8>`) are encoded as CBOR byte strings.
 - **Verification:** Zodes verify via `MachinePublicKey::verify(msg, sig)`, which checks **both** Ed25519 and ML-DSA-65 components. The `MachinePublicKey` is resolved from `machine_did` (see [10-crypto](10-crypto.md) for DID encoding).
 - **Wire cost:** hybrid signatures add ~3.3 KB per signed message; envelope entries add ~1.2 KB per recipient. For store-heavy workloads this is acceptable; the sector ciphertext itself is typically much larger.
 
@@ -172,4 +172,4 @@ sequenceDiagram
 
 - **Crate:** `grid-net`. Implements wire format, request-response, and discovery; used by `zode` and `grid-sdk`.
 - **06-zode and 09-sdk** reference this spec for message shapes and replication semantics.
-- **Signing:** `zero-neural` types (`HybridSignature`, `MachineKeyPair`, `MachinePublicKey`) are used for request signing and verification. SDK signs via `MachineKeyPair::sign()`; Zodes verify via `MachinePublicKey::verify()`. See [10-crypto](10-crypto.md) for full API.
+- **Signing:** `zid` types (`HybridSignature`, `MachineKeyPair`, `MachinePublicKey`) are used for request signing and verification. SDK signs via `MachineKeyPair::sign()`; Zodes verify via `MachinePublicKey::verify()`. See [10-crypto](10-crypto.md) for full API.

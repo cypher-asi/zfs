@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Grid client SDK — identity, connect, encrypt, sign, sector operations.
 //!
-//! Wraps `zero-neural`, `grid-net`, `grid-crypto`, and program crates
+//! Wraps `zid`, `grid-net`, `grid-crypto`, and program crates
 //! into a unified client API. Does **not** use RocksDB.
 //!
 //! # Quick start
@@ -36,7 +36,7 @@ pub use sector::{
 };
 
 // Re-export frequently used types so callers don't need extra deps.
-pub use zero_neural::{
+pub use zid::{
     HybridSignature, IdentitySigningKey, IdentityVerifyingKey, MachineKeyCapabilities,
     MachineKeyPair, MachinePublicKey, ShamirShare,
 };
