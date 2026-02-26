@@ -1,31 +1,37 @@
-# Zode
+# THE GRID
 
-A decentralized storage network powered by zero-knowledge proofs and post-quantum encryption.
+**The Global Resilient Internet Datastore**
 
-## Overview
+A decentralized compute network powered by zero-knowledge proofs and post-quantum cryptography.
 
-The Zode is a peer-to-peer storage node that receives, validates, and serves
-encrypted data sectors over a libp2p network. Sectors are organized by
-**programs** -- application-level topics such as identity (ZID) and messaging
-(Interlink). Each sector is encrypted client-side, propagated via GossipSub,
-and persisted locally in RocksDB. Groth16 proofs let nodes verify that a sector
-is correctly shaped and encrypted without ever seeing the plaintext.
+## ZODE
+
+ZODE is the reference implementation of the Grid protocol. It is a peer-to-peer
+node that receives, validates, and serves encrypted data sectors over a libp2p
+network. Sectors are organized by **programs** — application-level topics such
+as identity (ZID) and messaging (Interlink). Each sector is encrypted
+client-side, propagated via GossipSub, and persisted locally in RocksDB.
+
+The proof system is dynamic: nodes verify that a sector is correctly shaped and
+encrypted without ever seeing the plaintext. The initial implementation uses
+Groth16 over BN254, with the architecture designed to support additional proof
+backends as they mature.
 
 Two frontends ship in this workspace:
 
-- **zode-app** -- a standalone desktop GUI built with eframe / egui.
-- **zode-cli** -- a console TUI built with ratatui / crossterm.
+- **zode-app** — a standalone desktop GUI built with eframe / egui.
+- **zode-cli** — a console TUI built with ratatui / crossterm.
 
 For the full wire format, cryptographic constructions, and behavioral rules, see the
 [Grid Protocol Specification](docs/grid-protocol.md).
 
 ## Principles
 
-- **Agency** -- Your key material is your account. Identity keys are generated on-device via Shamir secret sharing; shares never leave your machines. No server, no custodian.
-- **Privacy** -- Data is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope) before it touches the network. Groth16 proofs let nodes verify sector validity without seeing plaintext.
-- **Decentralization** -- Fully peer-to-peer over libp2p/QUIC. GossipSub propagation, request-response exchange, optional Kademlia DHT. No central server; any node can join or leave freely.
-- **Post-Quantum** -- PQ-hybrid cryptography: Ed25519 + ML-DSA-65 signing, X25519 + ML-KEM-768 key agreement. Sector encryption uses ZK-friendly Poseidon over BN254.
-- **Open Source** -- MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates enforce `#![forbid(unsafe_code)]`.
+- **Agency:** Your key material is your account. Identity keys are generated on-device via Shamir secret sharing; shares never leave your machines. No server, no custodian.
+- **Privacy:** Data is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope) before it touches the network. Zero-knowledge proofs let nodes verify sector validity without seeing plaintext.
+- **Decentralization:** Fully peer-to-peer over libp2p/QUIC. GossipSub propagation, request-response exchange, optional Kademlia DHT. No central server; any node can join or leave freely.
+- **Post-Quantum:** PQ-hybrid cryptography: Ed25519 + ML-DSA-65 signing, X25519 + ML-KEM-768 key agreement. Sector encryption uses ZK-friendly Poseidon over BN254.
+- **Open Source:** MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates enforce `#![forbid(unsafe_code)]`.
 
 ## Architecture
 
