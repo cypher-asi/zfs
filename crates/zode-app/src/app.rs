@@ -790,7 +790,7 @@ impl ZodeApp {
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let rect = ui.max_rect();
             ui.vertical_centered(|ui| {
-                let content_height = 160.0;
+                let content_height = 220.0;
                 ui.add_space(((rect.height() - content_height) / 2.0).max(20.0));
 
                 ui.add(
