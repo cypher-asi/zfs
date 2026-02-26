@@ -77,6 +77,10 @@ pub(crate) struct IdentityState {
     pub cap_store: bool,
     pub cap_fetch: bool,
     pub error: Option<String>,
+    pub pending_save: bool,
+    pub save_password: String,
+    pub save_profile_name: String,
+    pub save_status: Option<String>,
 }
 
 impl Default for IdentityState {
@@ -99,6 +103,10 @@ impl Default for IdentityState {
             cap_store: false,
             cap_fetch: false,
             error: None,
+            pending_save: false,
+            save_password: String::new(),
+            save_profile_name: String::from("Default"),
+            save_status: None,
         }
     }
 }

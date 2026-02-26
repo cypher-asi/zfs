@@ -11,7 +11,9 @@ use crate::components::{
     action_button, copy_button, editable_list, error_label, field_label, hint_label, info_grid,
     kv_row, kv_row_copyable, section, section_heading, std_button,
 };
+use crate::profile;
 use crate::state::DerivedMachineKey;
+use crate::vault::VaultPlaintext;
 
 pub(crate) fn render_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
     let has_identity = !app.identity_state.shares.is_empty();
@@ -22,6 +24,10 @@ pub(crate) fn render_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
         render_identity_info(app, ui);
         ui.add_space(4.0);
         render_machine_keys(app, ui);
+        if app.identity_state.pending_save {
+            ui.add_space(4.0);
+            render_save_profile(app, ui);
+        }
     } else {
         render_no_identity(app, ui);
     }
@@ -373,9 +379,168 @@ fn derive_machine_key(app: &mut ZodeApp) {
                 keypair,
             });
             app.identity_state.error = None;
+            app.identity_state.pending_save = true;
         }
         Err(e) => {
             app.identity_state.error = Some(format!("Derivation failed: {e}"));
+        }
+    }
+}
+
+fn render_save_profile(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    let has_session_password = app.session_password.is_some();
+    let mut do_save = false;
+
+    section(ui, "SAVE PROFILE", |ui| {
+        if has_session_password {
+            hint_label(
+                ui,
+                "Vault will be updated using your session password.",
+            );
+            ui.add_space(8.0);
+            if action_button(ui, "Update Vault") {
+                do_save = true;
+            }
+        } else {
+            hint_label(
+                ui,
+                "Save your identity and machine keys to an encrypted vault on disk.",
+            );
+            ui.add_space(8.0);
+
+            egui::Grid::new("save_profile_form")
+                .num_columns(2)
+                .spacing([12.0, 6.0])
+                .show(ui, |ui| {
+                    field_label(ui, "Profile Name");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.identity_state.save_profile_name)
+                            .desired_width(200.0),
+                    );
+                    ui.end_row();
+
+                    field_label(ui, "Password");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.identity_state.save_password)
+                            .password(true)
+                            .desired_width(200.0)
+                            .hint_text("Vault encryption password"),
+                    );
+                    ui.end_row();
+                });
+
+            ui.add_space(8.0);
+            if action_button(ui, "Save Profile") {
+                do_save = true;
+            }
+        }
+
+        if let Some(ref status) = app.identity_state.save_status {
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(status).weak().italics());
+        }
+    });
+
+    if do_save {
+        save_profile_to_disk(app);
+    }
+}
+
+fn save_profile_to_disk(app: &mut ZodeApp) {
+    let mk = match app.identity_state.machine_keys.last() {
+        Some(mk) => mk,
+        None => {
+            app.identity_state.save_status = Some("No machine key to save".into());
+            return;
+        }
+    };
+
+    let libp2p_keypair_bytes = app
+        .zode
+        .as_ref()
+        .and_then(|z| {
+            let net = app.rt.block_on(z.network().lock());
+            let peer_id = *net.local_zode_id();
+            drop(net);
+            let _ = peer_id;
+            None::<Vec<u8>>
+        })
+        .unwrap_or_default();
+
+    let libp2p_bytes = if libp2p_keypair_bytes.is_empty() {
+        Vec::new()
+    } else {
+        libp2p_keypair_bytes
+    };
+
+    let plaintext = VaultPlaintext {
+        shares: app.identity_state.shares.iter().map(|s| s.to_hex()).collect(),
+        identity_id: app.identity_state.identity_id,
+        machine_id: mk.machine_id,
+        epoch: mk.epoch,
+        capabilities: mk.capabilities.bits(),
+        libp2p_keypair: libp2p_bytes,
+    };
+
+    let base = profile::base_dir();
+
+    if let Some(ref profile_id) = app.active_profile_id.clone() {
+        let password = app
+            .session_password
+            .clone()
+            .unwrap_or_default();
+        match profile::update_vault(&base, profile_id, &plaintext, &password) {
+            Ok(()) => {
+                app.identity_state.pending_save = false;
+                app.identity_state.save_status = Some("Vault updated.".into());
+            }
+            Err(e) => {
+                app.identity_state.save_status = Some(format!("Save failed: {e}"));
+            }
+        }
+    } else {
+        let password = app.identity_state.save_password.clone();
+        if password.is_empty() {
+            app.identity_state.save_status = Some("Password is required.".into());
+            return;
+        }
+        let name = app.identity_state.save_profile_name.clone();
+        if name.is_empty() {
+            app.identity_state.save_status = Some("Profile name is required.".into());
+            return;
+        }
+
+        let peer_id = app
+            .zode
+            .as_ref()
+            .map(|z| z.status().zode_id)
+            .unwrap_or_default();
+        let did = app
+            .identity_state
+            .did
+            .clone()
+            .unwrap_or_default();
+
+        match profile::create_profile(
+            &base,
+            profile::CreateProfileParams {
+                name,
+                peer_id,
+                did,
+                plaintext,
+                password: password.clone(),
+            },
+        ) {
+            Ok(meta) => {
+                app.active_profile_id = Some(meta.id);
+                app.session_password = Some(password);
+                app.identity_state.save_password.clear();
+                app.identity_state.pending_save = false;
+                app.identity_state.save_status = Some("Profile saved.".into());
+            }
+            Err(e) => {
+                app.identity_state.save_status = Some(format!("Save failed: {e}"));
+            }
         }
     }
 }
