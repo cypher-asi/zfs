@@ -519,46 +519,45 @@ fn render_chat_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
 fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
     let time = format_timestamp_ms(msg.timestamp_ms);
     let name = short_sender(&msg.sender);
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("[{time}]")).monospace().weak());
-        match msg.signature_status {
-            SignatureStatus::Verified => {
-                let size = 14.0;
-                let (resp, painter) = ui.allocate_painter(
-                    egui::Vec2::splat(size),
-                    egui::Sense::hover(),
-                );
-                let c = resp.rect.center();
-                painter.add(egui::Shape::line(
-                    vec![
-                        c + egui::vec2(-3.5, 0.5),
-                        c + egui::vec2(-1.0, 3.0),
-                        c + egui::vec2(4.5, -3.5),
-                    ],
-                    egui::Stroke::new(2.0, crate::components::colors::CONNECTED),
-                ));
-            }
-            SignatureStatus::Failed => {
-                let size = 14.0;
-                let (resp, painter) = ui.allocate_painter(
-                    egui::Vec2::splat(size),
-                    egui::Sense::hover(),
-                );
-                let c = resp.rect.center();
-                let stroke = egui::Stroke::new(2.0, crate::components::colors::ERROR);
-                painter.line_segment(
-                    [c + egui::vec2(-3.0, -3.0), c + egui::vec2(3.0, 3.0)],
-                    stroke,
-                );
-                painter.line_segment(
-                    [c + egui::vec2(3.0, -3.0), c + egui::vec2(-3.0, 3.0)],
-                    stroke,
-                );
-            }
-            SignatureStatus::None => {}
-        }
         ui.label(egui::RichText::new(format!("{name}:")).monospace().strong());
         ui.label(&msg.content);
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            match msg.signature_status {
+                SignatureStatus::Verified => {
+                    let size = 14.0;
+                    let (resp, painter) =
+                        ui.allocate_painter(egui::Vec2::splat(size), egui::Sense::hover());
+                    let c = resp.rect.center();
+                    painter.add(egui::Shape::line(
+                        vec![
+                            c + egui::vec2(-3.5, 0.5),
+                            c + egui::vec2(-1.0, 3.0),
+                            c + egui::vec2(4.5, -3.5),
+                        ],
+                        egui::Stroke::new(2.0, crate::components::colors::CONNECTED),
+                    ));
+                }
+                SignatureStatus::Failed => {
+                    let size = 14.0;
+                    let (resp, painter) =
+                        ui.allocate_painter(egui::Vec2::splat(size), egui::Sense::hover());
+                    let c = resp.rect.center();
+                    let stroke = egui::Stroke::new(2.0, crate::components::colors::ERROR);
+                    painter.line_segment(
+                        [c + egui::vec2(-3.0, -3.0), c + egui::vec2(3.0, 3.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [c + egui::vec2(3.0, -3.0), c + egui::vec2(-3.0, 3.0)],
+                        stroke,
+                    );
+                }
+                SignatureStatus::None => {}
+            }
+        });
     });
 }
 
