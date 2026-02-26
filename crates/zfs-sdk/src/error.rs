@@ -15,6 +15,9 @@ pub enum SdkError {
     #[error("neural error: {0}")]
     Neural(#[from] zero_neural::CryptoError),
 
+    #[error("proof error: {0}")]
+    Proof(#[from] zfs_proof_groth16::Groth16Error),
+
     #[error("no peers available for upload")]
     NoPeers,
 

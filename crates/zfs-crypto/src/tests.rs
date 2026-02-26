@@ -236,3 +236,83 @@ fn sector_key_debug_redacts() {
     let debug = format!("{:?}", key);
     assert_eq!(debug, "SectorKey([REDACTED])");
 }
+
+// ---------------------------------------------------------------------------
+// Poseidon sponge encryption
+// ---------------------------------------------------------------------------
+
+use crate::{
+    poseidon_decrypt, poseidon_decrypt_sector, poseidon_encrypt, poseidon_encrypt_sector,
+    poseidon_hash,
+};
+
+#[test]
+fn poseidon_encrypt_decrypt_round_trip() {
+    let key = SectorKey::generate();
+    let nonce = [0u8; 32];
+    let aad = b"test-aad";
+    let plaintext = b"hello poseidon world";
+
+    let sealed = poseidon_encrypt(plaintext, &key, &nonce, aad).expect("encrypt");
+    let recovered = poseidon_decrypt(&sealed, &key, &nonce, aad).expect("decrypt");
+    assert_eq!(recovered, plaintext);
+}
+
+#[test]
+fn poseidon_encrypt_decrypt_empty() {
+    let key = SectorKey::generate();
+    let nonce = [0u8; 32];
+    let aad = b"test-aad";
+
+    let sealed = poseidon_encrypt(b"", &key, &nonce, aad).expect("encrypt empty");
+    let recovered = poseidon_decrypt(&sealed, &key, &nonce, aad).expect("decrypt empty");
+    assert!(recovered.is_empty());
+}
+
+#[test]
+fn poseidon_wrong_key_rejected() {
+    let key1 = SectorKey::generate();
+    let key2 = SectorKey::generate();
+    let nonce = [0u8; 32];
+    let aad = b"test-aad";
+
+    let sealed = poseidon_encrypt(b"secret data", &key1, &nonce, aad).expect("encrypt");
+    let result = poseidon_decrypt(&sealed, &key2, &nonce, aad);
+    assert!(result.is_err());
+}
+
+#[test]
+fn poseidon_aad_mismatch_rejected() {
+    let key = SectorKey::generate();
+    let nonce = [0u8; 32];
+
+    let sealed = poseidon_encrypt(b"data", &key, &nonce, b"aad1").expect("encrypt");
+    let result = poseidon_decrypt(&sealed, &key, &nonce, b"aad2");
+    assert!(result.is_err());
+}
+
+#[test]
+fn poseidon_sector_round_trip() {
+    let key = SectorKey::generate();
+    let aad = b"program||sector";
+    let plaintext = b"sector payload for poseidon";
+
+    let sealed = poseidon_encrypt_sector(plaintext, &key, aad).expect("encrypt_sector");
+    let recovered = poseidon_decrypt_sector(&sealed, &key, aad).expect("decrypt_sector");
+    assert_eq!(recovered, plaintext);
+}
+
+#[test]
+fn poseidon_hash_deterministic() {
+    let data = b"deterministic hash input";
+    let h1 = poseidon_hash(data);
+    let h2 = poseidon_hash(data);
+    assert_eq!(h1, h2);
+}
+
+#[test]
+fn poseidon_hash_different_data() {
+    let h1 = poseidon_hash(b"input A");
+    let h2 = poseidon_hash(b"input B");
+    assert_ne!(h1, h2);
+}

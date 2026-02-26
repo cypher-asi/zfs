@@ -6,6 +6,8 @@ members = [
   "crates/zfs-crypto",
   "crates/zfs-storage",
   "crates/zfs-programs",
+  "crates/zfs-proof",
+  "crates/zfs-proof-groth16",
   "crates/zfs-net",
   "crates/zfs-zode",
   "crates/zfs-sdk",

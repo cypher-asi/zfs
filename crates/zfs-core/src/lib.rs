@@ -3,6 +3,7 @@
 mod cbor;
 mod cid;
 mod error;
+mod field_schema;
 mod program_descriptor;
 mod program_id;
 mod sector_id;
@@ -12,6 +13,7 @@ mod util;
 pub use cbor::{decode_canonical, encode_canonical};
 pub use cid::Cid;
 pub use error::{ErrorCode, SectorStoreError, ZfsError};
+pub use field_schema::{CborType, FieldDef, FieldSchema, ProofSystem};
 pub use program_descriptor::ProgramDescriptor;
 pub use program_id::ProgramId;
 pub use sector_id::SectorId;
@@ -20,6 +22,6 @@ pub use sector_protocol::{
     SectorBatchAppendEntry, SectorBatchAppendRequest, SectorBatchAppendResponse,
     SectorBatchLogLengthRequest, SectorBatchLogLengthResponse, SectorLogLengthRequest,
     SectorLogLengthResponse, SectorLogLengthResult, SectorReadLogRequest, SectorReadLogResponse,
-    SectorRequest, SectorResponse, MAX_BATCH_ENTRIES, MAX_BATCH_PAYLOAD_BYTES,
+    SectorRequest, SectorResponse, ShapeProof, MAX_BATCH_ENTRIES, MAX_BATCH_PAYLOAD_BYTES,
 };
 pub use util::format_bytes;

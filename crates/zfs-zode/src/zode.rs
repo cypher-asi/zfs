@@ -1,8 +1,11 @@
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
+use zfs_core::ProofSystem;
 use zfs_net::{format_zode_id, NetworkEvent, NetworkService, ZodeId};
+use zfs_proof::{NoopVerifier, ProofVerifierRegistry};
 use zfs_storage::{RocksStorage, SectorStore};
 
 use crate::config::ZodeConfig;
@@ -48,12 +51,22 @@ impl Zode {
         let metrics = Arc::new(ZodeMetrics::default());
         let connected_peers: Arc<RwLock<Vec<String>>> = Arc::default();
 
+        let mut proof_registry = ProofVerifierRegistry::new();
+        proof_registry.register(ProofSystem::None, Arc::new(NoopVerifier));
+        // Groth16 verifier is registered externally when vks are loaded.
+        // Programs that require Groth16 will be added to program_proof_config.
+        let proof_registry = Arc::new(proof_registry);
+
+        let program_proof_config: HashMap<zfs_core::ProgramId, ProofSystem> = HashMap::new();
+
         let sector_handler = SectorRequestHandler::new(
             Arc::clone(&storage),
             effective,
             config.sector_limits.clone(),
             config.sector_filter.clone(),
             Arc::clone(&metrics),
+            proof_registry,
+            program_proof_config,
         );
 
         let network = Arc::new(Mutex::new(network));

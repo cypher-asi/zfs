@@ -8,4 +8,5 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 zfs-core = { path = "../zfs-core" }
 zfs-programs = { path = "../zfs-programs" }
+zfs-crypto = { path = "../zfs-crypto" }
 thiserror = "2"

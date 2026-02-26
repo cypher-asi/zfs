@@ -26,6 +26,7 @@ fn zid_different_versions_different_ids() {
         name: "zid".into(),
         version: 2,
         proof_required: false,
+        proof_system: None,
     };
     assert_ne!(d1.program_id().expect("id1"), d2.program_id().expect("id2"));
 }
@@ -36,6 +37,7 @@ fn zid_message_round_trip() {
         owner_did: "did:key:z6Mkt...".into(),
         display_name: Some("Alice".into()),
         timestamp_ms: 1700000000000,
+        signature: vec![],
     };
     let bytes = msg.encode_canonical().expect("encode");
     let decoded = ZidMessage::decode_canonical(&bytes).expect("decode");
@@ -108,6 +110,7 @@ fn zchat_message_round_trip() {
         channel_id: ChannelId::from_str_id("general"),
         content: "Hello, world!".into(),
         timestamp_ms: 1700000000000,
+        signature: vec![],
     };
     let bytes = msg.encode_canonical().expect("encode");
     let decoded = ZChatMessage::decode_canonical(&bytes).expect("decode");
@@ -122,6 +125,7 @@ fn zchat_message_size_limit() {
         channel_id: ChannelId::from_str_id("big"),
         content: large_content,
         timestamp_ms: 0,
+        signature: vec![],
     };
     let result = msg.encode_canonical();
     assert!(result.is_err());
@@ -182,8 +186,100 @@ fn zchat_message_empty_content() {
         channel_id: ChannelId::new(vec![1, 2, 3]),
         content: String::new(),
         timestamp_ms: 42,
+        signature: vec![],
     };
     let bytes = msg.encode_canonical().expect("encode");
     let decoded = ZChatMessage::decode_canonical(&bytes).expect("decode");
     assert_eq!(msg, decoded);
+}
+
+// ---------------------------------------------------------------------------
+// ZChat shape proof & signature tests
+// ---------------------------------------------------------------------------
+
+use zfs_core::ProofSystem;
+
+#[test]
+fn zchat_message_with_signature_round_trip() {
+    let msg = ZChatMessage {
+        sender_did: "did:key:z6Mk...".into(),
+        channel_id: ChannelId::from_str_id("general"),
+        content: "signed message".into(),
+        timestamp_ms: 1700000000000,
+        signature: vec![0xDE, 0xAD, 0xBE, 0xEF],
+    };
+    let bytes = msg.encode_canonical().expect("encode");
+    let decoded = ZChatMessage::decode_canonical(&bytes).expect("decode");
+    assert_eq!(msg, decoded);
+}
+
+#[test]
+fn zchat_signable_bytes_excludes_signature() {
+    let msg1 = ZChatMessage {
+        sender_did: "did:key:z6Mk...".into(),
+        channel_id: ChannelId::from_str_id("general"),
+        content: "same content".into(),
+        timestamp_ms: 1700000000000,
+        signature: vec![1, 2, 3],
+    };
+    let msg2 = ZChatMessage {
+        sender_did: "did:key:z6Mk...".into(),
+        channel_id: ChannelId::from_str_id("general"),
+        content: "same content".into(),
+        timestamp_ms: 1700000000000,
+        signature: vec![4, 5, 6],
+    };
+    let sb1 = msg1.signable_bytes().expect("signable_bytes 1");
+    let sb2 = msg2.signable_bytes().expect("signable_bytes 2");
+    assert_eq!(sb1, sb2);
+}
+
+#[test]
+fn zchat_field_schema_has_signature_field() {
+    let schema = ZChatDescriptor::field_schema();
+    let has_sig = schema.fields.iter().any(|f| f.key == "signature");
+    assert!(has_sig, "ZChat field schema must contain a 'signature' field");
+}
+
+#[test]
+fn zchat_v2_descriptor_has_proof_system() {
+    let desc = ZChatDescriptor::v2();
+    assert_eq!(desc.proof_system, Some(ProofSystem::Groth16));
+}
+
+// ---------------------------------------------------------------------------
+// ZID shape proof & signature tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn zid_message_with_signature_round_trip() {
+    let msg = ZidMessage {
+        owner_did: "did:key:z6Mkt...".into(),
+        display_name: Some("Alice".into()),
+        timestamp_ms: 1700000000000,
+        signature: vec![0xCA, 0xFE],
+    };
+    let bytes = msg.encode_canonical().expect("encode");
+    let decoded = ZidMessage::decode_canonical(&bytes).expect("decode");
+    assert_eq!(msg, decoded);
+}
+
+#[test]
+fn zid_signable_bytes_deterministic() {
+    let msg = ZidMessage {
+        owner_did: "did:key:z6Mkt...".into(),
+        display_name: Some("Bob".into()),
+        timestamp_ms: 1700000000000,
+        signature: vec![1, 2, 3],
+    };
+    let sb1 = msg.signable_bytes().expect("signable_bytes 1");
+    let sb2 = msg.signable_bytes().expect("signable_bytes 2");
+    assert_eq!(sb1, sb2);
+}
+
+#[test]
+fn zid_field_schema_has_signature_field() {
+    let schema = ZidDescriptor::field_schema();
+    let has_sig = schema.fields.iter().any(|f| f.key == "signature");
+    assert!(has_sig, "ZID field schema must contain a 'signature' field");
 }

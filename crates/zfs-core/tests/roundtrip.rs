@@ -182,6 +182,7 @@ fn sector_append_request_roundtrip() {
         program_id: ProgramId::from([0x11; 32]),
         sector_id: SectorId::from_bytes(vec![0xAA; 32]),
         entry: vec![0xAB; 64],
+        shape_proof: None,
     };
     let encoded = encode_canonical(&req).unwrap();
     let decoded: SectorAppendRequest = decode_canonical(&encoded).unwrap();
@@ -217,6 +218,7 @@ fn gossip_sector_append_roundtrip() {
         sector_id: SectorId::from_bytes(vec![0xCC; 32]),
         index: 7,
         payload: vec![0xEF; 128],
+        shape_proof: None,
     };
     let encoded = encode_canonical(&gs).unwrap();
     let decoded: GossipSectorAppend = decode_canonical(&encoded).unwrap();

@@ -1,4 +1,7 @@
-use zfs_core::{Cid, ProgramId};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use zfs_core::{Cid, ProgramId, ProofSystem};
 
 use crate::ProofError;
 
@@ -36,4 +39,54 @@ pub trait ProofVerifier: Send + Sync {
         proof: &[u8],
         payload_context: Option<&[u8]>,
     ) -> Result<VerifiedSector, ProofError>;
+}
+
+/// Registry of proof verifiers keyed by `ProofSystem`.
+///
+/// The Zode looks up the correct verifier for each program's
+/// `proof_system` and delegates verification to it.
+pub struct ProofVerifierRegistry {
+    verifiers: HashMap<ProofSystem, Arc<dyn ProofVerifier>>,
+}
+
+impl ProofVerifierRegistry {
+    pub fn new() -> Self {
+        Self {
+            verifiers: HashMap::new(),
+        }
+    }
+
+    /// Register a verifier for a proof system.
+    pub fn register(&mut self, system: ProofSystem, verifier: Arc<dyn ProofVerifier>) {
+        self.verifiers.insert(system, verifier);
+    }
+
+    /// Look up and run the verifier for `system`.
+    pub fn verify(
+        &self,
+        system: &ProofSystem,
+        cid: &Cid,
+        program_id: &ProgramId,
+        version: u64,
+        proof: &[u8],
+        payload_context: Option<&[u8]>,
+    ) -> Result<VerifiedSector, ProofError> {
+        let verifier = self.verifiers.get(system).ok_or_else(|| {
+            ProofError::VerifierKeyNotFound {
+                program_id: format!("{system:?}"),
+            }
+        })?;
+        verifier.verify(cid, program_id, version, proof, payload_context)
+    }
+
+    /// Check whether a verifier is registered for the given system.
+    pub fn has_verifier(&self, system: &ProofSystem) -> bool {
+        self.verifiers.contains_key(system)
+    }
+}
+
+impl Default for ProofVerifierRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }

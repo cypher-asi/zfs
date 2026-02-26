@@ -1,15 +1,16 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tracing::{debug, warn};
 use zfs_core::{
-    ErrorCode, GossipSectorAppend, ProgramId, SectorAppendRequest, SectorAppendResponse,
-    SectorAppendResult, SectorBatchAppendEntry, SectorBatchAppendRequest,
+    Cid, ErrorCode, GossipSectorAppend, ProgramId, ProofSystem, SectorAppendRequest,
+    SectorAppendResponse, SectorAppendResult, SectorBatchAppendEntry, SectorBatchAppendRequest,
     SectorBatchAppendResponse, SectorBatchLogLengthRequest, SectorBatchLogLengthResponse,
     SectorLogLengthRequest, SectorLogLengthResponse, SectorLogLengthResult, SectorReadLogRequest,
-    SectorReadLogResponse, SectorRequest, SectorResponse, MAX_BATCH_ENTRIES,
+    SectorReadLogResponse, SectorRequest, SectorResponse, ShapeProof, MAX_BATCH_ENTRIES,
     MAX_BATCH_PAYLOAD_BYTES,
 };
+use zfs_proof::ProofVerifierRegistry;
 use zfs_storage::{SectorStore, StorageError};
 
 use crate::config::{SectorFilter, SectorLimitsConfig};
@@ -23,6 +24,8 @@ pub(crate) struct SectorRequestHandler<S> {
     limits: SectorLimitsConfig,
     sector_filter: SectorFilter,
     metrics: Arc<ZodeMetrics>,
+    proof_registry: Arc<ProofVerifierRegistry>,
+    program_proof_config: HashMap<ProgramId, ProofSystem>,
 }
 
 impl<S: SectorStore> SectorRequestHandler<S> {
@@ -32,6 +35,8 @@ impl<S: SectorStore> SectorRequestHandler<S> {
         limits: SectorLimitsConfig,
         sector_filter: SectorFilter,
         metrics: Arc<ZodeMetrics>,
+        proof_registry: Arc<ProofVerifierRegistry>,
+        program_proof_config: HashMap<ProgramId, ProofSystem>,
     ) -> Self {
         Self {
             storage,
@@ -39,6 +44,8 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             limits,
             sector_filter,
             metrics,
+            proof_registry,
+            program_proof_config,
         }
     }
 
@@ -66,6 +73,14 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             };
         }
         if let Err(code) = self.check_entry_size(req.entry.len()) {
+            return SectorAppendResponse {
+                ok: false,
+                index: None,
+                error_code: Some(code),
+            };
+        }
+        if let Err(code) = self.verify_proof(&req.program_id, &req.entry, req.shape_proof.as_ref())
+        {
             return SectorAppendResponse {
                 ok: false,
                 index: None,
@@ -164,6 +179,13 @@ impl<S: SectorStore> SectorRequestHandler<S> {
                 error_code: Some(ErrorCode::PolicyReject),
             };
         }
+        if let Err(code) = self.verify_proof(pid, &entry.entry, entry.shape_proof.as_ref()) {
+            return SectorAppendResult {
+                ok: false,
+                index: None,
+                error_code: Some(code),
+            };
+        }
         match self.storage.append(pid, &entry.sector_id, &entry.entry) {
             Ok(index) => {
                 self.metrics.inc_sectors_stored();
@@ -226,6 +248,13 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             debug!(?code, "gossip append rejected by size limit");
             return false;
         }
+        if self
+            .verify_proof(&msg.program_id, &msg.payload, msg.shape_proof.as_ref())
+            .is_err()
+        {
+            debug!("gossip append rejected by proof verification");
+            return false;
+        }
         match self
             .storage
             .insert_at(&msg.program_id, &msg.sector_id, msg.index, &msg.payload)
@@ -241,6 +270,52 @@ impl<S: SectorStore> SectorRequestHandler<S> {
                 false
             }
         }
+    }
+
+    /// Verify the shape proof for a sector append, if required.
+    fn verify_proof(
+        &self,
+        program_id: &ProgramId,
+        entry: &[u8],
+        proof: Option<&ShapeProof>,
+    ) -> Result<(), ErrorCode> {
+        let proof_system = match self.program_proof_config.get(program_id) {
+            Some(ps) => ps,
+            None => return Ok(()),
+        };
+        if *proof_system == ProofSystem::None {
+            return Ok(());
+        }
+
+        let shape_proof = proof.ok_or(ErrorCode::ProofInvalid)?;
+
+        let actual_ct_hash = zfs_crypto::poseidon_hash(entry);
+        if actual_ct_hash.as_slice() != shape_proof.ciphertext_hash.as_slice() {
+            debug!("ciphertext hash mismatch — binding check failed");
+            return Err(ErrorCode::ProofInvalid);
+        }
+
+        let mut payload_ctx = Vec::with_capacity(68);
+        payload_ctx.extend_from_slice(&shape_proof.ciphertext_hash);
+        payload_ctx.extend_from_slice(&shape_proof.schema_hash);
+        payload_ctx.extend_from_slice(&shape_proof.size_bucket.to_le_bytes());
+
+        let cid = Cid::from_ciphertext(entry);
+        self.proof_registry
+            .verify(
+                &shape_proof.proof_system,
+                &cid,
+                program_id,
+                0,
+                &shape_proof.proof_bytes,
+                Some(&payload_ctx),
+            )
+            .map_err(|e| {
+                debug!(error = %e, "proof verification failed");
+                ErrorCode::ProofInvalid
+            })?;
+
+        Ok(())
     }
 
     fn check_access(

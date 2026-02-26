@@ -2,7 +2,7 @@
 name = "zfs-crypto"
 version = "0.1.0"
 edition = "2021"
-description = "ZFS client-side encryption: XChaCha20-Poly1305 sector encryption and hybrid key wrapping"
+description = "ZFS client-side encryption: Poseidon sponge sector encryption and hybrid key wrapping"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -15,6 +15,10 @@ zeroize = { version = "1", features = ["derive"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 zero-neural = { path = "../zero-neural" }
 zfs-core = { path = "../zfs-core" }
+ark-ff = "0.5"
+ark-bn254 = "0.5"
+ark-serialize = "0.5"
+ark-crypto-primitives = { version = "0.5", features = ["sponge"] }
 
 [dev-dependencies]
 rand = "0.8"

@@ -24,7 +24,7 @@ This document defines the ZFS protocol in implementation-neutral terms. Any conf
 | **SectorId** | An opaque 32-byte identifier. In the sector protocol, sector IDs MUST be exactly 32 bytes. |
 | **Entry** | A single encrypted blob appended to a sector log. Entries are indexed 0, 1, 2, ... |
 | **NeuralKey** | A 256-bit root secret from which all identity and machine keys are deterministically derived. |
-| **SectorKey** | A random 256-bit symmetric key used to encrypt sector entries via XChaCha20-Poly1305. |
+| **SectorKey** | A random 256-bit symmetric key used to encrypt sector entries. Algorithm is XChaCha20-Poly1305 or Poseidon sponge per program (§11). |
 | **Topic** | A GossipSub topic string of the form `prog/<program_id_hex>`, used for subscription and data propagation. |
 
 ---
@@ -60,6 +60,7 @@ A CBOR map with at minimum:
 | `name` | text string | Short program name (e.g. `"zid"`, `"zchat"`) |
 | `version` | unsigned integer | Program version number |
 | `proof_required` | boolean | Whether Valid-Sector proofs are required |
+| `proof_system` | ProofSystem enum | Encryption and proof backend: `None` (XChaCha20-Poly1305) or `Groth16` (Poseidon sponge + shape proofs). See §11 and §17. |
 
 Program-specific descriptors MAY add additional fields. Two implementations that serialize the same descriptor fields to CBOR MUST produce the same ProgramId.
 
@@ -533,11 +534,13 @@ Identity generation, signing, and machine key derivation can all operate by **ep
 
 ## 11. Sector Encryption
 
+Sector encryption supports two algorithms. The choice is per-program via `proof_system` in the ProgramDescriptor (§4.2): `None` uses XChaCha20-Poly1305; `Groth16` uses Poseidon sponge (required for shape proofs, §17).
+
 ### 11.1 SectorKey
 
-A SectorKey is a random 256-bit symmetric key generated via CSPRNG. It is the key material for encrypting and decrypting sector entries.
+A SectorKey is a random 256-bit symmetric key generated via CSPRNG. It is the key material for encrypting and decrypting sector entries. Key wrapping (§11.5) is unchanged regardless of encryption algorithm.
 
-### 11.2 Payload Encryption
+### 11.2 XChaCha20-Poly1305 (proof_system = None)
 
 **Algorithm:** XChaCha20-Poly1305 (AEAD)
 
@@ -549,7 +552,24 @@ sealed = nonce (24 bytes) || ciphertext || tag (16 bytes)
 - **AAD** (Associated Authenticated Data): `program_id (32 bytes) || sector_id (32 bytes)`. This binds the ciphertext to its program and sector, preventing cross-program and cross-sector ciphertext relocation.
 - The nonce is prepended to the ciphertext in the sealed output.
 
-### 11.3 Padding
+### 11.3 Poseidon Sponge (proof_system = Groth16)
+
+**Parameters:** BN254 scalar field, rate=2, capacity=1.
+
+**Sealed format:**
+
+```
+sealed = nonce (32 bytes) || ciphertext_elements (32 bytes each) || tag (32 bytes)
+```
+
+- **Nonce**: 256-bit, randomly generated per encryption.
+- **AAD**: `program_id (32 bytes) || sector_id (32 bytes)` absorbed into the sponge before the plaintext.
+- **Ciphertext**: Plaintext is split into 32-byte (256-bit) field elements; sponge absorbs key and nonce, then XORs/absorbs plaintext elements. Output elements form `ciphertext_elements`.
+- **Tag**: Final 32-byte output authenticates the entire encryption (AAD + ciphertext).
+
+The Poseidon sponge construction enables shape-proof circuits (§17) that prove ciphertext integrity without revealing plaintext.
+
+### 11.4 Padding
 
 Before encryption, content MUST be padded to fixed-size buckets to resist payload-size analysis. Buckets grow in powers of two (2× progression):
 
@@ -576,7 +596,7 @@ padded = content_length (4 bytes, little-endian) || content || 0x00 * (bucket_si
 
 On decryption, the receiver reads the 4-byte length prefix, extracts `content[0..length]`, and discards trailing zeros.
 
-### 11.4 Key Wrapping
+### 11.5 Key Wrapping
 
 To share a SectorKey with a recipient, the sender performs a two-step wrap:
 
@@ -611,7 +631,7 @@ The result is a **KeyEnvelopeEntry**:
 
 Each entry is approximately 1,192 bytes (dominated by the ML-KEM ciphertext).
 
-### 11.5 Sector ID Derivation
+### 11.6 Sector ID Derivation
 
 For metadata-private storage, sector IDs are derived client-side via two-step HKDF:
 
@@ -765,7 +785,7 @@ The client is responsible for triggering the gossip publish by calling the Zode'
 
 | Information | Why |
 |-------------|-----|
-| Entry content or structure | Encrypted with XChaCha20-Poly1305 |
+| Entry content or structure | Encrypted with XChaCha20-Poly1305 or Poseidon sponge |
 | Who wrote an entry | Identity is inside the encrypted payload or absent entirely |
 | Who can read an entry | Key material never appears on the wire |
 | Which sectors are related | HKDF-derived sector IDs are unlinkable without the shared secret |
@@ -783,8 +803,8 @@ A conforming ZFS implementation MUST:
 4. Use the protocol string `/zfs/kad/1.0.0` for Kademlia DHT.
 5. Format GossipSub topics as `prog/<64_hex_chars>`.
 6. Serialize `GossipSectorAppend` as CBOR for gossip propagation.
-7. Use XChaCha20-Poly1305 with 192-bit random nonces for sector encryption.
-8. Implement the padding bucket scheme (§11.3) for all encrypted payloads.
+7. Use XChaCha20-Poly1305 (proof_system=None) or Poseidon sponge (proof_system=Groth16) for sector encryption, per ProgramDescriptor. XChaCha20-Poly1305 uses 192-bit random nonces; Poseidon uses the format in §11.3.
+8. Implement the padding bucket scheme (§11.4) for all encrypted payloads.
 9. Use HKDF-SHA256 with the exact domain separation strings specified in §10.2 for key derivation.
 10. Produce hybrid signatures containing both Ed25519 (64 bytes) and ML-DSA-65 (3,309 bytes) components, and require both to verify.
 11. Perform hybrid key encapsulation using X25519 + ML-KEM-768 combined via HKDF (§10.5).
@@ -802,3 +822,120 @@ A conforming ZFS implementation MUST:
 - **Gossip propagation delay.** Between client append and gossip delivery, the entry exists on only one Zode. Clients MAY multi-send to multiple Zodes for faster availability.
 - **Key compromise.** If a NeuralKey is compromised, all derived identity and machine keys are compromised. Shamir splitting mitigates single-point-of-failure for the root secret.
 - **Post-quantum readiness.** All signatures and key agreements use hybrid constructions (classical + post-quantum). An attacker must break both the classical and post-quantum components.
+
+---
+
+## 17. Shape Proofs
+
+Shape proofs allow clients to prove that an encrypted blob conforms to a declared schema without revealing plaintext. Programs with `proof_system = Groth16` use Poseidon sponge encryption (§11.3) and MAY attach a shape proof to each entry.
+
+### 17.1 ProofSystem Enum
+
+| Variant | Encryption | Shape proofs |
+|---------|------------|--------------|
+| `None` | XChaCha20-Poly1305 | Not supported |
+| `Groth16` | Poseidon sponge | Supported |
+
+### 17.2 FieldSchema
+
+Message structure is described by a **FieldSchema** for use in circuits and verification:
+
+| Type | Description |
+|------|-------------|
+| `CborType` | CBOR type identifier (integer, text, bytes, array, map, etc.) |
+| `FieldDef` | Named field: `(name, CborType)` |
+| `FieldSchema` | Sequence of `FieldDef` defining the message shape |
+
+**Schema hash:**
+
+```
+schema_hash = SHA-256(canonical_cbor(schema))
+```
+
+### 17.3 ShapeProof Wire Format
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `proof_system` | enum | `Groth16` |
+| `ciphertext_hash` | bytes(32) | Poseidon(C) — hash of the ciphertext C |
+| `proof_bytes` | byte string | Groth16 proof |
+| `schema_hash` | bytes(32) | SHA-256 of canonical CBOR schema |
+| `size_bucket` | enum | Message-size bucket (see §17.6) |
+
+### 17.4 Universal Circuit
+
+The shape-proof circuit proves three predicates:
+
+1. **shape(B)** — Decrypted plaintext B conforms to the declared FieldSchema.
+2. **Poseidon_encrypt(B, K, N, AAD) = C** — Ciphertext C is the Poseidon encryption of B under key K, nonce N, and AAD.
+3. **Poseidon(C) = ciphertext_hash** — The public `ciphertext_hash` matches Poseidon(C).
+
+AAD = `program_id || sector_id` as in §11.3.
+
+### 17.5 Strong Binding
+
+The Zode computes `Poseidon(received_ciphertext)` and MUST verify that it equals the attested `ciphertext_hash`. This binds the proof to the exact ciphertext stored; tampering invalidates the binding.
+
+### 17.6 Message-Size Buckets
+
+Proofs are generated per size bucket. One trusted setup (proving key, verification key) exists per bucket.
+
+| Bucket | Max message size |
+|--------|------------------|
+| 1 KB | 1,024 bytes |
+| 4 KB | 4,096 bytes |
+| 16 KB | 16,384 bytes |
+| 64 KB | 65,536 bytes |
+
+**Version 1:** Only 1 KB and 4 KB buckets are supported.
+
+### 17.7 Trusted Setup
+
+One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply across programs using the same bucket.
+
+### 17.8 Verification Rules
+
+1. **Proof validity**: Groth16 proof verifies against the vk for the declared `size_bucket`.
+2. **Ciphertext binding**: `Poseidon(received_ciphertext) == ciphertext_hash` from the proof.
+3. **Schema consistency**: `schema_hash` matches the program's declared schema for the message type.
+4. **Bucket match**: Entry size (post-padding) fits within `size_bucket`.
+
+---
+
+## 18. Message Signing
+
+Message signing provides authenticity and integrity for entries within the encrypted blob. Signatures are PQ-hybrid (Ed25519 + ML-DSA-65) and are produced before encryption, verified after decryption.
+
+### 18.1 Placement
+
+Signatures live **inside** the encrypted payload. The Zode never sees plaintext; signature verification is end-to-end between sender and recipient. Only parties with the SectorKey can decrypt and verify.
+
+### 18.2 Signable Bytes
+
+For a message with a signature field:
+
+```
+signable_bytes = canonical_cbor(all_fields_except_signature)
+```
+
+Fields MUST be serialized in deterministic CBOR order. The signature field is excluded from the input to the signing function.
+
+### 18.3 HybridSignature Format
+
+| Component | Size | Description |
+|-----------|------|-------------|
+| Ed25519 | 64 bytes | Classical signature |
+| ML-DSA-65 | 3,309 bytes | Post-quantum signature |
+
+**Binary format:** `Ed25519 (64) || ML-DSA-65 (3309)` = 3,373 bytes total
+
+Both components sign the same `signable_bytes`. **Both MUST verify** for the signature to be valid.
+
+### 18.4 Signing and Verification Flow
+
+1. **Signing**: Client computes `signable_bytes`, signs with Ed25519 and ML-DSA-65, appends `HybridSignature` to the message, then encrypts the full blob.
+2. **Verification**: Recipient decrypts, extracts the signature, recomputes `signable_bytes` from the remaining fields, and verifies both Ed25519 and ML-DSA-65.
+
+### 18.5 Ed25519-Only Fallback (v1)
+
+For version 1 compatibility, programs MAY support **Ed25519-only** signatures (64 bytes). Recipients that support hybrid verification SHOULD accept Ed25519-only if ML-DSA-65 is absent and the program descriptor indicates v1 fallback mode.

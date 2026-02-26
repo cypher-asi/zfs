@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use zfs_core::{ProgramId, SectorId, ZfsError};
+use zfs_core::{CborType, FieldDef, FieldSchema, ProgramId, ProofSystem, SectorId, ZfsError};
 
 /// Maximum Interlink message size (64 KiB).
 pub const MAX_MESSAGE_SIZE: usize = 64 * 1024;
@@ -17,6 +17,8 @@ pub struct ZChatDescriptor {
     pub name: String,
     pub version: u32,
     pub proof_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_system: Option<ProofSystem>,
 }
 
 impl ZChatDescriptor {
@@ -26,6 +28,32 @@ impl ZChatDescriptor {
             name: "zchat".to_owned(),
             version: 1,
             proof_required: false,
+            proof_system: None,
+        }
+    }
+
+    /// Create the v2 descriptor with Groth16 shape proofs.
+    pub fn v2() -> Self {
+        Self {
+            name: "zchat".to_owned(),
+            version: 2,
+            proof_required: true,
+            proof_system: Some(ProofSystem::Groth16),
+        }
+    }
+
+    /// Canonical field schema for ZChat messages (v2+).
+    pub fn field_schema() -> FieldSchema {
+        FieldSchema {
+            program_name: "zchat".into(),
+            version: 1,
+            fields: vec![
+                FieldDef { key: "channel_id".into(), value_type: CborType::ByteString, optional: false },
+                FieldDef { key: "content".into(), value_type: CborType::TextString, optional: false },
+                FieldDef { key: "sender_did".into(), value_type: CborType::TextString, optional: false },
+                FieldDef { key: "signature".into(), value_type: CborType::ByteString, optional: false },
+                FieldDef { key: "timestamp_ms".into(), value_type: CborType::UnsignedInt, optional: false },
+            ],
         }
     }
 
@@ -115,6 +143,8 @@ pub fn sector_id_for_message(
 /// An Interlink message.
 ///
 /// Size limit: [`MAX_MESSAGE_SIZE`] (64 KiB) for the canonical CBOR encoding.
+/// The `signature` field carries a PQ-hybrid signature (Ed25519 + ML-DSA-65)
+/// produced by the sender's `IdentitySigningKey`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ZChatMessage {
     /// DID of the sender.
@@ -125,9 +155,30 @@ pub struct ZChatMessage {
     pub content: String,
     /// Timestamp (milliseconds since epoch).
     pub timestamp_ms: u64,
+    /// PQ-hybrid signature: `HybridSignature::to_bytes()` (Ed25519 64 || ML-DSA-65 3309).
+    #[serde(with = "serde_bytes", default)]
+    pub signature: Vec<u8>,
 }
 
 impl ZChatMessage {
+    /// Canonical CBOR of all fields EXCEPT `signature`.
+    /// This is the payload that gets signed and later verified.
+    pub fn signable_bytes(&self) -> Result<Vec<u8>, ZfsError> {
+        #[derive(Serialize)]
+        struct Signable<'a> {
+            sender_did: &'a str,
+            channel_id: &'a ChannelId,
+            content: &'a str,
+            timestamp_ms: u64,
+        }
+        zfs_core::encode_canonical(&Signable {
+            sender_did: &self.sender_did,
+            channel_id: &self.channel_id,
+            content: &self.content,
+            timestamp_ms: self.timestamp_ms,
+        })
+    }
+
     /// Encode to canonical CBOR bytes, enforcing the size limit.
     pub fn encode_canonical(&self) -> Result<Vec<u8>, ZfsError> {
         let bytes = zfs_core::encode_canonical(self)?;

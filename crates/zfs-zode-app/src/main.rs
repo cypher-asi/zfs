@@ -75,27 +75,58 @@ fn load_icon() -> egui::IconData {
         .expect("bad icon png")
         .to_rgba8();
     let (sw, sh) = (src.width(), src.height());
-    let pad = (sw / 4) as i64;
-    let out_w = sw as i64 + pad * 2;
-    let out_h = sh as i64 + pad * 2;
+
+    let pad = (sw.min(sh) as f64 * 0.10) as u32;
+    let out_w = sw + pad * 2;
+    let out_h = sh + pad * 2;
+    let r = (out_w.min(out_h) as f64) * 0.18;
+
     let mut rgba = vec![0u8; (out_w * out_h * 4) as usize];
-    for y in 0..sh {
-        for x in 0..sw {
-            let px = src.get_pixel(x, y);
-            let dst_x = x as i64 + pad;
-            let dst_y = y as i64 + pad;
-            let i = ((dst_y * out_w + dst_x) * 4) as usize;
-            rgba[i] = px[0];
-            rgba[i + 1] = px[1];
-            rgba[i + 2] = px[2];
-            rgba[i + 3] = px[3];
+
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let i = ((y * out_w + x) * 4) as usize;
+            let a = corner_alpha(x as f64 + 0.5, y as f64 + 0.5, out_w as f64, out_h as f64, r);
+            if a <= 0.0 {
+                continue;
+            }
+
+            let (r_val, g_val, b_val) =
+                if x >= pad && x < pad + sw && y >= pad && y < pad + sh {
+                    let px = src.get_pixel(x - pad, y - pad);
+                    (px[0], px[1], px[2])
+                } else {
+                    (0, 0, 0)
+                };
+
+            rgba[i] = r_val;
+            rgba[i + 1] = g_val;
+            rgba[i + 2] = b_val;
+            rgba[i + 3] = (a * 255.0).round() as u8;
         }
     }
+
     egui::IconData {
-        width: out_w as u32,
-        height: out_h as u32,
+        width: out_w,
+        height: out_h,
         rgba,
     }
+}
+
+fn corner_alpha(cx: f64, cy: f64, w: f64, h: f64, r: f64) -> f64 {
+    let (kx, ky) = if cx < r && cy < r {
+        (r, r)
+    } else if cx > w - r && cy < r {
+        (w - r, r)
+    } else if cx < r && cy > h - r {
+        (r, h - r)
+    } else if cx > w - r && cy > h - r {
+        (w - r, h - r)
+    } else {
+        return 1.0;
+    };
+    let dist = ((cx - kx).powi(2) + (cy - ky).powi(2)).sqrt();
+    (r + 0.5 - dist).clamp(0.0, 1.0)
 }
 
 fn configure_theme(ctx: &egui::Context) {

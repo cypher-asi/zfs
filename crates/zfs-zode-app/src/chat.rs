@@ -195,6 +195,7 @@ fn build_chat_message(chat: &ChatState, text: String) -> ZChatMessage {
         channel_id: chat.channel_id.clone(),
         content: text,
         timestamp_ms: now_ms,
+        signature: Vec::new(),
     }
 }
 
@@ -269,10 +270,16 @@ fn decrypt_one(
         decrypt_sector(ciphertext, sector_key, aad).map_err(|e| format!("Decrypt: {e}"))?;
     let plaintext = unpad_from_bucket(&padded).map_err(|e| format!("Unpad: {e}"))?;
     let msg = ZChatMessage::decode_canonical(&plaintext).map_err(|e| format!("Decode: {e}"))?;
+    let sig_status = if msg.signature.is_empty() {
+        crate::state::SignatureStatus::None
+    } else {
+        crate::state::SignatureStatus::Unknown
+    };
     Ok(DisplayMessage {
         sender: msg.sender_did,
         content: msg.content,
         timestamp_ms: msg.timestamp_ms,
+        signature_status: sig_status,
     })
 }
 
@@ -292,6 +299,7 @@ fn broadcast_gossip(
         sector_id,
         index,
         payload: ciphertext,
+        shape_proof: None,
     };
     let topic = zfs_programs::program_topic(&gossip.program_id);
     if let Ok(data) = zfs_core::encode_canonical(&gossip) {

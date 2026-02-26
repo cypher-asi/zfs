@@ -22,7 +22,7 @@ mod verifier;
 
 pub use error::ProofError;
 pub use noop::NoopVerifier;
-pub use verifier::{ProofVerifier, VerifiedSector};
+pub use verifier::{ProofVerifier, ProofVerifierRegistry, VerifiedSector};
 
 #[cfg(test)]
 mod tests {
@@ -124,5 +124,46 @@ mod tests {
         let verifier: Box<dyn ProofVerifier> = Box::new(NoopVerifier);
         let result = verifier.verify(&test_cid(), &test_program_id(), 1, b"", None);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn proof_verifier_registry_dispatch() {
+        use std::sync::Arc;
+        use zfs_core::ProofSystem;
+
+        let mut registry = ProofVerifierRegistry::new();
+        registry.register(ProofSystem::None, Arc::new(NoopVerifier));
+
+        assert!(registry.has_verifier(&ProofSystem::None));
+
+        let result = registry.verify(
+            &ProofSystem::None,
+            &test_cid(),
+            &test_program_id(),
+            1,
+            b"proof",
+            None,
+        );
+        let verified = result.expect("registry dispatch should succeed");
+        assert_eq!(verified.cid, test_cid());
+        assert_eq!(verified.program_id, test_program_id());
+    }
+
+    #[test]
+    fn proof_verifier_registry_missing_system() {
+        use zfs_core::ProofSystem;
+
+        let registry = ProofVerifierRegistry::new();
+        assert!(!registry.has_verifier(&ProofSystem::Groth16));
+
+        let result = registry.verify(
+            &ProofSystem::Groth16,
+            &test_cid(),
+            &test_program_id(),
+            1,
+            b"proof",
+            None,
+        );
+        assert!(result.is_err());
     }
 }

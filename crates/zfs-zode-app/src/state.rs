@@ -108,6 +108,16 @@ pub(crate) struct DisplayMessage {
     pub sender: String,
     pub content: String,
     pub timestamp_ms: u64,
+    pub signature_status: SignatureStatus,
+}
+
+/// Signature verification status for display purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SignatureStatus {
+    None,
+    Verified,
+    Failed,
+    Unknown,
 }
 
 /// Incremental update carrying only newly-discovered messages.

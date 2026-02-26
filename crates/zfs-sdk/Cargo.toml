@@ -10,6 +10,8 @@ zfs-core = { path = "../zfs-core" }
 zfs-crypto = { path = "../zfs-crypto" }
 zfs-net = { path = "../zfs-net" }
 zfs-programs = { path = "../zfs-programs" }
+zfs-proof = { path = "../zfs-proof" }
+zfs-proof-groth16 = { path = "../zfs-proof-groth16" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1"
 thiserror = "2"

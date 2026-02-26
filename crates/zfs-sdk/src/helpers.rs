@@ -10,6 +10,16 @@ pub fn zchat_descriptor() -> ZChatDescriptor {
     ZChatDescriptor::v1()
 }
 
+/// Create the ZID v2 descriptor (with Groth16 shape proofs).
+pub fn zid_descriptor_v2() -> ZidDescriptor {
+    ZidDescriptor::v2()
+}
+
+/// Create the Interlink v2 descriptor (with Groth16 shape proofs).
+pub fn zchat_descriptor_v2() -> ZChatDescriptor {
+    ZChatDescriptor::v2()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
