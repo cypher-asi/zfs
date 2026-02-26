@@ -1,6 +1,6 @@
 # The ZFS Protocol
 
-**Version 1.0.0** — Derived from the reference implementation
+**Version 0.2.0** — Derived from the reference implementation
 
 ---
 
@@ -551,15 +551,21 @@ sealed = nonce (24 bytes) || ciphertext || tag (16 bytes)
 
 ### 11.3 Padding
 
-Before encryption, content MUST be padded to fixed-size buckets to resist payload-size analysis:
+Before encryption, content MUST be padded to fixed-size buckets to resist payload-size analysis. Buckets grow in powers of two (2× progression):
 
 | Content size (including 4-byte length prefix) | Padded to |
 |-----------------------------------------------|-----------|
-| 0 – 1,024 bytes | 1 KB |
-| 1,025 – 4,096 bytes | 4 KB |
-| 4,097 – 16,384 bytes | 16 KB |
-| 16,385 – 65,536 bytes | 64 KB |
-| 65,537 – 262,144 bytes | 256 KB |
+| 0 – 256 bytes | 256 B |
+| 257 – 512 bytes | 512 B |
+| 513 – 1,024 bytes | 1 KB |
+| 1,025 – 2,048 bytes | 2 KB |
+| 2,049 – 4,096 bytes | 4 KB |
+| 4,097 – 8,192 bytes | 8 KB |
+| 8,193 – 16,384 bytes | 16 KB |
+| 16,385 – 32,768 bytes | 32 KB |
+| 32,769 – 65,536 bytes | 64 KB |
+| 65,537 – 131,072 bytes | 128 KB |
+| 131,073 – 262,144 bytes | 256 KB |
 | > 262,144 bytes | Next 256 KB multiple |
 
 **Padding format:** length-prefix + zero-fill:

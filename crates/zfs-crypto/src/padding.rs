@@ -1,7 +1,10 @@
 use crate::CryptoError;
 
-/// Bucket sizes for content padding: 1 KB, 4 KB, 16 KB, 64 KB, 256 KB.
-const BUCKET_SIZES: &[usize] = &[1_024, 4_096, 16_384, 65_536, 262_144];
+/// Bucket sizes for content padding (2× progression):
+/// 256 B, 512 B, 1 KB, 2 KB, 4 KB, 8 KB, 16 KB, 32 KB, 64 KB, 128 KB, 256 KB.
+const BUCKET_SIZES: &[usize] = &[
+    256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144,
+];
 
 /// Pad content to the next bucket boundary.
 ///
