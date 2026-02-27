@@ -28,6 +28,7 @@ pub(crate) struct ZodeApp {
     pub profiles: Vec<ProfileMeta>,
     pub unlock_password: String,
     pub unlock_error: Option<String>,
+    pub confirm_delete_profile: Option<String>,
     pub reveal_start: Option<f64>,
     pub status_first_seen: Option<f64>,
     pub active_profile_id: Option<String>,
@@ -67,6 +68,7 @@ impl ZodeApp {
             profiles,
             unlock_password: String::new(),
             unlock_error: None,
+            confirm_delete_profile: None,
             reveal_start: None,
             status_first_seen: None,
             active_profile_id: None,
@@ -325,10 +327,34 @@ impl ZodeApp {
         self.interlink_state = None;
     }
 
+    pub(crate) fn do_delete_profile(&mut self, profile_id: &str) {
+        let base = profile::base_dir();
+        if let Err(e) = profile::delete_profile(&base, profile_id) {
+            self.unlock_error = Some(e.to_string());
+            return;
+        }
+        self.profiles.retain(|p| p.id != profile_id);
+        self.confirm_delete_profile = None;
+        self.unlock_password.clear();
+        self.unlock_error = None;
+
+        self.phase = if self.profiles.is_empty() {
+            self.boot_zode();
+            AppPhase::Running
+        } else if self.profiles.len() == 1 {
+            AppPhase::Unlock {
+                profile_id: self.profiles[0].id.clone(),
+            }
+        } else {
+            AppPhase::ProfileSelect
+        };
+    }
+
     pub(crate) fn lock_session(&mut self) {
         self.stop_zode();
         self.unlock_password.clear();
         self.unlock_error = None;
+        self.confirm_delete_profile = None;
         self.active_profile_id = None;
         self.session_password = None;
         self.status_first_seen = None;
@@ -870,18 +896,74 @@ impl ZodeApp {
                 ui.add_space(16.0);
 
                 let profiles = self.profiles.clone();
+                let mut deleted_id: Option<String> = None;
                 for p in &profiles {
-                    let btn = egui::Button::new(
-                        egui::RichText::new(&p.name).monospace().size(12.0),
-                    )
-                    .min_size(egui::vec2(260.0, 36.0));
+                    let confirming = self.confirm_delete_profile.as_deref() == Some(&p.id);
+                    if confirming {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("Delete \"{}\"?", p.name))
+                                    .size(12.0)
+                                    .color(crate::components::colors::ERROR),
+                            );
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("Yes")
+                                            .size(11.0)
+                                            .color(crate::components::colors::ERROR),
+                                    )
+                                    .frame(false),
+                                )
+                                .clicked()
+                            {
+                                deleted_id = Some(p.id.clone());
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("No")
+                                            .size(11.0)
+                                            .color(egui::Color32::from_rgb(160, 160, 165)),
+                                    )
+                                    .frame(false),
+                                )
+                                .clicked()
+                            {
+                                self.confirm_delete_profile = None;
+                            }
+                        });
+                    } else {
+                        ui.horizontal(|ui| {
+                            let btn = egui::Button::new(
+                                egui::RichText::new(&p.name).monospace().size(12.0),
+                            )
+                            .min_size(egui::vec2(230.0, 36.0));
 
-                    if ui.add(btn).clicked() {
-                        self.phase = AppPhase::Unlock {
-                            profile_id: p.id.clone(),
-                        };
+                            if ui.add(btn).clicked() {
+                                self.phase = AppPhase::Unlock {
+                                    profile_id: p.id.clone(),
+                                };
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(egui_phosphor::regular::TRASH)
+                                            .size(14.0)
+                                            .color(egui::Color32::from_rgb(100, 100, 108)),
+                                    )
+                                    .frame(false),
+                                )
+                                .clicked()
+                            {
+                                self.confirm_delete_profile = Some(p.id.clone());
+                            }
+                        });
                     }
                     ui.add_space(4.0);
+                }
+                if let Some(id) = deleted_id {
+                    self.do_delete_profile(&id);
                 }
 
                 ui.add_space(16.0);
@@ -919,6 +1001,7 @@ impl ZodeApp {
             .inner_margin(32.0);
 
         let mut do_unlock = false;
+        let mut do_delete: Option<String> = None;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let rect = ui.max_rect();
@@ -958,16 +1041,7 @@ impl ZodeApp {
                     do_unlock = true;
                 }
 
-                ui.add_space(4.0);
-                ui.allocate_ui(egui::vec2(280.0, 16.0), |ui| {
-                    if let Some(ref err) = self.unlock_error {
-                        ui.colored_label(
-                            crate::components::colors::ERROR,
-                            err,
-                        );
-                    }
-                });
-                ui.add_space(4.0);
+                ui.add_space(8.0);
 
                 if crate::components::action_button(ui, "Unlock") {
                     do_unlock = true;
@@ -1011,11 +1085,78 @@ impl ZodeApp {
                     self.phase = AppPhase::Revealing;
                     self.reveal_start = None;
                 }
+
+                ui.add_space(4.0);
+
+                let confirming_delete =
+                    self.confirm_delete_profile.as_deref() == Some(&*profile_id);
+                if confirming_delete {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("Delete \"{}\"?", profile_name))
+                                .size(11.0)
+                                .color(crate::components::colors::ERROR),
+                        );
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Yes")
+                                        .size(11.0)
+                                        .color(crate::components::colors::ERROR),
+                                )
+                                .frame(false),
+                            )
+                            .clicked()
+                        {
+                            do_delete = Some(profile_id.clone());
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("No")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(160, 160, 165)),
+                                )
+                                .frame(false),
+                            )
+                            .clicked()
+                        {
+                            self.confirm_delete_profile = None;
+                        }
+                    });
+                } else if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Delete profile")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(100, 100, 108)),
+                        )
+                        .frame(false),
+                    )
+                    .clicked()
+                {
+                    self.confirm_delete_profile = Some(profile_id.clone());
+                }
             });
+
+            if let Some(ref err) = self.unlock_error {
+                let err_rect = egui::Rect::from_min_size(
+                    egui::pos2(rect.left(), rect.bottom() - 28.0),
+                    egui::vec2(rect.width(), 20.0),
+                );
+                ui.allocate_ui_at_rect(err_rect, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.colored_label(crate::components::colors::ERROR, err);
+                    });
+                });
+            }
         });
 
         if do_unlock {
             self.attempt_unlock(&profile_id);
+        }
+        if let Some(id) = do_delete {
+            self.do_delete_profile(&id);
         }
     }
 }
