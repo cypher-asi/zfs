@@ -8,6 +8,7 @@ members = [
   "crates/grid-proof-groth16",
   "crates/grid-net",
   "crates/zode",
+  "crates/grid-rpc",
   "crates/grid-sdk",
   "crates/zode-cli",
   "crates/zode-app",

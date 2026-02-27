@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use grid_core::ProgramId;
 use grid_net::NetworkConfig;
 use grid_storage::StorageConfig;
-use zode::{DefaultProgramsConfig, ZodeConfig};
+use zode::{DefaultProgramsConfig, RpcConfig, ZodeConfig};
 
 pub(crate) struct Settings {
     pub data_dir: String,
@@ -18,6 +18,9 @@ pub(crate) struct Settings {
     pub enable_kademlia: bool,
     pub kademlia_server_mode: bool,
     pub random_walk_interval_secs: u64,
+    pub enable_rpc: bool,
+    pub rpc_bind_addr: String,
+    pub rpc_api_key: String,
 }
 
 impl Default for Settings {
@@ -34,6 +37,9 @@ impl Default for Settings {
             enable_kademlia: true,
             kademlia_server_mode: true,
             random_walk_interval_secs: 30,
+            enable_rpc: false,
+            rpc_bind_addr: "127.0.0.1:4690".into(),
+            rpc_api_key: String::new(),
         }
     }
 }
@@ -66,6 +72,24 @@ impl Settings {
             .with_discovery(discovery);
         let storage = StorageConfig::new(PathBuf::from(&self.data_dir));
 
+        let rpc = if self.enable_rpc {
+            let bind_addr = self
+                .rpc_bind_addr
+                .parse()
+                .map_err(|e| format!("Bad RPC bind address: {e}"))?;
+            RpcConfig {
+                enabled: true,
+                bind_addr,
+                api_key: if self.rpc_api_key.is_empty() {
+                    None
+                } else {
+                    Some(self.rpc_api_key.clone())
+                },
+            }
+        } else {
+            RpcConfig::default()
+        };
+
         Ok(ZodeConfig {
             storage,
             default_programs: DefaultProgramsConfig {
@@ -76,6 +100,7 @@ impl Settings {
             sector_limits: Default::default(),
             sector_filter: Default::default(),
             network,
+            rpc,
         })
     }
 

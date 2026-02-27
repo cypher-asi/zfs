@@ -47,6 +47,10 @@ pub enum LogEvent {
         sector_id: String,
         result: GossipAppendResult,
     },
+    /// The RPC server has started listening.
+    RpcStarted { bind_addr: String },
+    /// An RPC request was processed.
+    RpcRequest { method: String, success: bool },
     /// The Zode is shutting down.
     ShuttingDown,
 }
@@ -112,6 +116,13 @@ impl fmt::Display for LogEvent {
                         )
                     }
                 }
+            }
+            Self::RpcStarted { bind_addr } => {
+                write!(f, "[RPC STARTED] listening on {bind_addr}")
+            }
+            Self::RpcRequest { method, success } => {
+                let status = if *success { "OK" } else { "ERR" };
+                write!(f, "[RPC] {method} {status}")
             }
             Self::ShuttingDown => write!(f, "[SHUTDOWN] Zode shutting down"),
         }
@@ -184,6 +195,7 @@ pub enum LogLevel {
     Discovery,
     PeerConnect,
     PeerDisconnect,
+    Rpc,
     Shutdown,
     Normal,
 }
@@ -203,6 +215,8 @@ impl LogLevel {
             Self::PeerConnect
         } else if line.starts_with("[PEER-") {
             Self::PeerDisconnect
+        } else if line.starts_with("[RPC") {
+            Self::Rpc
         } else if line.starts_with("[SHUTDOWN") {
             Self::Shutdown
         } else {
@@ -224,4 +238,10 @@ pub struct ZodeStatus {
     pub topics: Vec<String>,
     /// Metrics snapshot.
     pub metrics: MetricsSnapshot,
+    /// Whether the RPC server is enabled and running.
+    pub rpc_enabled: bool,
+    /// RPC server bind address (e.g. "127.0.0.1:4690"), if running.
+    pub rpc_addr: Option<String>,
+    /// Whether the RPC server requires API key authentication.
+    pub rpc_auth_required: bool,
 }

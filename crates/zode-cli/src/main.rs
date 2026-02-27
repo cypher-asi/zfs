@@ -17,7 +17,7 @@ use crossterm::terminal::{
 use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
 use grid_core::ProgramId;
-use zode::{DefaultProgramsConfig, Zode, ZodeConfig};
+use zode::{DefaultProgramsConfig, RpcConfig, Zode, ZodeConfig};
 
 use crate::app::{App, Screen};
 
@@ -64,6 +64,18 @@ struct Cli {
     /// Interval in seconds between DHT random walk queries.
     #[arg(long, default_value = "30")]
     random_walk_interval: u64,
+
+    /// Enable the JSON-RPC HTTP server.
+    #[arg(long)]
+    rpc: bool,
+
+    /// RPC server bind address (requires --rpc).
+    #[arg(long, default_value = "127.0.0.1:4690")]
+    rpc_bind: String,
+
+    /// API key for RPC authentication (requires --rpc). Omit for open access.
+    #[arg(long)]
+    rpc_api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -125,6 +137,20 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
 
     let storage = grid_storage::StorageConfig::new(cli.data_dir.clone());
 
+    let rpc = if cli.rpc {
+        let bind_addr = cli
+            .rpc_bind
+            .parse()
+            .context("invalid --rpc-bind address")?;
+        RpcConfig {
+            enabled: true,
+            bind_addr,
+            api_key: cli.rpc_api_key.clone(),
+        }
+    } else {
+        RpcConfig::default()
+    };
+
     Ok(ZodeConfig {
         storage,
         default_programs: DefaultProgramsConfig {
@@ -135,6 +161,7 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
         sector_limits: Default::default(),
         sector_filter: Default::default(),
         network,
+        rpc,
     })
 }
 

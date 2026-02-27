@@ -7,6 +7,7 @@ description = "Zode — ties together storage, network, proof, and programs"
 [dependencies]
 grid-core = { path = "../grid-core" }
 grid-crypto = { path = "../grid-crypto" }
+grid-rpc = { path = "../grid-rpc" }
 grid-storage = { path = "../grid-storage" }
 grid-net = { path = "../grid-net" }
 grid-programs-zid = { path = "../grid-programs/zid" }

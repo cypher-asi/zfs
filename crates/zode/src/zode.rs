@@ -10,6 +10,8 @@ use grid_proof_groth16::Groth16ShapeVerifier;
 use grid_programs_interlink::InterlinkDescriptor;
 use grid_storage::{RocksStorage, SectorStore};
 
+use grid_rpc::{RpcConfig, RpcServer};
+
 use crate::config::ZodeConfig;
 use crate::error::ZodeError;
 use crate::metrics::ZodeMetrics;
@@ -35,6 +37,8 @@ pub struct Zode {
     shutdown_tx: mpsc::Sender<()>,
     publish_tx: mpsc::Sender<(String, Vec<u8>)>,
     event_loop_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    rpc_server: Mutex<Option<RpcServer>>,
+    rpc_config: RpcConfig,
 }
 
 impl Zode {
@@ -102,7 +106,7 @@ impl Zode {
             program_proof_config.insert(pid, ProofSystem::Groth16);
         }
 
-        let sector_handler = SectorRequestHandler::new(
+        let sector_handler = Arc::new(SectorRequestHandler::new(
             Arc::clone(&storage),
             effective,
             config.sector_limits.clone(),
@@ -110,7 +114,24 @@ impl Zode {
             Arc::clone(&metrics),
             proof_registry,
             program_proof_config,
-        );
+        ));
+
+        let rpc_server = if config.rpc.enabled {
+            match RpcServer::start(&config.rpc, Arc::clone(&sector_handler) as _).await {
+                Ok(rpc) => {
+                    let _ = event_tx.send(LogEvent::RpcStarted {
+                        bind_addr: rpc.bind_addr().to_string(),
+                    });
+                    Some(rpc)
+                }
+                Err(e) => {
+                    warn!(error = %e, "failed to start RPC server");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let network = Arc::new(Mutex::new(network));
         let event_loop_handle = Self::spawn_event_loop(
@@ -136,6 +157,8 @@ impl Zode {
             shutdown_tx,
             publish_tx,
             event_loop_handle: Mutex::new(Some(event_loop_handle)),
+            rpc_server: Mutex::new(rpc_server),
+            rpc_config: config.rpc.clone(),
         })
     }
 
@@ -171,7 +194,7 @@ impl Zode {
 
     #[allow(clippy::too_many_arguments)]
     fn spawn_event_loop<S: SectorStore + Send + Sync + 'static>(
-        sector_handler: SectorRequestHandler<S>,
+        sector_handler: Arc<SectorRequestHandler<S>>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,
@@ -195,6 +218,11 @@ impl Zode {
 
     /// Get a status snapshot of the running Zode (lock-free, never blocks).
     pub fn status(&self) -> ZodeStatus {
+        if let Ok(rpc) = self.rpc_server.try_lock() {
+            if let Some(ref rpc) = *rpc {
+                self.metrics.set_rpc_requests(rpc.requests_total());
+            }
+        }
         let metrics = self.metrics.snapshot();
         let connected_peers = self
             .connected_peers
@@ -202,12 +230,30 @@ impl Zode {
             .map(|g| g.clone())
             .unwrap_or_default();
         let peer_count = connected_peers.len() as u64;
+
+        let (rpc_enabled, rpc_addr, rpc_auth_required) =
+            if let Ok(rpc) = self.rpc_server.try_lock() {
+                match *rpc {
+                    Some(ref rpc) => (
+                        true,
+                        Some(rpc.bind_addr().to_string()),
+                        rpc.auth_required(),
+                    ),
+                    None => (false, None, false),
+                }
+            } else {
+                (self.rpc_config.enabled, None, self.rpc_config.api_key.is_some())
+            };
+
         ZodeStatus {
             zode_id: format_zode_id(&self.zode_id),
             peer_count,
             connected_peers,
             topics: self.topics.clone(),
             metrics,
+            rpc_enabled,
+            rpc_addr,
+            rpc_auth_required,
         }
     }
 
@@ -257,6 +303,9 @@ impl Zode {
     /// Gracefully shut down the Zode and wait for the event loop to exit.
     pub async fn shutdown(&self) {
         let _ = self.event_tx.send(LogEvent::ShuttingDown);
+        if let Some(rpc) = self.rpc_server.lock().await.take() {
+            rpc.shutdown().await;
+        }
         let _ = self.shutdown_tx.send(()).await;
         if let Some(handle) = self.event_loop_handle.lock().await.take() {
             let _ = handle.await;
@@ -266,7 +315,7 @@ impl Zode {
 
     #[allow(clippy::too_many_arguments)]
     async fn event_loop<S: SectorStore>(
-        sector_handler: SectorRequestHandler<S>,
+        sector_handler: Arc<SectorRequestHandler<S>>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,

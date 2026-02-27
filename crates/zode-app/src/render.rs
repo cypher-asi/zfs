@@ -46,6 +46,7 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             render_default_programs(app, ui);
             render_topics(app, ui);
             render_discovery_settings(app, ui);
+            render_rpc_settings(app, ui);
         });
 
     if do_boot {
@@ -149,6 +150,30 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
+fn render_rpc_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    section(ui, "RPC Server", |ui| {
+        hint_label(ui, "JSON-RPC HTTP server for external app access.");
+        ui.add_space(8.0);
+        ui.checkbox(&mut app.settings.enable_rpc, "Enable RPC Server");
+
+        if app.settings.enable_rpc {
+            ui.indent("rpc_settings", |ui| {
+                egui::Grid::new("rpc_grid")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        field_label(ui, "Bind Address");
+                        ui.add(text_input(&mut app.settings.rpc_bind_addr, 300.0));
+                        ui.end_row();
+                        field_label(ui, "API Key (empty = open)");
+                        ui.add(text_input(&mut app.settings.rpc_api_key, 300.0));
+                        ui.end_row();
+                    });
+            });
+        }
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
@@ -194,6 +219,7 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
             render_zode_status(ui, status, state);
             render_storage_status(ui, status);
             render_metrics_status(ui, &status.metrics);
+            render_rpc_status(ui, status);
         });
 
     egui::Frame::default()
@@ -292,6 +318,39 @@ fn render_metrics_status(ui: &mut egui::Ui, m: &zode::MetricsSnapshot) {
     });
 }
 
+fn render_rpc_status(ui: &mut egui::Ui, status: &zode::ZodeStatus) {
+    section(ui, "RPC", |ui| {
+        info_grid(ui, "rpc_status_grid", |ui| {
+            if status.rpc_enabled {
+                kv_row(
+                    ui,
+                    "Status",
+                    &format!(
+                        "Listening on {}",
+                        status.rpc_addr.as_deref().unwrap_or("...")
+                    ),
+                );
+                kv_row(
+                    ui,
+                    "Auth",
+                    if status.rpc_auth_required {
+                        "API key required"
+                    } else {
+                        "Open"
+                    },
+                );
+                kv_row(
+                    ui,
+                    "Requests",
+                    &format!("{}", status.metrics.rpc_requests_total),
+                );
+            } else {
+                kv_row(ui, "Status", "Disabled");
+            }
+        });
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Peers
 // ---------------------------------------------------------------------------
@@ -369,6 +428,7 @@ fn log_entry_color(entry: &str) -> egui::Color32 {
         LogLevel::Discovery => egui::Color32::from_rgb(100, 150, 255),
         LogLevel::PeerConnect => colors::CONNECTED,
         LogLevel::PeerDisconnect => egui::Color32::from_rgb(255, 255, 100),
+        LogLevel::Rpc => egui::Color32::from_rgb(100, 220, 220),
         LogLevel::Shutdown => egui::Color32::from_rgb(200, 100, 255),
         LogLevel::Normal => egui::Color32::from_rgb(200, 200, 200),
     }
@@ -401,6 +461,22 @@ pub(crate) fn render_info(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapsh
                         "Sectors Stored",
                         &format!("{}", status.metrics.sectors_stored_total),
                     );
+                });
+            });
+
+            section(ui, "RPC", |ui| {
+                info_grid(ui, "info_rpc_grid", |ui| {
+                    if status.rpc_enabled {
+                        let addr = status.rpc_addr.as_deref().unwrap_or("...");
+                        let auth = if status.rpc_auth_required {
+                            "key"
+                        } else {
+                            "open"
+                        };
+                        kv_row(ui, "RPC", &format!("{addr} (auth: {auth})"));
+                    } else {
+                        kv_row(ui, "RPC", "Disabled");
+                    }
                 });
             });
 

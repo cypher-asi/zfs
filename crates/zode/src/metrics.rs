@@ -15,6 +15,8 @@ pub struct ZodeMetrics {
     pub peer_count: AtomicU64,
     /// Current approximate DB size in bytes.
     pub db_size_bytes: AtomicU64,
+    /// Total JSON-RPC requests received.
+    pub rpc_requests_total: AtomicU64,
 }
 
 impl ZodeMetrics {
@@ -48,6 +50,10 @@ impl ZodeMetrics {
         self.db_size_bytes.store(size, Ordering::Relaxed);
     }
 
+    pub fn set_rpc_requests(&self, count: u64) {
+        self.rpc_requests_total.store(count, Ordering::Relaxed);
+    }
+
     /// Snapshot all counters for display.
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
@@ -57,6 +63,7 @@ impl ZodeMetrics {
             limit_rejections: self.limit_rejections.load(Ordering::Relaxed),
             peer_count: self.peer_count.load(Ordering::Relaxed),
             db_size_bytes: self.db_size_bytes.load(Ordering::Relaxed),
+            rpc_requests_total: self.rpc_requests_total.load(Ordering::Relaxed),
         }
     }
 }
@@ -70,4 +77,5 @@ pub struct MetricsSnapshot {
     pub limit_rejections: u64,
     pub peer_count: u64,
     pub db_size_bytes: u64,
+    pub rpc_requests_total: u64,
 }

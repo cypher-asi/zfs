@@ -70,6 +70,7 @@ fn render_status(frame: &mut Frame, app: &mut App, area: Rect) {
     let mut lines = build_zode_lines(status);
     lines.extend(build_storage_lines(status));
     lines.extend(build_metrics_lines(&status.metrics));
+    lines.extend(build_rpc_lines(status));
 
     app.list_len = 0;
     let paragraph = Paragraph::new(lines)
@@ -120,6 +121,28 @@ fn build_metrics_lines(m: &zode::MetricsSnapshot) -> Vec<Line<'static>> {
             ),
         ),
     ]
+}
+
+fn build_rpc_lines(status: &zode::ZodeStatus) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        section_header("── RPC ──"),
+    ];
+
+    if status.rpc_enabled {
+        let addr = status.rpc_addr.clone().unwrap_or_else(|| "...".into());
+        lines.push(kv_line_owned("Status:   ", format!("Enabled (listening on {addr})")));
+        let auth = if status.rpc_auth_required { "API key required" } else { "Open" };
+        lines.push(kv_line_owned("Auth:     ", auth.into()));
+        lines.push(kv_line_owned("Requests: ", format!("{}", status.metrics.rpc_requests_total)));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "Status:   Disabled",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    lines
 }
 
 fn render_traverse(frame: &mut Frame, app: &mut App, area: Rect) {
@@ -235,6 +258,14 @@ fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(format!("  {topic}")));
     }
     lines.push(Line::from(""));
+    if status.rpc_enabled {
+        let addr = status.rpc_addr.clone().unwrap_or_else(|| "...".into());
+        let auth = if status.rpc_auth_required { "key" } else { "open" };
+        lines.push(kv_line_owned("RPC:            ", format!("{addr} (auth: {auth})")));
+    } else {
+        lines.push(kv_line_owned("RPC:            ", "Disabled".into()));
+    }
+    lines.push(Line::from(""));
     lines.push(section_header("── Version ──"));
     lines.push(Line::from(format!(
         "  zode-cli v{}",
@@ -279,6 +310,7 @@ fn log_entry_style(entry: &str) -> Style {
         LogLevel::Discovery => Style::default().fg(Color::Blue),
         LogLevel::PeerConnect => Style::default().fg(Color::Green),
         LogLevel::PeerDisconnect => Style::default().fg(Color::Yellow),
+        LogLevel::Rpc => Style::default().fg(Color::Cyan),
         LogLevel::Shutdown => Style::default().fg(Color::Magenta),
         LogLevel::Normal => Style::default(),
     }

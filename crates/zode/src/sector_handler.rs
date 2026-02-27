@@ -18,7 +18,7 @@ use crate::metrics::ZodeMetrics;
 
 /// Handles incoming sector protocol requests, enforcing policy and limits
 /// before delegating to `SectorStore`.
-pub(crate) struct SectorRequestHandler<S> {
+pub struct SectorRequestHandler<S> {
     storage: Arc<S>,
     topics: HashSet<ProgramId>,
     limits: SectorLimitsConfig,
@@ -26,6 +26,12 @@ pub(crate) struct SectorRequestHandler<S> {
     metrics: Arc<ZodeMetrics>,
     proof_registry: Arc<ProofVerifierRegistry>,
     program_proof_config: HashMap<ProgramId, ProofSystem>,
+}
+
+impl<S: SectorStore + Send + Sync + 'static> grid_rpc::SectorDispatch for SectorRequestHandler<S> {
+    fn dispatch(&self, req: &SectorRequest) -> SectorResponse {
+        self.handle_sector_request(req)
+    }
 }
 
 impl<S: SectorStore> SectorRequestHandler<S> {

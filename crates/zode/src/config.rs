@@ -5,6 +5,7 @@ use grid_programs_interlink::InterlinkDescriptor;
 use grid_programs_zid::ZidDescriptor;
 use grid_core::{ProgramId, SectorId};
 use grid_net::NetworkConfig;
+use grid_rpc::RpcConfig;
 use grid_storage::StorageConfig;
 
 /// Toggle default programs (ZID, Interlink) on or off.
@@ -74,6 +75,8 @@ pub struct ZodeConfig {
     pub sector_filter: SectorFilter,
     /// Network (libp2p) configuration.
     pub network: NetworkConfig,
+    /// JSON-RPC HTTP server configuration.
+    pub rpc: RpcConfig,
 }
 
 impl ZodeConfig {
@@ -128,6 +131,7 @@ impl Default for ZodeConfig {
             sector_limits: SectorLimitsConfig::default(),
             sector_filter: SectorFilter::default(),
             network: NetworkConfig::default(),
+            rpc: RpcConfig::default(),
         }
     }
 }
