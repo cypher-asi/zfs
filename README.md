@@ -4,8 +4,6 @@
 
 ---
 
-&nbsp;
-
 <p align="center">
   <strong>The Global Resilient Internet Datalink</strong><br/>
   A decentralized compute environmnet powered by zero-knowledge proofs and post-quantum cryptography.
@@ -36,7 +34,7 @@ Core concepts:
 - **Programs** — Application-level namespaces that organize sectors by purpose. Built-in programs include ZID (decentralized identity) and Interlink (encrypted messaging). Nodes subscribe to the programs they care about.
 - **Proofs** — Zero-knowledge proofs that let nodes verify a sector is correctly shaped and encrypted without ever seeing its contents. The initial backend is Groth16 over BN254, with the architecture designed to support additional proof systems as they mature.
 
-Two frontends ship in this workspace:
+Two ZODE applications ship in this workspace:
 
 - **zode-app** — a standalone desktop GUI built with eframe / egui.
 - **zode-cli** — a console TUI built with ratatui / crossterm.
