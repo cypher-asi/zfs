@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="THE GRID" />
+  <img src="assets/banner.png" alt="THE GRID" width="480" />
 </p>
 
 ---
@@ -33,7 +33,7 @@ The objective is to build a global, decentralized alternative to traditional hyp
 </p>
 
 <p align="center">
-  The reference implementation of <a href="docs/grid-protocol.md">The GRID Protocol</a>:<br/>
+  The reference implementation of <a href="docs/grid-protocol.md">The GRID</a>:<br/>
   a local node that receives, verifies, and serves data across a peer-to-peer network.
 </p>
 
