@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="THE GRID" />
+</p>
+
 # THE GRID
 
 **The Global Resilient Internet Datalink**
