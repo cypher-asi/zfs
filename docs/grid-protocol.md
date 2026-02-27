@@ -6,7 +6,7 @@
 
 ## 1. Introduction
 
-The Grid is a peer-to-peer encrypted storage protocol. Participating nodes — called **Zodes** — form a network of program-scoped, append-only log stores. Clients encrypt all data locally before upload; Zodes store and serve only opaque ciphertext. The protocol has no consensus layer, no tokens, and no global state.
+The Grid is a peer-to-peer encrypted storage protocol. Participating nodes — called **ZODES** — form a network of program-scoped, append-only log stores. Clients encrypt all data locally before upload; ZODES store and serve only opaque ciphertext. The protocol has no consensus layer, no tokens, and no global state.
 
 This document defines the Grid protocol in implementation-neutral terms. Any conforming implementation — regardless of programming language — that follows the wire formats, cryptographic constructions, and behavioral rules described here can interoperate with any other conforming implementation.
 
@@ -16,8 +16,8 @@ This document defines the Grid protocol in implementation-neutral terms. Any con
 
 | Term | Definition |
 |------|-----------|
-| **Zode** | A storage node that participates in the Grid network. Identified by a libp2p PeerId, displayed with a `Zx` prefix (e.g. `Zx12D3KooW…`). The prefix is display-only; the wire and storage formats use the raw PeerId. |
-| **Client** | Any participant that connects to Zodes to store or retrieve data. A client does not serve requests. |
+| **ZODE** | A storage node that participates in the Grid network. Identified by a libp2p PeerId, displayed with a `Zx` prefix (e.g. `Zx12D3KooW…`). The prefix is display-only; the wire and storage formats use the raw PeerId. |
+| **Client** | Any participant that connects to ZODES to store or retrieve data. A client does not serve requests. |
 | **Program** | A named, versioned application scope. All storage, subscriptions, and topic routing are scoped by program. |
 | **ProgramId** | A 32-byte identifier derived as `SHA-256(CBOR(ProgramDescriptor))`. |
 | **Sector** | An append-only log of encrypted entries identified by a `(ProgramId, SectorId)` pair. |
@@ -66,7 +66,7 @@ Program-specific descriptors MAY add additional fields. Two implementations that
 
 ### 4.3 SectorId
 
-A variable-length byte string. In the sector protocol, sector IDs MUST be exactly 32 bytes. Zodes MUST reject requests with non-32-byte sector IDs.
+A variable-length byte string. In the sector protocol, sector IDs MUST be exactly 32 bytes. ZODES MUST reject requests with non-32-byte sector IDs.
 
 Displayed as lowercase hex.
 
@@ -78,7 +78,7 @@ Cid = SHA-256(ciphertext)
 
 A 32-byte content-addressed identifier derived from the stored ciphertext. Used for content addressing outside the sector protocol (e.g. in future block-based protocols). Displayed as 64 lowercase hex characters.
 
-### 4.5 ZodeId
+### 4.5 ZODE ID
 
 A libp2p PeerId. On the wire and in storage, the raw PeerId bytes are used. For human display, the canonical format is `Zx<PeerId_string>`. The `Zx` prefix MUST NOT appear in wire formats.
 
@@ -373,7 +373,7 @@ Message signing provides authenticity and integrity for entries within the encry
 
 ### 7.1 Placement
 
-Signatures live **inside** the encrypted payload. The Zode never sees plaintext; signature verification is end-to-end between sender and recipient. Only parties with the SectorKey can decrypt and verify.
+Signatures live **inside** the encrypted payload. The ZODE never sees plaintext; signature verification is end-to-end between sender and recipient. Only parties with the SectorKey can decrypt and verify.
 
 ### 7.2 Signable Bytes
 
@@ -407,7 +407,7 @@ For version 1 compatibility, programs MAY support **Ed25519-only** signatures (6
 
 ---
 
-## 8. Zode Storage Model
+## 8. ZODE Storage Model
 
 ### 8.1 Append-Only Logs
 
@@ -434,7 +434,7 @@ Total key size: 72 bytes. All entries for a sector share the same 64-byte prefix
 
 ### 8.4 Policy Enforcement
 
-Zodes enforce the following policies:
+ZODES enforce the following policies:
 
 | Policy | Description |
 |--------|-------------|
@@ -457,7 +457,7 @@ topic = "prog/" + hex(ProgramId)
 
 Where `hex(ProgramId)` is the 64-character lowercase hex encoding of the 32-byte ProgramId.
 
-Zodes subscribe to one or more program topics and only accept requests for subscribed programs.
+ZODES subscribe to one or more program topics and only accept requests for subscribed programs.
 
 ---
 
@@ -478,7 +478,7 @@ Three libp2p sub-protocols run on the same swarm:
 
 | Protocol String | Type | Purpose |
 |----------------|------|---------|
-| `/grid/sector/1.0.0` | Request-response (CBOR) | Client ↔ Zode sector operations |
+| `/grid/sector/1.0.0` | Request-response (CBOR) | Client ↔ ZODE sector operations |
 | `/grid/kad/1.0.0` | Kademlia DHT | Peer discovery |
 | GossipSub | Pub/sub | Data propagation across program topics |
 
@@ -495,11 +495,11 @@ Sector requests and responses are serialized as CBOR and exchanged via libp2p's 
 
 #### 10.4.1 Bootstrap Peers
 
-Zodes accept a list of bootstrap peer multiaddrs in their configuration. On startup, the Zode dials each bootstrap peer.
+ZODES accept a list of bootstrap peer multiaddrs in their configuration. On startup, the ZODE dials each bootstrap peer.
 
 #### 10.4.2 Kademlia DHT
 
-When enabled, the Zode seeds the Kademlia routing table with bootstrap peers, triggers an initial `bootstrap()`, and periodically performs random walk queries (`get_closest_peers(random_peer_id)`) at a configurable interval (default: 30 seconds).
+When enabled, the ZODE seeds the Kademlia routing table with bootstrap peers, triggers an initial `bootstrap()`, and periodically performs random walk queries (`get_closest_peers(random_peer_id)`) at a configurable interval (default: 30 seconds).
 
 Kademlia configuration:
 
@@ -507,7 +507,7 @@ Kademlia configuration:
 |-----------|---------|
 | Protocol name | `/grid/kad/1.0.0` |
 | Query timeout | 60 seconds |
-| Mode | `Server` for Zodes, `Client` for SDK clients |
+| Mode | `Server` for ZODES, `Client` for SDK clients |
 | Random walk interval | 30 seconds |
 | Max concurrent discovery dials | 8 |
 
@@ -517,7 +517,7 @@ Newly discovered peers are automatically dialed (up to the concurrency limit). O
 
 ## 11. Sector Protocol — Wire Format
 
-The sector protocol is the primary client-to-Zode interface. It operates over `/grid/sector/1.0.0` as a request-response protocol.
+The sector protocol is the primary client-to-ZODE interface. It operates over `/grid/sector/1.0.0` as a request-response protocol.
 
 ### 11.1 Request Envelope
 
@@ -667,7 +667,7 @@ Each `LogLengthResult`:
 - Maximum **64 entries** per batch request.
 - Maximum **4 MB total payload** per batch request.
 
-Zodes MUST reject batches exceeding these limits with `BatchTooLarge`.
+ZODES MUST reject batches exceeding these limits with `BatchTooLarge`.
 
 ### 11.9 Error Codes
 
@@ -675,9 +675,9 @@ Responses use a shared set of error codes:
 
 | Code | Meaning |
 |------|---------|
-| `StorageFull` | Zode's storage capacity exceeded |
+| `StorageFull` | ZODE's storage capacity exceeded |
 | `ProofInvalid` | Valid-Sector proof verification failed |
-| `PolicyReject` | Request rejected by Zode policy (program not subscribed, sector not in allowlist) |
+| `PolicyReject` | Request rejected by ZODE policy (program not subscribed, sector not in allowlist) |
 | `NotFound` | Requested data not present |
 | `InvalidPayload` | Malformed request or entry exceeds size limit |
 | `ProgramMismatch` | Program ID does not match subscription |
@@ -691,7 +691,7 @@ Error codes are serialized as CBOR text strings.
 
 ## 12. Gossip Replication
 
-When a Zode accepts an `Append` request from a client, it publishes a `GossipSectorAppend` message to the program's GossipSub topic (`prog/<program_id_hex>`). Other Zodes subscribed to that topic store the entry automatically.
+When a ZODE accepts an `Append` request from a client, it publishes a `GossipSectorAppend` message to the program's GossipSub topic (`prog/<program_id_hex>`). Other ZODES subscribed to that topic store the entry automatically.
 
 ### 12.1 GossipSectorAppend
 
@@ -705,18 +705,18 @@ When a Zode accepts an `Append` request from a client, it publishes a `GossipSec
 
 Serialized as canonical CBOR and published to GossipSub.
 
-### 12.2 Receiving Zode Behavior
+### 12.2 Receiving ZODE Behavior
 
-When a Zode receives a `GossipSectorAppend`:
+When a ZODE receives a `GossipSectorAppend`:
 
-1. **Program check**: If the Zode does not serve `program_id`, discard.
-2. **Sector filter**: If the Zode uses an allowlist, check `sector_id`. Discard if not in the set.
-3. **Entry size check**: If the payload exceeds the Zode's max entry size limit, discard.
+1. **Program check**: If the ZODE does not serve `program_id`, discard.
+2. **Sector filter**: If the ZODE uses an allowlist, check `sector_id`. Discard if not in the set.
+3. **Entry size check**: If the payload exceeds the ZODE's max entry size limit, discard.
 4. **Shape proof verification**: If the program requires proofs, verify the attached `shape_proof` (see §13). Discard if verification fails or if a required proof is missing.
 5. **Idempotent insert with conflict resolution**: Attempt to store the entry at the specified `index`. If the index is unoccupied, store it. If the index is already occupied:
    - If the existing entry is byte-identical to the incoming payload, treat as a duplicate and silently ignore.
    - If the existing entry differs (multi-writer conflict), fall back to an `append` at the next available index so the message is not lost.
-6. **No re-gossip**: The Zode does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
+6. **No re-gossip**: The ZODE does NOT re-publish the message. GossipSub's mesh propagation handles fan-out.
 
 ---
 
@@ -769,7 +769,7 @@ AAD = `program_id || sector_id` as in §6.3.
 
 ### 13.5 Strong Binding
 
-The Zode computes `Poseidon(received_ciphertext)` and MUST verify that it equals the attested `ciphertext_hash`. This binds the proof to the exact ciphertext stored; tampering invalidates the binding.
+The ZODE computes `Poseidon(received_ciphertext)` and MUST verify that it equals the attested `ciphertext_hash`. This binds the proof to the exact ciphertext stored; tampering invalidates the binding.
 
 ### 13.6 Message-Size Buckets
 
@@ -837,7 +837,7 @@ One (pk, vk) pair per bucket. Setup is program-agnostic; the same keys apply acr
 | `proof_required` | `true` |
 | `proof_system` | `Groth16` |
 
-Zodes subscribe to the **v2** descriptor by default. The v1 descriptor is retained for backward compatibility but is not subscribed out of the box.
+ZODES subscribe to the **v2** descriptor by default. The v1 descriptor is retained for backward compatibility but is not subscribed out of the box.
 
 **ZMessage:**
 
@@ -865,11 +865,11 @@ SectorId = SHA-256("interlink/msg/" || channel_id_bytes || "/" || timestamp_ms_l
 
 **Reserved test channel:** `"INTERLINK-MAIN"` — used for test traffic in development.
 
-ZID (v1) and Interlink (v2) are **default programs**: Zodes subscribe to them out of the box. Operators can individually disable either program.
+ZID (v1) and Interlink (v2) are **default programs**: ZODES subscribe to them out of the box. Operators can individually disable either program.
 
 ---
 
-## 15. Zode Behavior
+## 15. ZODE Behavior
 
 ### 15.1 Startup Sequence
 
@@ -883,7 +883,7 @@ ZID (v1) and Interlink (v2) are **default programs**: Zodes subscribe to them ou
 
 ### 15.2 Event Loop
 
-The Zode continuously processes:
+The ZODE continuously processes:
 
 - **Incoming sector requests** (`/grid/sector/1.0.0`): Dispatch to the appropriate handler (Append, ReadLog, LogLength, BatchAppend, BatchLogLength), enforce policy, store if accepted, and send the response.
 - **Gossip messages** (GossipSub): Deserialize `GossipSectorAppend` from CBOR, verify shape proof if required, and store via `insert_at` with conflict resolution (§12.2).
@@ -894,19 +894,19 @@ The Zode continuously processes:
 
 ### 15.3 Append + Gossip Flow
 
-When a Zode receives an Append request:
+When a ZODE receives an Append request:
 
 1. Validate program, sector filter, entry size, and shape proof (if required).
 2. Append the entry to local storage, receiving the assigned index.
 3. Send `SectorAppendResponse(ok=true, index)` to the client.
 
-The Zode does **not** automatically publish the entry to GossipSub. Gossip propagation is **client-triggered**: after receiving a successful append response, the client serializes a `GossipSectorAppend` (with `program_id`, `sector_id`, the assigned `index`, the `payload`, and optionally the `shape_proof`) and publishes it to the Zode's GossipSub topic `prog/<program_id_hex>` via the Zode's publish interface. This design keeps the Zode stateless with respect to gossip fan-out and allows clients to control propagation timing.
+The ZODE does **not** automatically publish the entry to GossipSub. Gossip propagation is **client-triggered**: after receiving a successful append response, the client serializes a `GossipSectorAppend` (with `program_id`, `sector_id`, the assigned `index`, the `payload`, and optionally the `shape_proof`) and publishes it to the ZODE's GossipSub topic `prog/<program_id_hex>` via the ZODE's publish interface. This design keeps the ZODE stateless with respect to gossip fan-out and allows clients to control propagation timing.
 
 ---
 
 ## 16. Visibility and Privacy Properties
 
-### What a Zode can see
+### What a ZODE can see
 
 | Information | Visible? |
 |-------------|----------|
@@ -917,7 +917,7 @@ The Zode does **not** automatically publish the entry to GossipSub. Gossip propa
 | Which sector IDs are batched together | Yes — within a single batch request |
 | Client IP address | Yes — transport-level |
 
-### What a Zode cannot see
+### What a ZODE cannot see
 
 | Information | Why |
 |-------------|-----|
@@ -931,10 +931,10 @@ The Zode does **not** automatically publish the entry to GossipSub. Gossip propa
 
 ## 17. Security Considerations
 
-- **No transport anonymity.** IP addresses are visible to Zodes and network observers. Onion routing is out of scope.
-- **Timing correlation.** A Zode can correlate writes and reads from the same connection. Batch requests reveal co-accessed sector IDs.
+- **No transport anonymity.** IP addresses are visible to ZODES and network observers. Onion routing is out of scope.
+- **Timing correlation.** A ZODE can correlate writes and reads from the same connection. Batch requests reveal co-accessed sector IDs.
 - **No wire-level write authorization.** Any client that can connect and knows a ProgramId can append to any sector within that program. Access control is an application-layer concern.
-- **Gossip propagation delay.** Between client append and gossip delivery, the entry exists on only one Zode. Clients MAY multi-send to multiple Zodes for faster availability.
+- **Gossip propagation delay.** Between client append and gossip delivery, the entry exists on only one ZODE. Clients MAY multi-send to multiple ZODES for faster availability.
 - **Key compromise.** If a NeuralKey is compromised, all derived identity and machine keys are compromised. Shamir splitting mitigates single-point-of-failure for the root secret.
 - **Post-quantum readiness.** All signatures and key agreements use hybrid constructions (classical + post-quantum). An attacker must break both the classical and post-quantum components.
 
