@@ -122,7 +122,7 @@ pub fn default_program_ids() -> Vec<(&'static str, ProgramId)> {
 impl Default for ZodeConfig {
     fn default() -> Self {
         Self {
-            storage: StorageConfig::new(PathBuf::from("zode-data")),
+            storage: StorageConfig::new(PathBuf::from("data")),
             default_programs: DefaultProgramsConfig::default(),
             topics: HashSet::new(),
             sector_limits: SectorLimitsConfig::default(),

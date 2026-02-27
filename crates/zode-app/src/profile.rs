@@ -19,9 +19,7 @@ struct ProfilesManifest {
 }
 
 pub(crate) fn base_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".zode")
+    PathBuf::from(".zode")
 }
 
 fn manifest_path(base: &Path) -> PathBuf {

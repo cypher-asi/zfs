@@ -30,7 +30,7 @@ struct Cli {
     config: Option<PathBuf>,
 
     /// Storage data directory.
-    #[arg(long, default_value = "zode-data")]
+    #[arg(long, default_value = "data")]
     data_dir: PathBuf,
 
     /// libp2p listen address (multiaddr).

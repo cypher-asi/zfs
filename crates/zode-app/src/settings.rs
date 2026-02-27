@@ -23,7 +23,7 @@ pub(crate) struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            data_dir: "zode-data".into(),
+            data_dir: "data".into(),
             listen_addr: "/ip4/127.0.0.1/udp/0/quic-v1".into(),
             bootstrap_input: String::new(),
             bootstrap_peers: Vec::new(),

@@ -56,7 +56,7 @@ impl Zode {
                 .path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "zode-data".to_string());
+                .unwrap_or_else(|| "data".to_string());
             let parent = config
                 .storage
                 .path

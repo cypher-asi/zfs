@@ -111,7 +111,7 @@ Key flags:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--data-dir` | `zode-data` | RocksDB storage directory |
+| `--data-dir` | `data` | RocksDB storage directory |
 | `--listen` | `/ip4/0.0.0.0/udp/0/quic-v1` | libp2p listen multiaddr |
 | `--bootstrap <ADDR>` | *(none)* | Bootstrap peer multiaddr (repeatable) |
 | `--enable-kademlia` | off | Enable Kademlia DHT peer discovery |
@@ -210,7 +210,7 @@ The `ZodeConfig` struct (in `crates/zode/src/config.rs`) controls node behavior:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `storage` | `StorageConfig` | `zode-data`, LZ4 compression, 512 open files | RocksDB path and tuning |
+| `storage` | `StorageConfig` | `data`, LZ4 compression, 512 open files | RocksDB path and tuning |
 | `default_programs` | `DefaultProgramsConfig` | ZID + Interlink enabled | Toggle built-in programs |
 | `topics` | `HashSet<ProgramId>` | empty | Additional program topics to subscribe to |
 | `sector_limits` | `SectorLimitsConfig` | 256 KB max slot, unlimited per-program | Sector size constraints |
