@@ -958,15 +958,19 @@ impl ZodeApp {
                     do_unlock = true;
                 }
 
-                ui.add_space(12.0);
+                ui.add_space(4.0);
+                ui.allocate_ui(egui::vec2(280.0, 16.0), |ui| {
+                    if let Some(ref err) = self.unlock_error {
+                        ui.colored_label(
+                            crate::components::colors::ERROR,
+                            err,
+                        );
+                    }
+                });
+                ui.add_space(4.0);
 
                 if crate::components::action_button(ui, "Unlock") {
                     do_unlock = true;
-                }
-
-                if let Some(ref err) = self.unlock_error {
-                    ui.add_space(8.0);
-                    crate::components::error_label(ui, err);
                 }
 
                 ui.add_space(24.0);
