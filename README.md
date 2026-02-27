@@ -1,6 +1,14 @@
 <p align="center">
+  <img src="assets/banner.png" alt="THE GRID" />
+</p>
+
+---
+
+&nbsp;
+
+<p align="center">
   <strong>The Global Resilient Internet Datalink</strong><br/>
-  A decentralized compute network powered by zero-knowledge proofs and post-quantum cryptography.
+  A decentralized compute environmnet powered by zero-knowledge proofs and post-quantum cryptography.
 </p>
 
 <p align="center">
@@ -8,12 +16,6 @@
   <a href="docs/run-a-zode.md">Run a ZODE</a> &nbsp;·&nbsp;
   <a href="#principles">Principles</a> &nbsp;·&nbsp;
   <a href="docs/grid-protocol.md">Protocol Spec</a>
-</p>
-
----
-
-<p align="center">
-  <img src="assets/banner.png" alt="THE GRID" />
 </p>
 
 ## Overview
@@ -26,7 +28,7 @@ The objective is to build a global, decentralized alternative to traditional hyp
 
 ## ZODE
 
-**ZODE** is the reference implementation of [The GRID Protocol](docs/grid-protocol.md) — a peer-to-peer node that receives, verifies, and serves data across a libp2p network.
+**ZODE** is the reference implementation of [The GRID Protocol](docs/grid-protocol.md): a local node that receives, verifies, and serves data across a peer-to-peer network.
 
 Core concepts:
 
@@ -39,13 +41,15 @@ Two frontends ship in this workspace:
 - **zode-app** — a standalone desktop GUI built with eframe / egui.
 - **zode-cli** — a console TUI built with ratatui / crossterm.
 
+See [Run a ZODE](docs/run-a-zode.md) for prerequisites, build instructions, and configuration.
+
 ## Principles
 
 1. **Agency:** Your key material is your account. Identity keys are generated on-device via Shamir secret sharing; shares never leave your machines. No server, no custodian.
 2. **Privacy:** Data is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope) before it touches the network. Zero-knowledge proofs let nodes verify sector validity without seeing plaintext.
 3. **Decentralization:** Fully peer-to-peer over libp2p/QUIC. GossipSub propagation, request-response exchange, optional Kademlia DHT. No central server; any node can join or leave freely.
 4. **Post-Quantum:** PQ-hybrid cryptography: Ed25519 + ML-DSA-65 signing, X25519 + ML-KEM-768 key agreement. Sector encryption uses ZK-friendly Poseidon over BN254.
-5. **Open Source:** MIT-licensed Rust workspace. Every layer is auditable and reusable. All crates except `grid-proof-groth16` enforce `#![forbid(unsafe_code)]`.
+5. **Open Source:** MIT-licensed Rust workspace. Every layer is auditable and reusable.
 
 ## Architecture
 
@@ -88,27 +92,6 @@ zfs/
       interlink/          # chat program
       zfs/                # file-system program (placeholder)
 ```
-
-## Configuration
-
-### ZodeConfig
-
-The `ZodeConfig` struct (in `crates/zode/src/config.rs`) controls node behavior:
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `storage` | `StorageConfig` | `.zode/data`, LZ4 compression, 512 open files | RocksDB path and tuning |
-| `default_programs` | `DefaultProgramsConfig` | ZID + Interlink enabled | Toggle built-in programs |
-| `topics` | `HashSet<ProgramId>` | empty | Additional program topics to subscribe to |
-| `sector_limits` | `SectorLimitsConfig` | 256 KB max slot, unlimited per-program | Sector size constraints |
-| `sector_filter` | `SectorFilter` | `All` | Per-sector accept filter |
-| `network` | `NetworkConfig` | QUIC on `0.0.0.0:3690`, Kademlia server mode | libp2p transport and discovery |
-
-### Environment Variables
-
-| Variable | Description |
-|---|---|
-| `RUST_LOG` | Controls tracing verbosity (e.g. `info`, `debug`, `warn`, `zode=debug,grid_net=trace`) |
 
 ## License
 

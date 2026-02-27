@@ -121,6 +121,27 @@ cargo build --release -p zode-app
 
 Binary: `target/release/zode-app`
 
+## Configuration
+
+### ZodeConfig
+
+The `ZodeConfig` struct (in `crates/zode/src/config.rs`) controls node behavior:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `storage` | `StorageConfig` | `.zode/data`, LZ4 compression, 512 open files | RocksDB path and tuning |
+| `default_programs` | `DefaultProgramsConfig` | ZID + Interlink enabled | Toggle built-in programs |
+| `topics` | `HashSet<ProgramId>` | empty | Additional program topics to subscribe to |
+| `sector_limits` | `SectorLimitsConfig` | 256 KB max slot, unlimited per-program | Sector size constraints |
+| `sector_filter` | `SectorFilter` | `All` | Per-sector accept filter |
+| `network` | `NetworkConfig` | QUIC on `0.0.0.0:3690`, Kademlia server mode | libp2p transport and discovery |
+
+### Environment Variables
+
+| Variable | Description |
+|---|---|
+| `RUST_LOG` | Controls tracing verbosity (e.g. `info`, `debug`, `warn`, `zode=debug,grid_net=trace`) |
+
 ## Running Tests
 
 ```sh
