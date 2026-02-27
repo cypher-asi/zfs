@@ -24,9 +24,18 @@ It allows anyone to contribute unused compute capacity to a verifiable, decentra
 
 The objective is to build a global, decentralized alternative to traditional hyperscale cloud infrastructure that is faster, lower cost, cryptographically verifiable, and aligned with sovereignty, privacy, and long-term security.
 
-## ZODE
+---
 
-**ZODE** is the reference implementation of [The GRID Protocol](docs/grid-protocol.md): a local node that receives, verifies, and serves data across a peer-to-peer network.
+<p align="center">
+  <img src="assets/zode-icon.png" alt="ZODE" width="128" />
+  <br/><br/>
+  <strong style="font-size: 1.5em;">ZODE</strong>
+</p>
+
+<p align="center">
+  The reference implementation of <a href="docs/grid-protocol.md">The GRID Protocol</a>:<br/>
+  a local node that receives, verifies, and serves data across a peer-to-peer network.
+</p>
 
 Core concepts:
 
