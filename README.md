@@ -37,6 +37,8 @@ The objective is to build a global, decentralized alternative to traditional hyp
   a local node that receives, verifies, and serves data across a peer-to-peer network.
 </p>
 
+---
+
 Core concepts:
 
 - **Sectors** — The fundamental unit of data on the network. Each sector is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope), propagated via GossipSub, and persisted locally in RocksDB. Plaintext never touches the wire.
