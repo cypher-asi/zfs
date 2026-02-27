@@ -39,11 +39,17 @@ The objective is to build a global, decentralized alternative to traditional hyp
 
 ---
 
-Core concepts:
+What are the core concepts behind THE GRID?
 
-- **Sectors** — The fundamental unit of data on the network. Each sector is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope), propagated via GossipSub, and persisted locally in RocksDB. Plaintext never touches the wire.
-- **Programs** — Application-level namespaces that organize sectors by purpose. Built-in programs include ZID (decentralized identity) and Interlink (encrypted messaging). Nodes subscribe to the programs they care about.
-- **Proofs** — Zero-knowledge proofs that let nodes verify a sector is correctly shaped and encrypted without ever seeing its contents. The initial backend is Groth16 over BN254, with the architecture designed to support additional proof systems as they mature.
+1. **Sectors:** The fundamental unit of data on the network. Each Sector is encrypted client-side (Poseidon sponge + hybrid ChaCha20-Poly1305 envelope), propagated via GossipSub, and persisted locally in RocksDB. Plaintext never touches the wire.
+
+2. **Programs:** Application-level namespaces that organize Sectors by purpose. Built-in programs include ZID (decentralized identity) and Interlink (encrypted messaging). Nodes subscribe to the programs they care about and data is propagated automatically.
+
+3. **Proofs:** Zero-knowledge proofs that let nodes verify a Sector is correctly shaped and encrypted without ever seeing its contents. The first supported proof system is Groth16 over BN254, with the architecture designed to support additional proof systems as they mature.
+
+ZODE is the first native reference implementation of THE GRID.
+
+You can read the first official protocol spec here: https://github.com/cypher-asi/the-grid/blob/master/docs/grid-protocol.md
 
 Two ZODE applications ship in this workspace:
 
