@@ -129,8 +129,8 @@ impl ZodeApp {
                         move || {
                             zid::derive_machine_keypair_from_shares(
                                 &shares,
-                                &identity_id,
-                                &machine_id,
+                                zid::IdentityId::new(identity_id),
+                                zid::MachineId::new(machine_id),
                                 epoch,
                                 caps,
                             )
@@ -896,74 +896,18 @@ impl ZodeApp {
                 ui.add_space(16.0);
 
                 let profiles = self.profiles.clone();
-                let mut deleted_id: Option<String> = None;
                 for p in &profiles {
-                    let confirming = self.confirm_delete_profile.as_deref() == Some(&p.id);
-                    if confirming {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(format!("Delete \"{}\"?", p.name))
-                                    .size(12.0)
-                                    .color(crate::components::colors::ERROR),
-                            );
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new("Yes")
-                                            .size(11.0)
-                                            .color(crate::components::colors::ERROR),
-                                    )
-                                    .frame(false),
-                                )
-                                .clicked()
-                            {
-                                deleted_id = Some(p.id.clone());
-                            }
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new("No")
-                                            .size(11.0)
-                                            .color(egui::Color32::from_rgb(160, 160, 165)),
-                                    )
-                                    .frame(false),
-                                )
-                                .clicked()
-                            {
-                                self.confirm_delete_profile = None;
-                            }
-                        });
-                    } else {
-                        ui.horizontal(|ui| {
-                            let btn = egui::Button::new(
-                                egui::RichText::new(&p.name).monospace().size(12.0),
-                            )
-                            .min_size(egui::vec2(230.0, 36.0));
+                    let btn = egui::Button::new(
+                        egui::RichText::new(&p.name).monospace().size(12.0),
+                    )
+                    .min_size(egui::vec2(230.0, 36.0));
 
-                            if ui.add(btn).clicked() {
-                                self.phase = AppPhase::Unlock {
-                                    profile_id: p.id.clone(),
-                                };
-                            }
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new(egui_phosphor::regular::TRASH)
-                                            .size(14.0)
-                                            .color(egui::Color32::from_rgb(100, 100, 108)),
-                                    )
-                                    .frame(false),
-                                )
-                                .clicked()
-                            {
-                                self.confirm_delete_profile = Some(p.id.clone());
-                            }
-                        });
+                    if ui.add(btn).clicked() {
+                        self.phase = AppPhase::Unlock {
+                            profile_id: p.id.clone(),
+                        };
                     }
                     ui.add_space(4.0);
-                }
-                if let Some(id) = deleted_id {
-                    self.do_delete_profile(&id);
                 }
 
                 ui.add_space(16.0);
@@ -1001,7 +945,6 @@ impl ZodeApp {
             .inner_margin(32.0);
 
         let mut do_unlock = false;
-        let mut do_delete: Option<String> = None;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let rect = ui.max_rect();
@@ -1085,58 +1028,6 @@ impl ZodeApp {
                     self.phase = AppPhase::Revealing;
                     self.reveal_start = None;
                 }
-
-                ui.add_space(4.0);
-
-                let confirming_delete =
-                    self.confirm_delete_profile.as_deref() == Some(&*profile_id);
-                if confirming_delete {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("Delete \"{}\"?", profile_name))
-                                .size(11.0)
-                                .color(crate::components::colors::ERROR),
-                        );
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Yes")
-                                        .size(11.0)
-                                        .color(crate::components::colors::ERROR),
-                                )
-                                .frame(false),
-                            )
-                            .clicked()
-                        {
-                            do_delete = Some(profile_id.clone());
-                        }
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("No")
-                                        .size(11.0)
-                                        .color(egui::Color32::from_rgb(160, 160, 165)),
-                                )
-                                .frame(false),
-                            )
-                            .clicked()
-                        {
-                            self.confirm_delete_profile = None;
-                        }
-                    });
-                } else if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Delete profile")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(100, 100, 108)),
-                        )
-                        .frame(false),
-                    )
-                    .clicked()
-                {
-                    self.confirm_delete_profile = Some(profile_id.clone());
-                }
             });
 
             if let Some(ref err) = self.unlock_error {
@@ -1144,7 +1035,7 @@ impl ZodeApp {
                     egui::pos2(rect.left(), rect.bottom() - 28.0),
                     egui::vec2(rect.width(), 20.0),
                 );
-                ui.allocate_ui_at_rect(err_rect, |ui| {
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(err_rect), |ui| {
                     ui.vertical_centered(|ui| {
                         ui.colored_label(crate::components::colors::ERROR, err);
                     });
@@ -1154,9 +1045,6 @@ impl ZodeApp {
 
         if do_unlock {
             self.attempt_unlock(&profile_id);
-        }
-        if let Some(id) = do_delete {
-            self.do_delete_profile(&id);
         }
     }
 }

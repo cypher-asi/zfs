@@ -3,7 +3,7 @@ use std::sync::Arc;
 use eframe::egui;
 use zid::{
     derive_machine_keypair_from_shares, ed25519_to_did_key, generate_identity, verify_shares,
-    MachineKeyCapabilities, ShamirShare,
+    IdentityId, MachineId, MachineKeyCapabilities, ShamirShare,
 };
 
 use crate::app::ZodeApp;
@@ -71,7 +71,7 @@ fn generate_new_identity(app: &mut ZodeApp) {
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             let mut rng = rand::thread_rng();
-            generate_identity(3, 5, &identity_id, &mut rng)
+            generate_identity(3, 5, IdentityId::new(identity_id), &mut rng)
         })
         .expect("failed to spawn keygen thread")
         .join()
@@ -223,7 +223,7 @@ fn attempt_recovery(app: &mut ZodeApp) {
     let result = std::thread::Builder::new()
         .name("neural-recover".into())
         .stack_size(8 * 1024 * 1024)
-        .spawn(move || verify_shares(&shares, &identity_id))
+        .spawn(move || verify_shares(&shares, IdentityId::new(identity_id)))
         .expect("failed to spawn recovery thread")
         .join()
         .expect("recovery thread panicked");
@@ -301,8 +301,8 @@ fn auto_derive_machine_key(app: &mut ZodeApp) {
         .spawn(move || {
             derive_machine_keypair_from_shares(
                 &shares,
-                &identity_id,
-                &machine_id_bytes,
+                IdentityId::new(identity_id),
+                MachineId::new(machine_id_bytes),
                 epoch,
                 caps,
             )
@@ -486,6 +486,7 @@ fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
         None => return,
     };
     let meta = app.profiles.iter().find(|p| p.id == profile_id).cloned();
+    let mut do_delete = false;
 
     section(ui, "PROFILE", |ui| {
         if let Some(ref meta) = meta {
@@ -514,7 +515,61 @@ fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui.add_space(4.0);
             ui.label(egui::RichText::new(status).weak().italics());
         }
+
+        ui.add_space(12.0);
+
+        if app.confirm_delete_profile.as_deref() == Some(&*profile_id) {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Delete this profile?")
+                        .size(11.0)
+                        .color(crate::components::colors::ERROR),
+                );
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Yes, delete")
+                                .size(11.0)
+                                .color(crate::components::colors::ERROR),
+                        )
+                        .frame(false),
+                    )
+                    .clicked()
+                {
+                    do_delete = true;
+                }
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Cancel")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(160, 160, 165)),
+                        )
+                        .frame(false),
+                    )
+                    .clicked()
+                {
+                    app.confirm_delete_profile = None;
+                }
+            });
+        } else if ui
+            .add(
+                egui::Button::new(
+                    egui::RichText::new("Delete profile")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(100, 100, 108)),
+                )
+                .frame(false),
+            )
+            .clicked()
+        {
+            app.confirm_delete_profile = Some(profile_id.clone());
+        }
     });
+
+    if do_delete {
+        app.do_delete_profile(&profile_id);
+    }
 }
 
 fn truncate_did(did: &str) -> String {

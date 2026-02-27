@@ -37,8 +37,8 @@ pub use sector::{
 
 // Re-export frequently used types so callers don't need extra deps.
 pub use zid::{
-    HybridSignature, IdentitySigningKey, IdentityVerifyingKey, MachineKeyCapabilities,
-    MachineKeyPair, MachinePublicKey, ShamirShare,
+    HybridSignature, IdentityId, IdentitySigningKey, IdentityVerifyingKey, MachineId,
+    MachineKeyCapabilities, MachineKeyPair, MachinePublicKey, ShamirShare,
 };
 pub use grid_core::{
     CborType, Cid, FieldDef, FieldSchema, ProgramId, ProofSystem, SectorId, ShapeProof,

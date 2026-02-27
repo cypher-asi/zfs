@@ -13,12 +13,10 @@ fn test_aad(program_id: &ProgramId, sector_id: &SectorId) -> Vec<u8> {
 fn make_keypair(seed: u8) -> zid::MachineKeyPair {
     let mut nk_bytes = [0u8; 32];
     nk_bytes[0] = seed;
-    let identity_id = [seed; 16];
-    let machine_id = [seed; 16];
     derive_machine_keypair_from_seed(
         nk_bytes,
-        &identity_id,
-        &machine_id,
+        zid::IdentityId::new([seed; 16]),
+        zid::MachineId::new([seed; 16]),
         0,
         MachineKeyCapabilities::all(),
     )
