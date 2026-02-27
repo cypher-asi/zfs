@@ -1,0 +1,981 @@
+"""Generate an arXiv-style two-column whitepaper PDF from the Grid Protocol spec.
+
+Uses Edge headless --print-to-pdf for rendering.
+"""
+
+import pathlib
+import subprocess
+import sys
+
+EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+
+HTML_CONTENT = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>THE GRID</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Code+Pro:wght@400;500&display=swap');
+
+@page {
+    size: letter;
+    margin: 1.8cm 1.6cm 2.8cm 1.6cm;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Libre Baskerville', 'Georgia', 'Times New Roman', serif;
+    font-size: 8.5pt;
+    line-height: 1.4;
+    color: #111;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Title block (full-width, above columns) ── */
+.title-block {
+    text-align: center;
+    padding-bottom: 1.4em;
+    margin-bottom: 0.2em;
+}
+
+.title-block h1 {
+    font-size: 17pt;
+    font-weight: 700;
+    margin: 0 0 0.55em 0;
+    letter-spacing: -0.01em;
+    line-height: 1.18;
+}
+
+.authors {
+    font-size: 11pt;
+    margin-bottom: 0.1em;
+}
+
+.affiliation {
+    font-size: 9pt;
+    font-style: italic;
+    color: #555;
+    margin-bottom: 0em;
+}
+
+.version-tag {
+    font-size: 7.5pt;
+    color: #888;
+    margin-top: 0.5em;
+}
+
+/* ── Two-column body ── */
+.two-col {
+    column-count: 2;
+    column-gap: 1.4em;
+    column-rule: none;
+    column-fill: auto;
+}
+
+/* ── Headings ── */
+h2 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    margin: 1em 0 0.35em 0;
+    padding-top: 0.3em;
+    border-top: 0.6pt solid #bbb;
+    break-after: avoid;
+}
+
+h2:first-of-type {
+    border-top: none;
+    padding-top: 0;
+}
+
+h3 {
+    font-size: 9pt;
+    font-weight: 700;
+    margin: 0.75em 0 0.25em 0;
+    page-break-after: avoid;
+}
+
+h4 {
+    font-size: 8.5pt;
+    font-weight: 700;
+    font-style: italic;
+    margin: 0.55em 0 0.15em 0;
+    page-break-after: avoid;
+}
+
+/* ── Paragraphs ── */
+p {
+    margin: 0 0 0.5em 0;
+    text-align: justify;
+    hyphens: auto;
+    orphans: 2;
+    widows: 2;
+}
+
+/* ── Tables ── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7pt;
+    margin: 0.45em 0 0.55em 0;
+    break-inside: avoid;
+    line-height: 1.3;
+}
+
+th, td {
+    border-top: 0.4pt solid #aaa;
+    border-bottom: 0.4pt solid #aaa;
+    padding: 2pt 3pt;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    font-weight: 700;
+    border-bottom: 0.8pt solid #444;
+    background: #f4f4f4;
+    font-size: 7pt;
+}
+
+tr:last-child td {
+    border-bottom: 0.8pt solid #444;
+}
+
+/* ── Code blocks ── */
+pre {
+    font-family: 'Source Code Pro', 'Consolas', 'Courier New', monospace;
+    font-size: 7pt;
+    line-height: 1.32;
+    background: #f5f5f5;
+    border: 0.4pt solid #ddd;
+    border-radius: 1.5pt;
+    padding: 3pt 5pt;
+    margin: 0.4em 0 0.5em 0;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+    break-inside: avoid;
+}
+
+code {
+    font-family: 'Source Code Pro', 'Consolas', 'Courier New', monospace;
+    font-size: 7.5pt;
+    background: #eee;
+    padding: 0.3pt 1.5pt;
+    border-radius: 1pt;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+    font-size: 7pt;
+}
+
+/* ── Lists ── */
+ul, ol {
+    margin: 0.25em 0 0.45em 0;
+    padding-left: 1.4em;
+}
+
+li {
+    margin-bottom: 0.12em;
+}
+
+/* ── Horizontal rule ── */
+hr {
+    border: none;
+    border-top: 0.4pt solid #ccc;
+    margin: 0.8em 0;
+}
+
+strong { font-weight: 700; }
+em { font-style: italic; }
+
+.footer-note {
+    text-align: center;
+    font-size: 7.5pt;
+    color: #999;
+    margin-top: 1.5em;
+    padding-top: 0.5em;
+    border-top: 0.4pt solid #ddd;
+}
+
+/* ── Page footer (fixed = repeats on every printed page) ── */
+.page-footer {
+    position: fixed;
+    bottom: -1.8cm;
+    left: 0;
+    right: 0;
+    font-size: 7.5pt;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+    padding-top: 0.3em;
+    border-top: 0.4pt solid #ccc;
+}
+
+sup { font-size: 65%; vertical-align: super; }
+</style>
+</head>
+<body>
+
+<div class="page-footer">
+    <span>CYPHER, INC.</span>
+    <span>THE GRID &mdash; v0.2.0</span>
+</div>
+
+<div class="title-block">
+    <h1>THE GRID</h1>
+    <div class="authors">n3o</div>
+    <div class="affiliation">The Global Resilient Internet Datalink</div>
+    <div class="version-tag">Version 0.2.0 &mdash; February 2025</div>
+</div>
+
+<div class="two-col">
+
+<h2 style="border-top: none; padding-top: 0; margin-top: 0;">Abstract</h2>
+
+<p>
+THE GRID defines a peer-to-peer encrypted storage network in which participating
+nodes&mdash;called <strong>ZODES</strong>&mdash;form a decentralized mesh of program-scoped,
+append-only log stores. All data is encrypted client-side before upload; ZODES store and serve
+only opaque ciphertext, ensuring that node operators never observe plaintext content, authorship,
+or access patterns beyond coarse timing and payload-size metadata. The protocol has no consensus
+layer, no tokens, and no global state.
+</p>
+
+<p>
+Cryptographic identity is rooted in a 256-bit <em>NeuralKey</em> from which all signing and
+encryption keys are deterministically derived via HKDF-SHA256. Signatures use a post-quantum
+hybrid construction pairing Ed25519 with ML-DSA-65, and key agreement combines X25519 with
+ML-KEM-768, so that an attacker must break both the classical and post-quantum primitives.
+Sector encryption supports two algorithms&mdash;XChaCha20-Poly1305 for general use and a
+ZK-friendly Poseidon sponge over the BN254 scalar field&mdash;chosen per program. In Poseidon
+mode, clients may attach Groth16 <em>shape proofs</em> that let ZODES verify ciphertext
+integrity and schema conformance without seeing any plaintext.
+</p>
+
+<p>
+Networking is built on libp2p with QUIC as the primary transport.
+Data propagation uses GossipSub topics keyed by program identifier; peer discovery
+relies on Kademlia DHT with periodic random walks. The wire format is deterministic
+CBOR (RFC&nbsp;8949), and all identifiers&mdash;program IDs, sector IDs, content IDs&mdash;are
+derived via SHA-256 hashes of canonical CBOR, ensuring cross-implementation reproducibility.
+This document specifies the serialization, cryptography, storage model, wire protocol,
+gossip replication, proof system, and standard programs (ZID identity and Interlink messaging)
+in sufficient detail for independent, interoperable implementations.
+</p>
+
+<h2>1 &ensp;Introduction</h2>
+
+<p>The Grid is a peer-to-peer encrypted storage protocol. Participating nodes&mdash;called <strong>ZODES</strong>&mdash;form a network of program-scoped, append-only log stores. Clients encrypt all data locally before upload; ZODES store and serve only opaque ciphertext. The protocol has no consensus layer, no tokens, and no global state.</p>
+
+<p>This document defines the Grid protocol in implementation-neutral terms. Any conforming implementation&mdash;regardless of programming language&mdash;that follows the wire formats, cryptographic constructions, and behavioral rules described here can interoperate with any other conforming implementation.</p>
+
+<h2>2 &ensp;Terminology</h2>
+
+<table>
+<tr><th>Term</th><th>Definition</th></tr>
+<tr><td><strong>ZODE</strong></td><td>A storage node that participates in the Grid network. Identified by a libp2p PeerId, displayed with a <code>Zx</code> prefix. The prefix is display-only; wire and storage formats use the raw PeerId.</td></tr>
+<tr><td><strong>Client</strong></td><td>Any participant that connects to ZODES to store or retrieve data. A client does not serve requests.</td></tr>
+<tr><td><strong>Program</strong></td><td>A named, versioned application scope. All storage, subscriptions, and topic routing are scoped by program.</td></tr>
+<tr><td><strong>ProgramId</strong></td><td>A 32-byte identifier derived as <code>SHA-256(CBOR(ProgramDescriptor))</code>.</td></tr>
+<tr><td><strong>Sector</strong></td><td>An append-only log of encrypted entries identified by a <code>(ProgramId, SectorId)</code> pair.</td></tr>
+<tr><td><strong>SectorId</strong></td><td>An opaque 32-byte identifier. In the sector protocol, sector IDs MUST be exactly 32&nbsp;bytes.</td></tr>
+<tr><td><strong>Entry</strong></td><td>A single encrypted blob appended to a sector log. Entries are indexed 0, 1, 2, &hellip;</td></tr>
+<tr><td><strong>NeuralKey</strong></td><td>A 256-bit root secret from which all identity and machine keys are deterministically derived.</td></tr>
+<tr><td><strong>SectorKey</strong></td><td>A random 256-bit symmetric key used to encrypt sector entries (&sect;6).</td></tr>
+<tr><td><strong>Topic</strong></td><td>A GossipSub topic string of the form <code>prog/&lt;program_id_hex&gt;</code>.</td></tr>
+</table>
+
+<h2>3 &ensp;Serialization</h2>
+
+<p>All protocol messages, program descriptors, and gossip payloads use <strong>CBOR</strong> (RFC&nbsp;8949) with deterministic encoding (RFC&nbsp;8949 &sect;4.2.1).</p>
+
+<p>Implementations MUST produce identical byte sequences for identical logical values. Field ordering within CBOR maps MUST be consistent. The canonical CBOR bytes are the input to all hash operations (ProgramId derivation, CID computation, etc.). Binary fields (payloads, keys, ciphertexts) are encoded as CBOR byte strings.</p>
+
+<h2>4 &ensp;Identifiers</h2>
+
+<h3>4.1 &ensp;ProgramId</h3>
+
+<p>A 32-byte value:</p>
+<pre><code>ProgramId = SHA-256(CBOR(ProgramDescriptor))</code></pre>
+<p>Displayed as 64 lowercase hex characters.</p>
+
+<h3>4.2 &ensp;ProgramDescriptor</h3>
+
+<p>A CBOR map with at minimum:</p>
+
+<table>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>text string</td><td>Short program name</td></tr>
+<tr><td><code>version</code></td><td>unsigned integer (u32)</td><td>Program version number</td></tr>
+<tr><td><code>proof_required</code></td><td>boolean</td><td>Whether Valid-Sector proofs are required</td></tr>
+<tr><td><code>proof_system</code></td><td>optional ProofSystem</td><td><code>None</code> &rarr; XChaCha20-Poly1305; <code>Groth16</code> &rarr; Poseidon sponge + shape proofs (&sect;6, &sect;13)</td></tr>
+</table>
+
+<p>Program-specific descriptors MAY add additional fields. Two implementations that serialize the same descriptor fields to CBOR MUST produce the same ProgramId.</p>
+
+<h3>4.3 &ensp;SectorId</h3>
+
+<p>A variable-length byte string. In the sector protocol, sector IDs MUST be exactly 32 bytes. ZODES MUST reject requests with non-32-byte sector IDs. Displayed as lowercase hex.</p>
+
+<h3>4.4 &ensp;Cid (Content Identifier)</h3>
+
+<pre><code>Cid = SHA-256(ciphertext)</code></pre>
+
+<p>A 32-byte content-addressed identifier derived from the stored ciphertext. Displayed as 64 lowercase hex characters.</p>
+
+<h3>4.5 &ensp;ZODE ID</h3>
+
+<p>A libp2p PeerId. On the wire and in storage, the raw PeerId bytes are used. For human display, the canonical format is <code>Zx&lt;PeerId_string&gt;</code>. The <code>Zx</code> prefix MUST NOT appear in wire formats.</p>
+
+<h2>5 &ensp;Cryptographic Primitives</h2>
+
+<h3>5.1 &ensp;Key Hierarchy</h3>
+
+<p>All keys derive from a <strong>NeuralKey</strong>&mdash;a 256-bit secret generated by CSPRNG.</p>
+
+<pre><code>NeuralKey (256-bit CSPRNG)
+|
++-- IdentitySigningKey (Ed25519 + ML-DSA-65)
+|   Derived with: identity_id (16 bytes)
+|
++-- MachineKeyPair (per device, per epoch)
+    Derived with: identity_id, machine_id, epoch
+    Contains:
+    +-- Ed25519      (classical signing)
+    +-- X25519       (classical key agreement)
+    +-- ML-DSA-65    (post-quantum signing)
+    +-- ML-KEM-768   (post-quantum encapsulation)</code></pre>
+
+<p>All four key types are always present in every MachineKeyPair. There is no classical-only mode.</p>
+
+<h3>5.2 &ensp;Key Derivation</h3>
+
+<p>All derivation uses <strong>HKDF-SHA256</strong> with <code>salt = None</code> unless otherwise specified.</p>
+
+<h4>Identity Signing Key</h4>
+
+<p>Two separate derivations from the NeuralKey:</p>
+
+<table>
+<tr><th>Component</th><th>HKDF info</th></tr>
+<tr><td>Ed25519 seed</td><td><code>"cypher:id:identity:v1" || identity_id</code></td></tr>
+<tr><td>ML-DSA-65 seed</td><td><code>"cypher:id:identity:pq-sign:v1" || identity_id</code></td></tr>
+</table>
+
+<h4>Machine Key Pair</h4>
+
+<p>Two-level derivation. <strong>Step 1</strong>&mdash;Machine seed:</p>
+
+<pre><code>machine_seed = HKDF-SHA256(
+    ikm  = NeuralKey,
+    info = "cypher:shared:machine:v1"
+           || identity_id || machine_id
+           || epoch_be_bytes
+)</code></pre>
+
+<p><strong>Step 2</strong>&mdash;Individual key seeds from machine seed:</p>
+
+<table>
+<tr><th>Component</th><th>HKDF info</th></tr>
+<tr><td>Ed25519 signing</td><td><code>"cypher:shared:machine:sign:v1" || machine_id</code></td></tr>
+<tr><td>X25519 encryption</td><td><code>"cypher:shared:machine:encrypt:v1" || machine_id</code></td></tr>
+<tr><td>ML-DSA-65 signing</td><td><code>"cypher:shared:machine:pq-sign:v1" || machine_id</code></td></tr>
+<tr><td>ML-KEM-768 encap</td><td><code>"cypher:shared:machine:pq-encrypt:v1" || machine_id</code></td></tr>
+</table>
+
+<p>ML-KEM-768 keys are generated deterministically: the PQ encrypt seed is expanded via HKDF into <code>d</code> (<code>"mlkem768:d"</code>) and <code>z</code> (<code>"mlkem768:z"</code>) parameters, which are passed to ML-KEM-768 deterministic key generation.</p>
+
+<h3>5.3 &ensp;Machine Key Capabilities</h3>
+
+<p>Machine keys carry a bitflag:</p>
+
+<table>
+<tr><th>Bit</th><th>Name</th><th>Value</th></tr>
+<tr><td>0</td><td>SIGN</td><td>0x01</td></tr>
+<tr><td>1</td><td>ENCRYPT</td><td>0x02</td></tr>
+<tr><td>2</td><td>STORE</td><td>0x04</td></tr>
+<tr><td>3</td><td>FETCH</td><td>0x08</td></tr>
+</table>
+
+<p>Capabilities are metadata; enforcement is at the application/policy layer.</p>
+
+<h3>5.4 &ensp;Hybrid Signatures</h3>
+
+<p>A <strong>HybridSignature</strong> always contains both components:</p>
+
+<table>
+<tr><th>Component</th><th>Size</th><th>Description</th></tr>
+<tr><td>Ed25519</td><td>64 bytes</td><td>Classical signature</td></tr>
+<tr><td>ML-DSA-65</td><td>3,309 bytes</td><td>Post-quantum signature</td></tr>
+</table>
+
+<p><strong>Binary format:</strong> <code>ed25519_bytes (64) || ml_dsa_bytes (3309)</code></p>
+
+<p>Both components sign the same message. <strong>Both MUST verify</strong> for the signature to be considered valid.</p>
+
+<h3>5.5 &ensp;Hybrid Key Encapsulation</h3>
+
+<p>Key agreement combines X25519 and ML-KEM-768:</p>
+
+<pre><code>x25519_ss = X25519(sender_secret,
+                   recipient_public)
+(mlkem_ct, mlkem_ss) =
+    ML-KEM-768.Encapsulate(recipient_pk)
+
+shared_secret = HKDF-SHA256(
+    ikm  = x25519_ss || mlkem_ss,
+    salt = None,
+    info = "zid:encap:v1"
+) -> 32 bytes</code></pre>
+
+<p>The output is a <code>SharedSecret</code> (32&nbsp;bytes) and an <code>EncapBundle</code>:</p>
+
+<table>
+<tr><th>Field</th><th>Size</th><th>Description</th></tr>
+<tr><td><code>x25519_public</code></td><td>32 bytes</td><td>Sender's static X25519 public key</td></tr>
+<tr><td><code>mlkem_ciphertext</code></td><td>1,088 bytes</td><td>ML-KEM-768 ciphertext</td></tr>
+</table>
+
+<p>An attacker must break <strong>both</strong> X25519 and ML-KEM-768 to recover the shared secret.</p>
+
+<h3>5.6 &ensp;DID Encoding</h3>
+
+<p>Ed25519 public keys are encoded as <code>did:key</code> identifiers: <code>did:key:z</code> + <code>base58btc(0xed01 || ed25519_public_key_bytes)</code>. The multicodec prefix <code>0xed01</code> identifies Ed25519 public keys.</p>
+
+<h3>5.7 &ensp;Shamir Secret Sharing</h3>
+
+<p>The NeuralKey MAY be split into Shamir shares for backup and recovery. <strong>Split</strong>: <code>split(secret[32], total, threshold, rng)</code>. <strong>Combine</strong>: <code>combine(shares[&ge; threshold])</code>. Each share is serialized as hex: <code>hex(index_byte || share_data)</code>.</p>
+
+<p>Identity generation, signing, and machine key derivation can all operate by <strong>ephemerally reconstructing</strong> the NeuralKey from shares, performing the operation, and immediately zeroizing the secret.</p>
+
+<h2>6 &ensp;Sector Encryption</h2>
+
+<p>Sector encryption supports two algorithms. The choice is per-program via <code>proof_system</code> in the ProgramDescriptor (&sect;4.2): <code>None</code> uses XChaCha20-Poly1305; <code>Groth16</code> uses Poseidon sponge (required for shape proofs, &sect;13).</p>
+
+<h3>6.1 &ensp;SectorKey</h3>
+
+<p>A SectorKey is a random 256-bit symmetric key generated via CSPRNG. Key wrapping (&sect;6.5) is unchanged regardless of encryption algorithm.</p>
+
+<h3>6.2 &ensp;XChaCha20-Poly1305</h3>
+
+<pre><code>sealed = nonce (24 bytes) || ciphertext || tag (16 bytes)</code></pre>
+
+<p><strong>Nonce:</strong> 192-bit, randomly generated per encryption. <strong>AAD:</strong> <code>program_id (32) || sector_id (32)</code>, binding ciphertext to its program and sector.</p>
+
+<h3>6.3 &ensp;Poseidon Sponge</h3>
+
+<p><strong>Parameters:</strong> BN254 scalar field, rate=2, capacity=1.</p>
+
+<pre><code>sealed = nonce (32 bytes)
+      || ciphertext_elements (32 bytes each)
+      || tag (32 bytes)</code></pre>
+
+<ul>
+<li><strong>Nonce:</strong> 256-bit, randomly generated per encryption.</li>
+<li><strong>AAD:</strong> <code>program_id || sector_id</code> absorbed into the sponge before the plaintext.</li>
+<li><strong>Field element packing:</strong> Plaintext is split into chunks of 30 data bytes. Each chunk is packed into a 32-byte field element as <code>[1-byte length][up to 30 bytes data][zero-pad]</code>.</li>
+<li><strong>Duplex mode:</strong> The sponge absorbs key, nonce, and AAD elements. For each rate-sized chunk it squeezes keystream, adds to plaintext to produce ciphertext, then absorbs plaintext.</li>
+<li><strong>Tag:</strong> Final 32-byte squeeze authenticates the entire encryption.</li>
+</ul>
+
+<h3>6.4 &ensp;Padding</h3>
+
+<p>Before encryption, content MUST be padded to fixed-size buckets to resist payload-size analysis. Buckets grow in 2&times; progression:</p>
+
+<table>
+<tr><th>Content size (incl. 4-byte prefix)</th><th>Padded to</th></tr>
+<tr><td>0 &ndash; 256 B</td><td>256 B</td></tr>
+<tr><td>257 &ndash; 512 B</td><td>512 B</td></tr>
+<tr><td>513 &ndash; 1,024 B</td><td>1 KB</td></tr>
+<tr><td>1,025 &ndash; 2,048 B</td><td>2 KB</td></tr>
+<tr><td>2,049 &ndash; 4,096 B</td><td>4 KB</td></tr>
+<tr><td>4,097 &ndash; 8,192 B</td><td>8 KB</td></tr>
+<tr><td>8,193 &ndash; 16,384 B</td><td>16 KB</td></tr>
+<tr><td>16,385 &ndash; 32,768 B</td><td>32 KB</td></tr>
+<tr><td>32,769 &ndash; 65,536 B</td><td>64 KB</td></tr>
+<tr><td>65,537 &ndash; 131,072 B</td><td>128 KB</td></tr>
+<tr><td>131,073 &ndash; 262,144 B</td><td>256 KB</td></tr>
+<tr><td>&gt; 262,144 B</td><td>Next 256 KB multiple</td></tr>
+</table>
+
+<p><strong>Padding format:</strong></p>
+
+<pre><code>padded = content_length (4 bytes, LE)
+      || content
+      || 0x00 * (bucket_size - 4 - content_length)</code></pre>
+
+<h3>6.5 &ensp;Key Wrapping</h3>
+
+<p><strong>Step 1&mdash;Hybrid key agreement:</strong> between sender's MachineKeyPair and the recipient's MachinePublicKey using &sect;5.5, producing a <code>SharedSecret</code> and <code>EncapBundle</code>.</p>
+
+<p><strong>Step 2&mdash;Context-bound wrapping:</strong></p>
+
+<pre><code>wrap_key = HKDF-SHA256(
+    ikm  = SharedSecret,
+    salt = None,
+    info = "grid:sector-key-wrap:v1"
+           || program_id || sector_id
+)
+
+wrapped_sector_key = XChaCha20-Poly1305(
+    key       = wrap_key,
+    nonce     = random 192-bit,
+    plaintext = sector_key_bytes
+)</code></pre>
+
+<p>The result is a <strong>KeyEnvelopeEntry</strong>:</p>
+
+<table>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>recipient_did</code></td><td>text</td><td><code>did:key</code> of recipient</td></tr>
+<tr><td><code>sender_x25519_public</code></td><td>bytes</td><td>Sender's X25519 public key (32&nbsp;B)</td></tr>
+<tr><td><code>mlkem_ciphertext</code></td><td>bytes</td><td>ML-KEM-768 ciphertext (1,088&nbsp;B)</td></tr>
+<tr><td><code>wrapped_key</code></td><td>bytes</td><td><code>nonce(24) || enc_key(32) || tag(16)</code> = 72&nbsp;B</td></tr>
+</table>
+
+<h3>6.6 &ensp;Sector ID Derivation</h3>
+
+<p>For metadata-private storage, sector IDs are derived client-side via two-step HKDF:</p>
+
+<pre><code>derivation_key = HKDF-SHA256(
+    ikm=shared_secret,
+    salt="grid:sector:v1",
+    info="grid:sector:derive-key:v1")
+
+sector_id = HKDF-SHA256(
+    ikm=derivation_key,
+    salt="grid:sector:v1",
+    info=&lt;application-defined string&gt;)</code></pre>
+
+<p>The intermediate derivation key MUST be zeroized after use. Info string convention: <code>"grid:{program}:{purpose}:{...fields}"</code>.</p>
+
+<p><strong>Properties:</strong> Deterministic (same secret + info &rarr; same sector ID), Unlinkable (different info strings &rarr; unrelated IDs), Collision-resistant (32-byte HKDF output).</p>
+
+<h2>7 &ensp;Message Signing</h2>
+
+<p>Message signing provides authenticity and integrity for entries within the encrypted blob. Signatures are PQ-hybrid (Ed25519 + ML-DSA-65) and are produced before encryption, verified after decryption.</p>
+
+<h3>7.1 &ensp;Placement</h3>
+
+<p>Signatures live <strong>inside</strong> the encrypted payload. The ZODE never sees plaintext; signature verification is end-to-end.</p>
+
+<h3>7.2 &ensp;Signable Bytes</h3>
+
+<pre><code>signable_bytes = canonical_cbor(
+    all_fields_except_signature)</code></pre>
+
+<p>Fields MUST be serialized in deterministic CBOR order.</p>
+
+<h3>7.3 &ensp;HybridSignature Format</h3>
+
+<p><code>Ed25519 (64) || ML-DSA-65 (3309)</code> = 3,373 bytes total. Both components sign the same <code>signable_bytes</code>. <strong>Both MUST verify.</strong></p>
+
+<h3>7.4 &ensp;Signing and Verification Flow</h3>
+
+<ol>
+<li><strong>Signing:</strong> Client computes <code>signable_bytes</code>, signs with both algorithms, appends signature, then encrypts.</li>
+<li><strong>Verification:</strong> Recipient decrypts, recomputes <code>signable_bytes</code>, verifies both Ed25519 and ML-DSA-65.</li>
+</ol>
+
+<h3>7.5 &ensp;Ed25519-Only Fallback (v1)</h3>
+
+<p>For v1 compatibility, programs MAY support Ed25519-only signatures (64 bytes).</p>
+
+<h2>8 &ensp;ZODE Storage Model</h2>
+
+<h3>8.1 &ensp;Append-Only Logs</h3>
+
+<p>Each sector is an ordered sequence of entries indexed starting at&nbsp;0. Sectors are identified by <code>(ProgramId, SectorId)</code>.</p>
+
+<h3>8.2 &ensp;Key Layout</h3>
+
+<pre><code>key = program_id (32 B) || sector_id (32 B)
+   || index (8 B, big-endian)</code></pre>
+
+<p>Total key size: 72 bytes.</p>
+
+<h3>8.3 &ensp;Operations</h3>
+
+<table>
+<tr><th>Operation</th><th>Behavior</th></tr>
+<tr><td><strong>append</strong></td><td>Reverse-seek to find max index, write at <code>max + 1</code></td></tr>
+<tr><td><strong>insert_at</strong></td><td>Write at specific index if unoccupied (idempotent)</td></tr>
+<tr><td><strong>read_log</strong></td><td>Forward-iterate from <code>from_index</code>, return up to <code>max_entries</code></td></tr>
+<tr><td><strong>log_length</strong></td><td>Reverse-seek to find max index + 1 (0 if empty)</td></tr>
+</table>
+
+<h3>8.4 &ensp;Policy Enforcement</h3>
+
+<table>
+<tr><th>Policy</th><th>Description</th></tr>
+<tr><td>Program allowlist</td><td>Only serve programs in effective topic set. Reject: <code>PolicyReject</code>.</td></tr>
+<tr><td>Sector filter</td><td>Optionally restrict to explicit sector ID set.</td></tr>
+<tr><td>Entry size limit</td><td>Max 256 KB per entry. Reject: <code>InvalidPayload</code>.</td></tr>
+<tr><td>Batch limits</td><td>Max 64 entries, 4 MB total. Reject: <code>BatchTooLarge</code>.</td></tr>
+<tr><td>Shape proof</td><td>Verify <code>ShapeProof</code> when <code>proof_system = Groth16</code>. Reject: <code>ProofInvalid</code>.</td></tr>
+<tr><td>Per-program quota</td><td>Optional max bytes per program.</td></tr>
+</table>
+
+<h2>9 &ensp;Topic Naming</h2>
+
+<pre><code>topic = "prog/" + hex(ProgramId)</code></pre>
+
+<p>Where <code>hex(ProgramId)</code> is the 64-char lowercase hex encoding of the 32-byte ProgramId. ZODES subscribe to one or more topics and only accept requests for subscribed programs.</p>
+
+<h2>10 &ensp;Transport Layer</h2>
+
+<h3>10.1 &ensp;Connection</h3>
+
+<p>The Grid uses <strong>libp2p</strong> with the following transports:</p>
+
+<ul>
+<li><strong>QUIC</strong> (<code>/quic-v1</code>): Primary transport.</li>
+<li><strong>TCP + Noise + Yamux</strong>: Fallback transport.</li>
+</ul>
+
+<p>Default listen address: <code>/ip4/0.0.0.0/udp/3690/quic-v1</code>.</p>
+
+<h3>10.2 &ensp;Protocols</h3>
+
+<table>
+<tr><th>Protocol String</th><th>Type</th><th>Purpose</th></tr>
+<tr><td><code>/grid/sector/1.0.0</code></td><td>Request-response</td><td>Client &harr; ZODE sector ops</td></tr>
+<tr><td><code>/grid/kad/1.0.0</code></td><td>Kademlia DHT</td><td>Peer discovery</td></tr>
+<tr><td>GossipSub</td><td>Pub/sub</td><td>Data propagation</td></tr>
+</table>
+
+<h3>10.3 &ensp;GossipSub Configuration</h3>
+
+<p>Message authentication: signed (libp2p keypair). Heartbeat interval: 10&nbsp;s. Validation mode: permissive. Message ID: hash of message data (content-based dedup).</p>
+
+<h3>10.4 &ensp;Peer Discovery</h3>
+
+<p>ZODES accept bootstrap peer multiaddrs in configuration. On startup, the ZODE dials each bootstrap peer. When Kademlia is enabled, the ZODE seeds the routing table, triggers initial <code>bootstrap()</code>, and periodically performs random walk queries (default: 30&nbsp;s interval).</p>
+
+<table>
+<tr><th>Parameter</th><th>Default</th></tr>
+<tr><td>Protocol name</td><td><code>/grid/kad/1.0.0</code></td></tr>
+<tr><td>Query timeout</td><td>60 s</td></tr>
+<tr><td>Mode</td><td>Server (ZODES) / Client (SDK)</td></tr>
+<tr><td>Random walk interval</td><td>30 s</td></tr>
+<tr><td>Max concurrent dials</td><td>8</td></tr>
+</table>
+
+<h2>11 &ensp;Sector Protocol &mdash; Wire Format</h2>
+
+<p>The sector protocol is the primary client-to-ZODE interface, operating over <code>/grid/sector/1.0.0</code>.</p>
+
+<h3>11.1 &ensp;Request Envelope</h3>
+
+<pre><code>SectorRequest = Append(SectorAppendRequest)
+  | ReadLog(SectorReadLogRequest)
+  | LogLength(SectorLogLengthRequest)
+  | BatchAppend(SectorBatchAppendRequest)
+  | BatchLogLength(SectorBatchLogLengthRequest)</code></pre>
+
+<h3>11.2 &ensp;Response Envelope</h3>
+
+<p>Response variants correspond 1:1 to request variants.</p>
+
+<h3>11.3 &ensp;Append</h3>
+
+<p><strong>Request:</strong></p>
+
+<table>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>program_id</code></td><td>bytes(32)</td><td>Target program</td></tr>
+<tr><td><code>sector_id</code></td><td>bytes(32)</td><td>Target sector</td></tr>
+<tr><td><code>entry</code></td><td>byte string</td><td>Encrypted payload</td></tr>
+<tr><td><code>shape_proof</code></td><td>optional</td><td>ShapeProof (&sect;13)</td></tr>
+</table>
+
+<p><strong>Response:</strong> <code>ok</code> (boolean), <code>index</code> (optional uint64), <code>error_code</code> (optional).</p>
+
+<h3>11.4 &ensp;ReadLog</h3>
+
+<p><strong>Request:</strong> <code>program_id</code>, <code>sector_id</code>, <code>from_index</code> (uint64), <code>max_entries</code> (uint32, capped at 64). <strong>Response:</strong> <code>entries</code> (array of byte strings), <code>error_code</code> (optional). Empty array if sector does not exist.</p>
+
+<h3>11.5 &ensp;LogLength</h3>
+
+<p><strong>Request:</strong> <code>program_id</code>, <code>sector_id</code>. <strong>Response:</strong> <code>length</code> (uint64), <code>error_code</code> (optional).</p>
+
+<h3>11.6 &ensp;BatchAppend</h3>
+
+<p><strong>Request:</strong> <code>program_id</code>, <code>entries</code> (array of <code>BatchAppendEntry</code>, up to 64). Each entry: <code>sector_id</code>, <code>entry</code>, optional <code>shape_proof</code>. <strong>Response:</strong> <code>results</code> (array of <code>AppendResult</code>: <code>ok</code>, <code>index</code>, <code>error_code</code>).</p>
+
+<h3>11.7 &ensp;BatchLogLength</h3>
+
+<p><strong>Request:</strong> <code>program_id</code>, <code>sector_ids</code> (array of bytes(32), up to 64). <strong>Response:</strong> <code>results</code> (array of <code>LogLengthResult</code>: <code>length</code>, <code>error_code</code>).</p>
+
+<h3>11.8 &ensp;Batch Limits</h3>
+
+<p>Maximum <strong>64 entries</strong> and <strong>4 MB total payload</strong> per batch. ZODES MUST reject with <code>BatchTooLarge</code>.</p>
+
+<h3>11.9 &ensp;Error Codes</h3>
+
+<table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td><code>StorageFull</code></td><td>Storage capacity exceeded</td></tr>
+<tr><td><code>ProofInvalid</code></td><td>Shape proof verification failed</td></tr>
+<tr><td><code>PolicyReject</code></td><td>Policy violation</td></tr>
+<tr><td><code>NotFound</code></td><td>Data not present</td></tr>
+<tr><td><code>InvalidPayload</code></td><td>Malformed request or oversized entry</td></tr>
+<tr><td><code>ProgramMismatch</code></td><td>Wrong program for subscription</td></tr>
+<tr><td><code>SlotOccupied</code></td><td>Reserved (write-once)</td></tr>
+<tr><td><code>BatchTooLarge</code></td><td>Batch limits exceeded</td></tr>
+<tr><td><code>ConditionFailed</code></td><td>Reserved (conditional write)</td></tr>
+</table>
+
+<p>Error codes are serialized as CBOR text strings.</p>
+
+<h2>12 &ensp;Gossip Replication</h2>
+
+<p>When a ZODE accepts an <code>Append</code> request, it publishes a <code>GossipSectorAppend</code> message to the program's GossipSub topic. Other subscribed ZODES store the entry automatically.</p>
+
+<h3>12.1 &ensp;GossipSectorAppend</h3>
+
+<table>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>program_id</code></td><td>bytes(32)</td><td>Program</td></tr>
+<tr><td><code>sector_id</code></td><td>bytes(32)</td><td>Sector</td></tr>
+<tr><td><code>index</code></td><td>uint64</td><td>Assigned log index</td></tr>
+<tr><td><code>payload</code></td><td>byte string</td><td>Encrypted entry</td></tr>
+<tr><td><code>shape_proof</code></td><td>optional</td><td>ShapeProof (&sect;13)</td></tr>
+</table>
+
+<h3>12.2 &ensp;Receiving ZODE Behavior</h3>
+
+<ol>
+<li><strong>Program check:</strong> Discard if not serving <code>program_id</code>.</li>
+<li><strong>Sector filter:</strong> Check allowlist if configured.</li>
+<li><strong>Entry size check:</strong> Discard if oversized.</li>
+<li><strong>Shape proof:</strong> Verify if required; discard on failure.</li>
+<li><strong>Idempotent insert:</strong> Store at given index if unoccupied; silently ignore byte-identical duplicates; on conflict, append at next available index.</li>
+<li><strong>No re-gossip:</strong> GossipSub mesh handles fan-out.</li>
+</ol>
+
+<h2>13 &ensp;Shape Proofs</h2>
+
+<p>Shape proofs allow clients to prove that an encrypted blob conforms to a declared schema without revealing plaintext. Programs with <code>proof_system = Groth16</code> use Poseidon sponge encryption (&sect;6.3) and MAY attach a shape proof to each entry.</p>
+
+<h3>13.1 &ensp;ProofSystem Enum</h3>
+
+<table>
+<tr><th>Variant</th><th>Encryption</th><th>Shape proofs</th></tr>
+<tr><td><code>None</code></td><td>XChaCha20-Poly1305</td><td>Not supported</td></tr>
+<tr><td><code>Groth16</code></td><td>Poseidon sponge</td><td>Supported</td></tr>
+</table>
+
+<h3>13.2 &ensp;FieldSchema</h3>
+
+<p>Message structure is described by a <strong>FieldSchema</strong>: a sequence of <code>FieldDef</code> (named field + <code>CborType</code>).</p>
+
+<pre><code>schema_hash = SHA-256(canonical_cbor(schema))</code></pre>
+
+<h3>13.3 &ensp;ShapeProof Wire Format</h3>
+
+<table>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>proof_system</code></td><td>ProofSystem</td><td><code>Groth16</code></td></tr>
+<tr><td><code>ciphertext_hash</code></td><td>bytes(32)</td><td>Poseidon(C)</td></tr>
+<tr><td><code>proof_bytes</code></td><td>byte string</td><td>Groth16 proof</td></tr>
+<tr><td><code>schema_hash</code></td><td>bytes(32)</td><td>SHA-256 of schema</td></tr>
+<tr><td><code>size_bucket</code></td><td>uint32</td><td>Circuit bucket size</td></tr>
+</table>
+
+<h3>13.4 &ensp;Universal Circuit</h3>
+
+<p>The shape-proof circuit proves three predicates:</p>
+
+<ol>
+<li><strong>shape(B)</strong>&mdash;Plaintext B conforms to the FieldSchema.</li>
+<li><strong>Poseidon_encrypt(B, K, N, AAD) = C</strong>&mdash;Ciphertext C is the correct encryption.</li>
+<li><strong>Poseidon(C) = ciphertext_hash</strong>&mdash;Public hash matches.</li>
+</ol>
+
+<h3>13.5 &ensp;Strong Binding</h3>
+
+<p>The ZODE computes <code>Poseidon(received_ciphertext)</code> and MUST verify it equals the attested <code>ciphertext_hash</code>.</p>
+
+<h3>13.6 &ensp;Message-Size Buckets</h3>
+
+<table>
+<tr><th>Bucket</th><th>Max size</th></tr>
+<tr><td>1 KB</td><td>1,024 bytes</td></tr>
+<tr><td>4 KB</td><td>4,096 bytes</td></tr>
+<tr><td>16 KB</td><td>16,384 bytes</td></tr>
+<tr><td>64 KB</td><td>65,536 bytes</td></tr>
+</table>
+
+<p><strong>Version 1:</strong> Only 1 KB and 4 KB buckets are supported. One (pk, vk) pair per bucket; setup is program-agnostic.</p>
+
+<h3>13.8 &ensp;Verification Rules</h3>
+
+<ol>
+<li>Groth16 proof verifies against vk for the declared <code>size_bucket</code>.</li>
+<li><code>Poseidon(received_ciphertext) == ciphertext_hash</code>.</li>
+<li><code>schema_hash</code> matches the program's declared schema.</li>
+<li>Entry size (post-padding) fits within <code>size_bucket</code>.</li>
+</ol>
+
+<h2>14 &ensp;Standard Programs</h2>
+
+<h3>14.1 &ensp;ZID (Zero Identity)</h3>
+
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td><code>name</code></td><td><code>"zid"</code></td></tr>
+<tr><td><code>version</code></td><td><code>1</code></td></tr>
+<tr><td><code>proof_required</code></td><td><code>false</code></td></tr>
+</table>
+
+<p><strong>ZidMessage:</strong> <code>owner_did</code> (text), <code>display_name</code> (optional text), <code>timestamp_ms</code> (uint64), <code>signature</code> (PQ-hybrid, &sect;7).</p>
+
+<h3>14.2 &ensp;Interlink</h3>
+
+<p><strong>v2 Descriptor (current default):</strong></p>
+
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td><code>name</code></td><td><code>"interlink"</code></td></tr>
+<tr><td><code>version</code></td><td><code>2</code></td></tr>
+<tr><td><code>proof_required</code></td><td><code>true</code></td></tr>
+<tr><td><code>proof_system</code></td><td><code>Groth16</code></td></tr>
+</table>
+
+<p><strong>ZMessage:</strong> <code>sender_did</code>, <code>channel_id</code>, <code>content</code> (UTF-8), <code>timestamp_ms</code>, <code>signature</code>. Maximum encoded message size: 64&nbsp;KB.</p>
+
+<p><strong>Channel-to-sector mapping:</strong></p>
+<pre><code>SectorId = SHA-256("interlink/channel/"
+                   || channel_id_bytes)</code></pre>
+
+<p>ZID (v1) and Interlink (v2) are <strong>default programs</strong>: ZODES subscribe to them automatically.</p>
+
+<h2>15 &ensp;ZODE Behavior</h2>
+
+<h3>15.1 &ensp;Startup Sequence</h3>
+
+<ol>
+<li>Open persistent storage.</li>
+<li>Start libp2p swarm (GossipSub, request-response, Kademlia).</li>
+<li>Compute effective topic set: defaults &cup; configured programs.</li>
+<li>Subscribe to each GossipSub topic.</li>
+<li>Dial bootstrap peers.</li>
+<li>If Kademlia enabled, seed routing table and bootstrap.</li>
+<li>Enter event loop.</li>
+</ol>
+
+<h3>15.2 &ensp;Event Loop</h3>
+
+<p>The ZODE continuously processes: incoming sector requests, gossip messages, peer events, Kademlia discovery, publish queue, and shutdown signals.</p>
+
+<h3>15.3 &ensp;Append + Gossip Flow</h3>
+
+<p>On Append: (1) validate program, sector filter, entry size, shape proof; (2) append to local storage; (3) send success response. Gossip propagation is <strong>client-triggered</strong>: after successful append, the client publishes <code>GossipSectorAppend</code> to the program topic.</p>
+
+<h2>16 &ensp;Visibility and Privacy Properties</h2>
+
+<h3>What a ZODE can see</h3>
+
+<table>
+<tr><th>Information</th><th>Visible?</th></tr>
+<tr><td><code>program_id</code></td><td>Yes &mdash; routing and policy</td></tr>
+<tr><td><code>sector_id</code></td><td>Yes &mdash; opaque 32 bytes</td></tr>
+<tr><td>Payload size</td><td>Yes &mdash; mitigated by padding</td></tr>
+<tr><td>Entry timing</td><td>Yes &mdash; append/read arrival</td></tr>
+<tr><td>Batched sector IDs</td><td>Yes &mdash; within one request</td></tr>
+<tr><td>Client IP</td><td>Yes &mdash; transport-level</td></tr>
+</table>
+
+<h3>What a ZODE cannot see</h3>
+
+<table>
+<tr><th>Information</th><th>Why</th></tr>
+<tr><td>Entry content/structure</td><td>Encrypted (XChaCha20/Poseidon)</td></tr>
+<tr><td>Author identity</td><td>Inside encrypted payload</td></tr>
+<tr><td>Access control</td><td>Key material never on wire</td></tr>
+<tr><td>Sector relationships</td><td>HKDF-derived IDs are unlinkable</td></tr>
+<tr><td>Ordering/timestamps</td><td>Inside encrypted payload</td></tr>
+</table>
+
+<h2>17 &ensp;Security Considerations</h2>
+
+<ul>
+<li><strong>No transport anonymity.</strong> IP addresses are visible. Onion routing is out of scope.</li>
+<li><strong>Timing correlation.</strong> A ZODE can correlate writes/reads from the same connection.</li>
+<li><strong>No wire-level write authorization.</strong> Any client with a ProgramId can append. Access control is application-layer.</li>
+<li><strong>Gossip propagation delay.</strong> Entries initially exist on one ZODE. Clients MAY multi-send.</li>
+<li><strong>Key compromise.</strong> NeuralKey compromise implies all derived keys are compromised. Shamir splitting mitigates single-point-of-failure.</li>
+<li><strong>Post-quantum readiness.</strong> Hybrid constructions require breaking both classical and PQ components.</li>
+</ul>
+
+<h2>18 &ensp;Interoperability Requirements</h2>
+
+<p>A conforming Grid implementation MUST:</p>
+
+<ol>
+<li>Serialize all protocol messages as deterministic CBOR (RFC&nbsp;8949 &sect;4.2.1).</li>
+<li>Derive ProgramIds as <code>SHA-256(CBOR(ProgramDescriptor))</code>.</li>
+<li>Use <code>/grid/sector/1.0.0</code> for sector request-response.</li>
+<li>Use <code>/grid/kad/1.0.0</code> for Kademlia DHT.</li>
+<li>Format GossipSub topics as <code>prog/&lt;64_hex_chars&gt;</code>.</li>
+<li>Serialize <code>GossipSectorAppend</code> as CBOR.</li>
+<li>Use XChaCha20-Poly1305 or Poseidon sponge per ProgramDescriptor.</li>
+<li>Implement the padding bucket scheme (&sect;6.4).</li>
+<li>Use HKDF-SHA256 with exact domain separation strings (&sect;5.2).</li>
+<li>Produce hybrid signatures: Ed25519 (64&nbsp;B) + ML-DSA-65 (3,309&nbsp;B); both must verify.</li>
+<li>Perform hybrid key encapsulation: X25519 + ML-KEM-768 via HKDF (&sect;5.5).</li>
+<li>Reject non-32-byte sector IDs.</li>
+<li>Enforce batch limits: 64 entries, 4&nbsp;MB total.</li>
+<li>Accept gossip with conflict resolution per &sect;12.2.</li>
+</ol>
+
+<div class="footer-note">
+Version 0.2.0 &mdash; Derived from the reference implementation<br/>
+Copyright &copy; 2025 CYPHER, INC. All rights reserved.
+</div>
+
+</div>
+
+</body>
+</html>"""
+
+
+def main():
+    out_dir = pathlib.Path(__file__).parent
+    html_path = out_dir / "grid-protocol-whitepaper.html"
+    pdf_path = out_dir / "grid-protocol-whitepaper.pdf"
+
+    html_path.write_text(HTML_CONTENT, encoding="utf-8")
+    print(f"Wrote HTML -> {html_path}")
+
+    html_uri = html_path.resolve().as_uri()
+    cmd = [
+        EDGE,
+        "--headless",
+        "--disable-gpu",
+        "--run-all-compositor-stages-before-draw",
+        "--no-pdf-header-footer",
+        f"--print-to-pdf={pdf_path.resolve()}",
+        html_uri,
+    ]
+
+    print("Running Edge headless print-to-pdf...")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        print(f"STDERR: {result.stderr}")
+        sys.exit(1)
+
+    if pdf_path.exists():
+        size_kb = pdf_path.stat().st_size / 1024
+        print(f"Wrote PDF  -> {pdf_path}  ({size_kb:.0f} KB)")
+    else:
+        print("ERROR: PDF was not created.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

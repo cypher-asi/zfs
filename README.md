@@ -22,7 +22,7 @@ The GRID is a general-purpose distributed computing environment secured by zero-
 
 It allows anyone to contribute unused compute capacity to a verifiable, decentralized execution layer for internet services. The network supports encrypted storage, decentralized identity, and AI workloads (including inference, agent sandboxing, and training), without requiring trust in operators.
 
-The objective is to build a global, decentralized alternative to traditional hyperscale cloud infrastructure that is faster, lower cost, cryptographically verifiable, and aligned with sovereignty, privacy, and long-term security.
+The objective is to build a global, decentralized alternative to traditional hyperscaler cloud infrastructure that is faster, lower cost, cryptographically verifiable, and aligned with sovereignty, privacy, and long-term security.
 
 ---
 
@@ -33,7 +33,7 @@ The objective is to build a global, decentralized alternative to traditional hyp
 </p>
 
 <p align="center">
-  The reference implementation of <a href="docs/grid-protocol.md">The GRID</a>:<br/>
+  The reference node implementation of <a href="docs/grid-protocol.md">The GRID</a>:<br/>
   a local node that receives, verifies, and serves data across a peer-to-peer network.
 </p>
 
