@@ -18,7 +18,7 @@
 
 ## Overview
 
-The GRID is a general-purpose distributed computing network secured by zero-knowledge proofs and post-quantum cryptography.
+The GRID is a general-purpose distributed computing environment secured by zero-knowledge proofs and post-quantum cryptography.
 
 It allows anyone to contribute unused compute capacity to a verifiable, decentralized execution layer for internet services. The network supports encrypted storage, decentralized identity, and AI workloads (including inference, agent sandboxing, and training), without requiring trust in operators.
 
