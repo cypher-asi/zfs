@@ -23,4 +23,4 @@ ciborium = "0.2"
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-zid = { path = "../zid" }
+zid = { path = "../../../zid" }

@@ -5,7 +5,7 @@ edition = "2021"
 description = "Grid client SDK — identity, encrypt, sign, upload, fetch"
 
 [dependencies]
-zid = { path = "../zid" }
+zid = { path = "../../../zid" }
 grid-core = { path = "../grid-core" }
 grid-crypto = { path = "../grid-crypto" }
 grid-net = { path = "../grid-net" }

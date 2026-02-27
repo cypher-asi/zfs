@@ -18,7 +18,7 @@ grid-net = { path = "../grid-net" }
 grid-crypto = { path = "../grid-crypto" }
 grid-sdk = { path = "../grid-sdk" }
 grid-proof-groth16 = { path = "../grid-proof-groth16" }
-zid = { path = "../zid", features = ["testkit"] }
+zid = { path = "../../../zid", features = ["testkit"] }
 rand = "0.8"
 eframe = "0.30"
 egui_extras = { version = "0.30", features = ["image"] }
