@@ -17,7 +17,7 @@ pub(crate) struct VaultPlaintext {
     pub identity_id: [u8; 16],
     pub machine_id: [u8; 16],
     pub epoch: u64,
-    pub capabilities: u8,
+    pub capabilities: u32,
     pub libp2p_keypair: Vec<u8>,
 }
 
