@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use libp2p::{gossipsub, identify, kad, request_response, swarm::SwarmEvent, Multiaddr, PeerId};
+use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
 use crate::behaviour::{GridBehaviour, GridBehaviourEvent};
@@ -38,6 +39,11 @@ pub struct NetworkService {
     /// Events queued by helper methods (relay listeners, kademlia bootstrap)
     /// that must be returned from the next `next_event` call.
     pending_relay_events: Vec<NetworkEvent>,
+    /// Peers that recently failed a dial; maps to the earliest allowed retry.
+    /// Prevents hammering unreachable peers whose stale NAT-mapped addresses
+    /// accumulate in Kademlia.
+    dial_backoff: HashMap<PeerId, Instant>,
+    dial_backoff_duration: Duration,
 }
 
 impl NetworkService {
@@ -50,6 +56,7 @@ impl NetworkService {
         let kademlia_enabled = config.discovery.enable_kademlia;
         let random_walk_interval = config.discovery.random_walk_interval;
         let max_discovery_dials = config.discovery.max_concurrent_discovery_dials;
+        let dial_backoff_duration = config.discovery.dial_backoff_duration;
         let kademlia_mode = config.discovery.kademlia_mode;
         let relay_enabled = config.relay.enabled;
 
@@ -137,6 +144,8 @@ impl NetworkService {
             active_relay_listeners: HashSet::new(),
             relay_circuit_bases,
             pending_relay_events: Vec::new(),
+            dial_backoff: HashMap::new(),
+            dial_backoff_duration,
         })
     }
 
@@ -314,12 +323,15 @@ impl NetworkService {
                 if self.pending_discovery_dials > 0 {
                     self.pending_discovery_dials -= 1;
                 }
+                self.dial_backoff.remove(&peer_id);
                 debug!(%peer_id, num = %num_established, "connection established");
                 let raw_addr = endpoint.get_remote_address().clone();
                 let normalized = crate::addr::normalize_multiaddr(&raw_addr);
-                let stored = self.peer_addresses.entry(peer_id).or_default();
-                if !stored.contains(&normalized) {
-                    stored.push(normalized.clone());
+                if crate::addr::is_globally_routable(&normalized) {
+                    let stored = self.peer_addresses.entry(peer_id).or_default();
+                    if !stored.contains(&normalized) {
+                        stored.push(normalized.clone());
+                    }
                 }
                 if self.kademlia_enabled && crate::addr::is_globally_routable(&normalized) {
                     self.swarm
@@ -378,6 +390,20 @@ impl NetworkService {
                 );
                 if self.pending_discovery_dials > 0 {
                     self.pending_discovery_dials -= 1;
+                }
+                if let Some(failed_peer) = peer_id {
+                    self.dial_backoff.insert(
+                        failed_peer,
+                        Instant::now() + self.dial_backoff_duration,
+                    );
+                    self.peer_addresses.remove(&failed_peer);
+                    self.discovered_peers.remove(&failed_peer);
+                    if self.kademlia_enabled {
+                        self.swarm
+                            .behaviour_mut()
+                            .kademlia
+                            .remove_peer(&failed_peer);
+                    }
                 }
                 Some(NetworkEvent::ConnectionFailed {
                     peer: peer_id,
@@ -455,7 +481,12 @@ impl NetworkService {
             .behaviour_mut()
             .kademlia
             .get_closest_peers(random_peer);
-        debug!("kademlia random walk triggered");
+        let now = Instant::now();
+        self.dial_backoff.retain(|_, retry_after| *retry_after > now);
+        debug!(
+            backoff_peers = self.dial_backoff.len(),
+            "kademlia random walk triggered"
+        );
     }
 
     /// Try to auto-dial a newly discovered peer (respects concurrency limit).
@@ -468,6 +499,13 @@ impl NetworkService {
         }
         if *peer_id == *self.swarm.local_peer_id() {
             return;
+        }
+        if let Some(&retry_after) = self.dial_backoff.get(peer_id) {
+            if Instant::now() < retry_after {
+                debug!(%peer_id, "skipping discovery dial (backoff)");
+                return;
+            }
+            self.dial_backoff.remove(peer_id);
         }
         if self.pending_discovery_dials >= self.max_discovery_dials {
             debug!(%peer_id, "skipping discovery dial (concurrency limit)");
@@ -576,7 +614,7 @@ impl NetworkService {
         let stored = self.peer_addresses.entry(peer_id).or_default();
         for a in &listen_addrs {
             let normalized = crate::addr::normalize_multiaddr(a);
-            if !stored.contains(&normalized) {
+            if crate::addr::is_globally_routable(&normalized) && !stored.contains(&normalized) {
                 stored.push(normalized);
             }
         }
@@ -667,7 +705,7 @@ impl NetworkService {
                     .collect();
                 let stored = self.peer_addresses.entry(peer).or_default();
                 for a in &addrs {
-                    if !stored.contains(a) {
+                    if crate::addr::is_globally_routable(a) && !stored.contains(a) {
                         stored.push(a.clone());
                     }
                 }
@@ -718,7 +756,7 @@ impl NetworkService {
                 .collect();
             let stored = self.peer_addresses.entry(peer_id).or_default();
             for a in &addrs {
-                if !stored.contains(a) {
+                if crate::addr::is_globally_routable(a) && !stored.contains(a) {
                     stored.push(a.clone());
                 }
             }

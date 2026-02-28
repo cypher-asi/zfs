@@ -40,6 +40,11 @@ pub struct DiscoveryConfig {
     /// Maximum number of concurrent outbound dials triggered by discovery.
     /// Default: 8.
     pub max_concurrent_discovery_dials: usize,
+
+    /// How long to suppress re-dialing a peer after a failed connection attempt.
+    /// Prevents hammering unreachable peers with stale NAT-mapped addresses.
+    /// Default: 5 minutes.
+    pub dial_backoff_duration: Duration,
 }
 
 /// Kademlia operating mode.
@@ -71,6 +76,7 @@ impl Default for DiscoveryConfig {
             kademlia_mode: KademliaMode::Server,
             random_walk_interval: Duration::from_secs(30),
             max_concurrent_discovery_dials: 8,
+            dial_backoff_duration: Duration::from_secs(300),
         }
     }
 }
