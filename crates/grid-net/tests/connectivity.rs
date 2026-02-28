@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use tokio::time::timeout;
 use grid_core::{
     ProgramId, SectorLogLengthRequest, SectorLogLengthResponse, SectorRequest, SectorResponse,
 };
 use grid_net::{NetworkConfig, NetworkEvent, NetworkService};
+use tokio::time::timeout;
 
 async fn wait_for_listen_addr(zode: &mut NetworkService) -> grid_net::Multiaddr {
     timeout(Duration::from_secs(10), async {
@@ -128,4 +128,33 @@ async fn sector_request_response_round_trip() {
         }
         other => panic!("expected LogLength response, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn startup_without_relay_config_behaves_normally() {
+    let mut zode = NetworkService::new(NetworkConfig::new(
+        "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap(),
+    ))
+    .await
+    .unwrap();
+
+    let addr = wait_for_listen_addr(&mut zode).await;
+    assert!(!addr.to_string().is_empty());
+}
+
+#[tokio::test]
+async fn startup_with_enabled_relay_and_no_peers_still_starts() {
+    let mut zode = NetworkService::new(
+        NetworkConfig::new("/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap()).with_relay(
+            grid_net::RelayConfig {
+                enabled: true,
+                relay_peers: Vec::new(),
+            },
+        ),
+    )
+    .await
+    .unwrap();
+
+    let addr = wait_for_listen_addr(&mut zode).await;
+    assert!(!addr.to_string().is_empty());
 }
