@@ -27,10 +27,10 @@ pub struct NetworkService {
     discovered_peers: HashSet<PeerId>,
     /// Observed addresses for peers (from connection endpoints and Kademlia).
     peer_addresses: HashMap<PeerId, Vec<Multiaddr>>,
-    /// Raw relay transport addresses (without /p2p/ or /p2p-circuit), used
-    /// to recognise when a newly-established connection is to a relay so we
-    /// can start a circuit listener on it.
-    relay_transport_addrs: Vec<Multiaddr>,
+    /// Peer IDs of configured relay nodes, used to recognise when a
+    /// newly-established connection is to a relay so we can start a
+    /// circuit listener on it.
+    relay_peer_ids: HashSet<PeerId>,
     /// Relay circuit addresses we have already started listening on.
     active_relay_listeners: HashSet<PeerId>,
     /// Pre-computed relay circuit base addresses derived from relay config,
@@ -76,14 +76,17 @@ impl NetworkService {
 
         dial_bootstrap_peers(&mut swarm, &config.bootstrap_peers, kademlia_enabled)?;
 
-        let mut relay_transport_addrs = Vec::new();
+        let mut relay_peer_ids = HashSet::new();
         if relay_enabled {
             for relay_addr in &config.relay.relay_peers {
-                relay_transport_addrs.push(strip_p2p(relay_addr));
+                if let Some(pid) = extract_peer_id(relay_addr) {
+                    relay_peer_ids.insert(pid);
+                }
             }
             dial_relay_peers(&mut swarm, &config.relay.relay_peers, kademlia_enabled);
             debug!(
                 count = config.relay.relay_peers.len(),
+                relay_peer_ids = ?relay_peer_ids,
                 "relay dialing configured"
             );
         }
@@ -111,7 +114,7 @@ impl NetworkService {
             bootstrap_peers = config.bootstrap_peers.len(),
             relay_enabled,
             relay_peers = config.relay.relay_peers.len(),
-            relay_transport_addrs = ?relay_transport_addrs,
+            relay_peer_ids = ?relay_peer_ids,
             relay_circuit_bases = ?relay_circuit_bases,
             kademlia_enabled,
             kademlia_mode = ?kademlia_mode,
@@ -140,7 +143,7 @@ impl NetworkService {
             pending_discovery_dials: 0,
             discovered_peers: HashSet::new(),
             peer_addresses: HashMap::new(),
-            relay_transport_addrs,
+            relay_peer_ids,
             active_relay_listeners: HashSet::new(),
             relay_circuit_bases,
             pending_relay_events: Vec::new(),
@@ -392,13 +395,16 @@ impl NetworkService {
                     self.pending_discovery_dials -= 1;
                 }
                 if let Some(failed_peer) = peer_id {
-                    self.dial_backoff.insert(
-                        failed_peer,
-                        Instant::now() + self.dial_backoff_duration,
-                    );
+                    let is_relay = self.relay_peer_ids.contains(&failed_peer);
+                    if !is_relay {
+                        self.dial_backoff.insert(
+                            failed_peer,
+                            Instant::now() + self.dial_backoff_duration,
+                        );
+                    }
                     self.peer_addresses.remove(&failed_peer);
                     self.discovered_peers.remove(&failed_peer);
-                    if self.kademlia_enabled {
+                    if self.kademlia_enabled && !is_relay {
                         self.swarm
                             .behaviour_mut()
                             .kademlia
@@ -421,20 +427,11 @@ impl NetworkService {
             return;
         }
 
-        let remote_transport = strip_p2p(remote_addr);
-        let is_relay = self.relay_transport_addrs.contains(&remote_transport);
-
-        if !is_relay {
-            debug!(
-                %connected_peer,
-                %remote_addr,
-                remote_transport = %remote_transport,
-                known_relay_addrs = ?self.relay_transport_addrs,
-                "peer is not a known relay, skipping circuit listener"
-            );
+        if !self.relay_peer_ids.contains(connected_peer) {
             return;
         }
 
+        let remote_transport = strip_p2p(remote_addr);
         let circuit_addr = remote_transport
             .with(libp2p::multiaddr::Protocol::P2p(*connected_peer))
             .with(libp2p::multiaddr::Protocol::P2pCircuit);
