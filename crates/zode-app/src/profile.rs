@@ -38,6 +38,14 @@ pub(crate) fn data_dir_for_profile(base: &Path, id: &str) -> PathBuf {
     profile_dir(base, id).join("data")
 }
 
+pub(crate) fn settings_path_for_profile(base: &Path, id: &str) -> PathBuf {
+    profile_dir(base, id).join("settings.json")
+}
+
+pub(crate) fn global_settings_path(base: &Path) -> PathBuf {
+    base.join("settings.json")
+}
+
 fn load_manifest(base: &Path) -> ProfilesManifest {
     let p = manifest_path(base);
     if !p.exists() {

@@ -48,9 +48,11 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             render_topics(app, ui);
             render_discovery_settings(app, ui);
             render_rpc_settings(app, ui);
+            render_known_peers(app, ui);
         });
 
     if do_boot {
+        app.save_settings();
         app.boot_zode();
     }
     if do_stop {
@@ -189,6 +191,39 @@ fn render_rpc_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
                         ui.end_row();
                     });
             });
+        }
+    });
+}
+
+fn render_known_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    if app.settings.known_peers.is_empty() {
+        return;
+    }
+    section(ui, "Known Peers (auto-saved)", |ui| {
+        hint_label(
+            ui,
+            "Peers remembered from previous sessions. They are added to bootstrap on startup.",
+        );
+        ui.add_space(8.0);
+        let mut to_remove = Vec::new();
+        for (i, peer) in app.settings.known_peers.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.monospace(peer);
+                if ui
+                    .small_button(egui_phosphor::regular::TRASH)
+                    .on_hover_text("Remove")
+                    .clicked()
+                {
+                    to_remove.push(i);
+                }
+            });
+        }
+        for i in to_remove.into_iter().rev() {
+            app.settings.known_peers.remove(i);
+        }
+        ui.add_space(4.0);
+        if action_button(ui, "Clear All") {
+            app.settings.known_peers.clear();
         }
     });
 }

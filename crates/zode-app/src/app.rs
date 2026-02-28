@@ -50,9 +50,15 @@ impl ZodeApp {
             AppPhase::ProfileSelect
         };
 
+        let settings = if phase == AppPhase::Running {
+            Settings::load_from(&profile::global_settings_path(&base))
+        } else {
+            Settings::default()
+        };
+
         let mut app = Self {
             rt,
-            settings: Settings::default(),
+            settings,
             zode: None,
             shared: Arc::new(Mutex::new(AppState::default())),
             tab: Tab::Status,
@@ -81,6 +87,25 @@ impl ZodeApp {
         app
     }
 
+    /// Returns the path where settings should be persisted for the current
+    /// session (per-profile if a profile is active, global otherwise).
+    fn settings_file_path(&self) -> std::path::PathBuf {
+        let base = profile::base_dir();
+        if let Some(ref id) = self.active_profile_id {
+            profile::settings_path_for_profile(&base, id)
+        } else {
+            profile::global_settings_path(&base)
+        }
+    }
+
+    /// Persist current settings to disk.
+    pub(crate) fn save_settings(&self) {
+        let path = self.settings_file_path();
+        if let Err(e) = self.settings.save_to(&path) {
+            tracing::warn!("failed to save settings: {e}");
+        }
+    }
+
     fn icon_texture(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
         self.icon_texture
             .get_or_insert_with(|| {
@@ -105,6 +130,9 @@ impl ZodeApp {
                 self.active_profile_id = Some(profile_id.to_string());
                 self.session_password = Some(self.unlock_password.clone());
                 self.unlock_password.clear();
+
+                let settings_path = profile::settings_path_for_profile(&base, profile_id);
+                self.settings = Settings::load_from(&settings_path);
 
                 let shares: Vec<zid::ShamirShare> = plaintext
                     .shares
@@ -313,6 +341,12 @@ impl ZodeApp {
     }
 
     pub fn stop_zode(&mut self) {
+        if let Some(ref zode) = self.zode {
+            let addrs = self.rt.block_on(zode.peer_multiaddrs());
+            self.settings.remember_peers(&addrs);
+        }
+        self.save_settings();
+
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.try_send(());
         }
@@ -351,6 +385,7 @@ impl ZodeApp {
 
     pub(crate) fn lock_session(&mut self) {
         self.stop_zode();
+        self.settings = Settings::default();
         self.unlock_password.clear();
         self.unlock_error = None;
         self.confirm_delete_profile = None;

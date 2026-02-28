@@ -270,6 +270,25 @@ impl Zode {
         &self.keypair_protobuf
     }
 
+    /// Returns connected peers as full multiaddr strings suitable for
+    /// persistence and later bootstrap dialing.
+    pub async fn peer_multiaddrs(&self) -> Vec<String> {
+        let net = self.network.lock().await;
+        net.connected_peers_with_addrs()
+            .into_iter()
+            .flat_map(|(peer, addrs)| {
+                if addrs.is_empty() {
+                    Vec::new()
+                } else {
+                    addrs
+                        .into_iter()
+                        .map(|a| format!("{a}/p2p/{peer}"))
+                        .collect()
+                }
+            })
+            .collect()
+    }
+
     /// The actual data directory (unique per peer ID).
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir

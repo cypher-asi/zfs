@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -23,6 +23,8 @@ pub struct NetworkService {
     max_discovery_dials: usize,
     pending_discovery_dials: usize,
     discovered_peers: HashSet<PeerId>,
+    /// Observed addresses for peers (from connection endpoints and Kademlia).
+    peer_addresses: HashMap<PeerId, Vec<Multiaddr>>,
 }
 
 impl NetworkService {
@@ -75,6 +77,7 @@ impl NetworkService {
             max_discovery_dials,
             pending_discovery_dials: 0,
             discovered_peers: HashSet::new(),
+            peer_addresses: HashMap::new(),
         })
     }
 
@@ -151,6 +154,23 @@ impl NetworkService {
         self.swarm.connected_peers().copied().collect()
     }
 
+    /// Returns connected peers paired with their known addresses.
+    /// Useful for persisting peer info so the node can reconnect on
+    /// next startup without full re-discovery.
+    pub fn connected_peers_with_addrs(&self) -> Vec<(PeerId, Vec<Multiaddr>)> {
+        self.swarm
+            .connected_peers()
+            .map(|peer| {
+                let addrs = self
+                    .peer_addresses
+                    .get(peer)
+                    .cloned()
+                    .unwrap_or_default();
+                (*peer, addrs)
+            })
+            .collect()
+    }
+
     /// Dial a peer at the given multiaddr.
     pub fn dial(&mut self, addr: Multiaddr) -> Result<(), NetworkError> {
         self.swarm
@@ -197,8 +217,12 @@ impl NetworkService {
                     self.pending_discovery_dials -= 1;
                 }
                 debug!(%peer_id, num = %num_established, "connection established");
+                let addr = endpoint.get_remote_address().clone();
+                self.peer_addresses
+                    .entry(peer_id)
+                    .or_default()
+                    .push(addr.clone());
                 if self.kademlia_enabled {
-                    let addr = endpoint.get_remote_address().clone();
                     self.swarm
                         .behaviour_mut()
                         .kademlia
@@ -330,6 +354,12 @@ impl NetworkService {
                 peer, addresses, ..
             } => {
                 let addrs: Vec<Multiaddr> = addresses.iter().cloned().collect();
+                let stored = self.peer_addresses.entry(peer).or_default();
+                for a in &addrs {
+                    if !stored.contains(a) {
+                        stored.push(a.clone());
+                    }
+                }
                 if self.discovered_peers.insert(peer) {
                     self.try_discovery_dial(&peer, &addrs);
                     Some(NetworkEvent::PeerDiscovered {
@@ -365,8 +395,14 @@ impl NetworkService {
         let mut first_new_peer = None;
         for peer in &ok.peers {
             let peer_id = peer.peer_id;
+            let addrs: Vec<Multiaddr> = peer.addrs.clone();
+            let stored = self.peer_addresses.entry(peer_id).or_default();
+            for a in &addrs {
+                if !stored.contains(a) {
+                    stored.push(a.clone());
+                }
+            }
             if self.discovered_peers.insert(peer_id) {
-                let addrs: Vec<Multiaddr> = peer.addrs.clone();
                 self.try_discovery_dial(&peer_id, &addrs);
                 if first_new_peer.is_none() {
                     first_new_peer = Some(NetworkEvent::PeerDiscovered {
