@@ -393,17 +393,21 @@ impl NetworkService {
             SwarmEvent::ListenerClosed {
                 addresses, reason, ..
             } => {
-                let is_relay = addresses.iter().any(|a| {
-                    a.iter()
-                        .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2pCircuit))
-                });
-                if is_relay {
-                    warn!(
-                        ?addresses,
-                        ?reason,
-                        "relay circuit listener closed, clearing active relay listeners"
-                    );
-                    self.active_relay_listeners.clear();
+                for addr in &addresses {
+                    let is_circuit = addr
+                        .iter()
+                        .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2pCircuit));
+                    if is_circuit {
+                        if let Some(relay_peer) = extract_peer_id(addr) {
+                            warn!(
+                                %relay_peer,
+                                %addr,
+                                ?reason,
+                                "relay circuit listener closed"
+                            );
+                            self.active_relay_listeners.remove(&relay_peer);
+                        }
+                    }
                 }
                 None
             }
