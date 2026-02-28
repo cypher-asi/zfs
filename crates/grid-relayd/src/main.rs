@@ -137,6 +137,7 @@ async fn main() -> Result<()> {
 
     let mut relay_external_addrs: Vec<Multiaddr> = Vec::new();
     let mut connected_peer_ids: HashSet<PeerId> = HashSet::new();
+    let mut reserved_peer_ids: HashSet<PeerId> = HashSet::new();
 
     loop {
         match swarm.next().await {
@@ -164,25 +165,10 @@ async fn main() -> Result<()> {
                         .add_address(&peer_id, normalized);
                 }
                 connected_peer_ids.insert(peer_id);
-                for ext_addr in &relay_external_addrs {
-                    let circuit = strip_p2p_suffix(ext_addr)
-                        .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
-                        .with(libp2p::multiaddr::Protocol::P2pCircuit)
-                        .with(libp2p::multiaddr::Protocol::P2p(peer_id));
-                    debug!(
-                        %peer_id,
-                        %circuit,
-                        "registered circuit addr in kademlia"
-                    );
-                    swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .add_address(&peer_id, circuit);
-                }
                 info!(
                     connected_count = connected_peer_ids.len(),
                     external_addrs = relay_external_addrs.len(),
-                    "peer roster updated"
+                    "peer roster updated (circuit addrs deferred until reservation)"
                 );
             }
             Some(SwarmEvent::ConnectionClosed {
@@ -192,10 +178,13 @@ async fn main() -> Result<()> {
             }) => {
                 if num_established == 0 {
                     connected_peer_ids.remove(&peer_id);
+                    let had_reservation = reserved_peer_ids.remove(&peer_id);
                     swarm.behaviour_mut().kademlia.remove_peer(&peer_id);
                     info!(
                         %peer_id,
+                        had_reservation,
                         connected_count = connected_peer_ids.len(),
+                        reserved_count = reserved_peer_ids.len(),
                         "peer fully disconnected, removed from kademlia"
                     );
                 } else {
@@ -231,7 +220,7 @@ async fn main() -> Result<()> {
                         &info.observed_addr,
                         local_peer_id,
                         &mut relay_external_addrs,
-                        &connected_peer_ids,
+                        &reserved_peer_ids,
                     );
                 }
                 RelayBehaviourEvent::Identify(identify::Event::Pushed {
@@ -250,7 +239,7 @@ async fn main() -> Result<()> {
                         &info.observed_addr,
                         local_peer_id,
                         &mut relay_external_addrs,
-                        &connected_peer_ids,
+                        &reserved_peer_ids,
                     );
                 }
                 RelayBehaviourEvent::Identify(ref ev) => {
@@ -260,13 +249,35 @@ async fn main() -> Result<()> {
                     src_peer_id,
                     ..
                 }) => {
-                    info!(%src_peer_id, "relay reservation accepted");
+                    reserved_peer_ids.insert(src_peer_id);
+                    for ext_addr in &relay_external_addrs {
+                        let circuit = strip_p2p_suffix(ext_addr)
+                            .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
+                            .with(libp2p::multiaddr::Protocol::P2pCircuit)
+                            .with(libp2p::multiaddr::Protocol::P2p(src_peer_id));
+                        debug!(
+                            %src_peer_id,
+                            %circuit,
+                            "registered circuit addr in kademlia (reservation accepted)"
+                        );
+                        swarm
+                            .behaviour_mut()
+                            .kademlia
+                            .add_address(&src_peer_id, circuit);
+                    }
+                    info!(
+                        %src_peer_id,
+                        reserved_count = reserved_peer_ids.len(),
+                        "relay reservation accepted, circuit addrs registered"
+                    );
                 }
                 RelayBehaviourEvent::Relay(relay::Event::ReservationReqDenied {
                     src_peer_id,
                     ..
                 }) => {
-                    warn!(%src_peer_id, "relay reservation DENIED");
+                    reserved_peer_ids.remove(&src_peer_id);
+                    swarm.behaviour_mut().kademlia.remove_peer(&src_peer_id);
+                    warn!(%src_peer_id, "relay reservation DENIED, removed from kademlia");
                 }
                 RelayBehaviourEvent::Relay(relay::Event::CircuitReqAccepted {
                     src_peer_id,
@@ -536,7 +547,7 @@ fn ingest_circuit_addrs(
     observed_addr: &Multiaddr,
     local_peer_id: PeerId,
     relay_external_addrs: &mut Vec<Multiaddr>,
-    connected_peer_ids: &HashSet<PeerId>,
+    reserved_peer_ids: &HashSet<PeerId>,
 ) {
     if !is_globally_routable(observed_addr) {
         debug!(
@@ -556,39 +567,41 @@ fn ingest_circuit_addrs(
         relay_external_addrs.push(observed_addr.clone());
     }
 
-    for ext_addr in relay_external_addrs.iter() {
-        let circuit = strip_p2p_suffix(ext_addr)
-            .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
-            .with(libp2p::multiaddr::Protocol::P2pCircuit)
-            .with(libp2p::multiaddr::Protocol::P2p(*peer_id));
-        debug!(
-            %peer_id,
-            %circuit,
-            "adding circuit addr to kademlia for peer"
-        );
-        swarm.behaviour_mut().kademlia.add_address(peer_id, circuit);
+    if reserved_peer_ids.contains(peer_id) {
+        for ext_addr in relay_external_addrs.iter() {
+            let circuit = strip_p2p_suffix(ext_addr)
+                .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
+                .with(libp2p::multiaddr::Protocol::P2pCircuit)
+                .with(libp2p::multiaddr::Protocol::P2p(*peer_id));
+            debug!(
+                %peer_id,
+                %circuit,
+                "adding circuit addr to kademlia for reserved peer"
+            );
+            swarm.behaviour_mut().kademlia.add_address(peer_id, circuit);
+        }
     }
 
     if is_new_ext {
         info!(
             %observed_addr,
-            connected_peers = connected_peer_ids.len(),
-            "backfilling circuit addrs for existing peers under new external addr"
+            reserved_peers = reserved_peer_ids.len(),
+            "backfilling circuit addrs for reserved peers under new external addr"
         );
-        for &existing_peer in connected_peer_ids {
+        for &reserved_peer in reserved_peer_ids {
             let circuit = strip_p2p_suffix(observed_addr)
                 .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
                 .with(libp2p::multiaddr::Protocol::P2pCircuit)
-                .with(libp2p::multiaddr::Protocol::P2p(existing_peer));
+                .with(libp2p::multiaddr::Protocol::P2p(reserved_peer));
             debug!(
-                %existing_peer,
+                %reserved_peer,
                 %circuit,
                 "backfill: adding circuit addr to kademlia"
             );
             swarm
                 .behaviour_mut()
                 .kademlia
-                .add_address(&existing_peer, circuit);
+                .add_address(&reserved_peer, circuit);
         }
     }
 }
