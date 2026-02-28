@@ -245,9 +245,9 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
     let Some(ref status) = state.status else {
         egui::Frame::default()
             .fill(colors::SURFACE)
-            .rounding(0.0)
+            .corner_radius(0.0)
             .inner_margin(0.0)
-            .outer_margin(egui::Margin::symmetric(1.0, 0.0))
+            .outer_margin(egui::Margin::symmetric(1, 0))
             .stroke(egui::Stroke::new(1.0, colors::BORDER))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -263,10 +263,10 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
             egui::Frame::default()
                 .fill(egui::Color32::BLACK)
                 .inner_margin(egui::Margin {
-                    left: 1.0,
-                    right: 1.0,
-                    top: 8.0,
-                    bottom: 0.0,
+                    left: 1,
+                    right: 1,
+                    top: 8,
+                    bottom: 0,
                 }),
         )
         .show_inside(ui, |ui| {
@@ -278,9 +278,9 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
 
     egui::Frame::default()
         .fill(colors::SURFACE)
-        .rounding(0.0)
+        .corner_radius(0.0)
         .inner_margin(0.0)
-        .outer_margin(egui::Margin::symmetric(1.0, 0.0))
+        .outer_margin(egui::Margin::symmetric(1, 0))
         .stroke(egui::Stroke::new(1.0, colors::BORDER))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());

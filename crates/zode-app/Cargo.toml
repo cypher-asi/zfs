@@ -20,10 +20,10 @@ grid-sdk = { path = "../grid-sdk" }
 grid-proof-groth16 = { path = "../grid-proof-groth16" }
 zid = { path = "../../../zid", features = ["testkit"] }
 rand = "0.8"
-eframe = "0.30"
-egui_extras = { version = "0.30", features = ["image"] }
+eframe = "0.33"
+egui_extras = { version = "0.33", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-egui-phosphor = "0.8"
+egui-phosphor = "0.11"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

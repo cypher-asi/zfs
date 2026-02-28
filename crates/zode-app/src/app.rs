@@ -409,7 +409,7 @@ impl ZodeApp {
 
     fn handle_resize_edges(ctx: &egui::Context) -> bool {
         const BORDER: f32 = 6.0;
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else {
             return false;
         };
@@ -476,7 +476,7 @@ impl ZodeApp {
             .frame(
                 egui::Frame::default()
                     .fill(egui::Color32::BLACK)
-                    .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                    .inner_margin(egui::Margin::symmetric(12, 8))
                     .stroke(egui::Stroke::NONE),
             )
             .show(ctx, |ui| {
@@ -517,7 +517,7 @@ impl ZodeApp {
         ui.add(
             egui::Image::new(&tex)
                 .fit_to_exact_size(egui::vec2(20.0, 20.0))
-                .rounding(3.0),
+                .corner_radius(3.0),
         );
         ui.add_space(4.0);
         ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
@@ -623,7 +623,7 @@ impl ZodeApp {
             .frame(
                 egui::Frame::default()
                     .fill(egui::Color32::BLACK)
-                    .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                    .inner_margin(egui::Margin::symmetric(12, 8))
                     .stroke(egui::Stroke::NONE),
             )
             .show(ctx, |ui| {
@@ -652,7 +652,7 @@ impl ZodeApp {
                     ui.add(
                         egui::Image::new(&tex)
                             .fit_to_exact_size(egui::vec2(20.0, 20.0))
-                            .rounding(3.0),
+                            .corner_radius(3.0),
                     );
                     ui.add_space(4.0);
                     ui.label(
@@ -731,9 +731,10 @@ impl ZodeApp {
                 egui::Id::new("window_border"),
             ));
             fg.rect_stroke(
-                ctx.screen_rect(),
+                ctx.viewport_rect(),
                 0.0,
                 egui::Stroke::new(1.0, crate::components::colors::BORDER),
+                egui::StrokeKind::Outside,
             );
         }
     }
@@ -805,7 +806,7 @@ impl ZodeApp {
         }
 
         let eased = ease_out_cubic(progress);
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         let center_x = screen.center().x;
         let half_w = screen.width() / 2.0;
         let offset = half_w * eased;
@@ -893,7 +894,7 @@ impl ZodeApp {
                 ui.add(
                     egui::Image::new(&tex)
                         .fit_to_exact_size(egui::vec2(56.0, 56.0))
-                        .rounding(8.0),
+                        .corner_radius(8.0),
                 );
                 ui.add_space(16.0);
 
@@ -964,7 +965,7 @@ impl ZodeApp {
                 ui.add(
                     egui::Image::new(&tex)
                         .fit_to_exact_size(egui::vec2(56.0, 56.0))
-                        .rounding(8.0),
+                        .corner_radius(8.0),
                 );
 
                 ui.add_space(16.0);
@@ -982,7 +983,7 @@ impl ZodeApp {
                         .password(true)
                         .desired_width(280.0)
                         .hint_text("Enter your password")
-                        .margin(egui::Margin::symmetric(8.0, 6.0)),
+                        .margin(egui::Margin::symmetric(8, 6)),
                 );
                 if self.unlock_password.is_empty() && !resp.has_focus() {
                     resp.request_focus();
@@ -1042,7 +1043,7 @@ impl ZodeApp {
                     egui::pos2(rect.left(), rect.bottom() - 28.0),
                     egui::vec2(rect.width(), 20.0),
                 );
-                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(err_rect), |ui| {
+                ui.scope_builder(egui::UiBuilder::new().max_rect(err_rect), |ui| {
                     ui.vertical_centered(|ui| {
                         ui.colored_label(crate::components::colors::ERROR, err);
                     });

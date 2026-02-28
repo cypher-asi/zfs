@@ -17,8 +17,8 @@ grid-programs-interlink = { path = "../grid-programs/interlink" }
 grid-net = { path = "../grid-net" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 clap = { version = "4", features = ["derive"] }
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"

@@ -242,6 +242,7 @@ impl NetworkVisualization {
             panel_rect,
             4.0,
             egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 55)),
+            egui::StrokeKind::Outside,
         );
 
         for (i, line) in lines.iter().enumerate() {
@@ -275,8 +276,8 @@ impl NetworkVisualization {
                 ui.horizontal(|ui| {
                     egui::Frame::default()
                         .fill(egui::Color32::from_rgba_unmultiplied(10, 10, 12, 200))
-                        .rounding(6.0)
-                        .inner_margin(egui::Margin::symmetric(12.0, 6.0))
+                        .corner_radius(6.0)
+                        .inner_margin(egui::Margin::symmetric(12, 6))
                         .show(ui, |ui| {
                             crate::components::section_heading(
                                 ui,
@@ -290,8 +291,8 @@ impl NetworkVisualization {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         egui::Frame::default()
                             .fill(egui::Color32::from_rgba_unmultiplied(10, 10, 12, 200))
-                            .rounding(6.0)
-                            .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                            .corner_radius(6.0)
+                            .inner_margin(egui::Margin::symmetric(6, 4))
                             .show(ui, |ui| {
                                 if crate::components::icon_button(
                                     ui,

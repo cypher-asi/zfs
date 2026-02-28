@@ -264,7 +264,7 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
             for mk in &app.identity_state.machine_keys {
                 egui::Frame::default()
                     .fill(egui::Color32::from_rgb(20, 20, 22))
-                    .rounding(0.0)
+                    .corner_radius(0.0)
                     .inner_margin(8.0)
                     .stroke(egui::Stroke::new(1.0, crate::components::colors::BORDER))
                     .show(ui, |ui| {

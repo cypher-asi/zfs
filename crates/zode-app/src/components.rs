@@ -23,7 +23,7 @@ pub(crate) mod colors {
 pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::default()
         .fill(colors::SURFACE)
-        .rounding(0.0)
+        .corner_radius(0.0)
         .inner_margin(16.0)
         .stroke(egui::Stroke::new(1.0, colors::BORDER))
         .show(ui, |ui| {
@@ -57,7 +57,7 @@ pub(crate) fn action_panel(
         .frame(
             egui::Frame::default()
                 .fill(colors::SURFACE_DIM)
-                .inner_margin(egui::Margin::symmetric(16.0, 12.0))
+                .inner_margin(egui::Margin::symmetric(16, 12))
                 .stroke(egui::Stroke::new(1.0, colors::BORDER)),
         )
         .show_inside(ui, |ui| {
@@ -107,7 +107,7 @@ pub(crate) const WIDGET_HEIGHT: f32 = 24.0;
 pub(crate) fn text_input(buf: &mut String, width: f32) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(buf)
         .desired_width(width)
-        .margin(egui::Margin::symmetric(4.0, 0.0))
+        .margin(egui::Margin::symmetric(4, 0))
         .vertical_align(egui::Align::Center)
         .min_size(egui::vec2(0.0, WIDGET_HEIGHT))
 }
@@ -123,7 +123,7 @@ fn styled_button(ui: &mut egui::Ui, label: &str, padding: egui::Vec2, font_size:
         )
         .fill(egui::Color32::BLACK)
         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 60)))
-        .rounding(0.0)
+        .corner_radius(0.0)
         .min_size(egui::vec2(0.0, WIDGET_HEIGHT)),
     );
     ui.spacing_mut().button_padding = old_padding;
@@ -144,20 +144,20 @@ pub(crate) fn action_button(ui: &mut egui::Ui, label: &str) -> bool {
 pub(crate) fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egui::Response {
     let font_id = egui::FontId::proportional(16.0);
     let galley =
-        ui.fonts(|f| f.layout_no_wrap(icon.to_string(), font_id, egui::Color32::PLACEHOLDER));
+        ui.fonts_mut(|f| f.layout_no_wrap(icon.to_string(), font_id, egui::Color32::PLACEHOLDER));
     let bp = ui.spacing().button_padding;
     let desired = egui::vec2(galley.size().x + bp.x * 2.0, ui.spacing().interact_size.y);
     let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click());
     let vis = ui.style().interact_selectable(&resp, active);
     if !active && resp.hovered() {
-        ui.painter().rect_filled(rect, vis.rounding, vis.bg_fill);
+        ui.painter().rect_filled(rect, vis.corner_radius, vis.bg_fill);
     }
     let text_color = if active {
         egui::Color32::WHITE
     } else {
         vis.text_color()
     };
-    let galley = ui.fonts(|f| {
+    let galley = ui.fonts_mut(|f| {
         f.layout_no_wrap(
             icon.to_string(),
             egui::FontId::proportional(16.0),
@@ -235,7 +235,7 @@ fn square_icon_button(ui: &mut egui::Ui, icon: &str) -> bool {
         )
         .fill(egui::Color32::BLACK)
         .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 60)))
-        .rounding(0.0)
+        .corner_radius(0.0)
         .min_size(size),
     )
     .clicked()

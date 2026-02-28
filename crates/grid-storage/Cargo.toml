@@ -6,7 +6,7 @@ description = "Grid storage abstraction over RocksDB with BlockStore, HeadStore,
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-rocksdb = "0.22"
+rocksdb = "0.24"
 grid-core = { path = "../grid-core" }
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
