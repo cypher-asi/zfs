@@ -1,0 +1,29 @@
+[package]
+name = "grid-relayd"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone relay service for The Grid"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "grid-relayd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+libp2p = { version = "0.56", features = [
+    "macros",
+    "tokio",
+    "quic",
+    "tcp",
+    "relay",
+    "noise",
+    "yamux",
+    "identify",
+    "ping",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

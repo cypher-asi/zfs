@@ -12,6 +12,7 @@ members = [
   "crates/grid-sdk",
   "crates/zode-cli",
   "crates/zode-app",
+  "crates/grid-relayd",
   "crates/grid-programs/zid",
   "crates/grid-programs/interlink",
   "crates/grid-programs/zfs",
