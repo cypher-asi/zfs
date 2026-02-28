@@ -44,7 +44,7 @@ impl ZodeApp {
         let profiles = profile::list_profiles(&base);
 
         let phase = if profiles.is_empty() {
-            AppPhase::Running
+            AppPhase::Setup
         } else if profiles.len() == 1 {
             AppPhase::Unlock {
                 profile_id: profiles[0].id.clone(),
@@ -53,13 +53,9 @@ impl ZodeApp {
             AppPhase::ProfileSelect
         };
 
-        let settings = if phase == AppPhase::Running {
-            Settings::load_from(&profile::global_settings_path(&base))
-        } else {
-            Settings::default()
-        };
+        let settings = Settings::default();
 
-        let mut app = Self {
+        let app = Self {
             rt,
             settings,
             zode: None,
@@ -87,9 +83,6 @@ impl ZodeApp {
             session_password: None,
         };
 
-        if phase == AppPhase::Running {
-            app.boot_zode();
-        }
         app
     }
 
@@ -155,7 +148,7 @@ impl ZodeApp {
         }
     }
 
-    fn icon_texture(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
+    pub(crate) fn icon_texture(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
         self.icon_texture
             .get_or_insert_with(|| {
                 let png = include_bytes!("../assets/icon.png");
@@ -492,8 +485,8 @@ impl ZodeApp {
         self.unlock_error = None;
 
         self.phase = if self.profiles.is_empty() {
-            self.boot_zode();
-            AppPhase::Running
+            self.identity_state = Default::default();
+            AppPhase::Setup
         } else if self.profiles.len() == 1 {
             AppPhase::Unlock {
                 profile_id: self.profiles[0].id.clone(),
@@ -517,7 +510,10 @@ impl ZodeApp {
             std::sync::Arc::new(tokio::sync::Mutex::new(crate::state::AppState::default()));
         self.tab = Tab::Status;
 
-        self.phase = if self.profiles.len() > 1 {
+        self.phase = if self.profiles.is_empty() {
+            self.identity_state = Default::default();
+            AppPhase::Setup
+        } else if self.profiles.len() > 1 {
             AppPhase::ProfileSelect
         } else {
             AppPhase::Unlock {
@@ -872,6 +868,13 @@ impl eframe::App for ZodeApp {
         };
 
         match self.phase.clone() {
+            AppPhase::Setup => {
+                self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
+                self.render_setup_screen(ctx);
+                Self::render_window_border(ctx, maximized);
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                return;
+            }
             AppPhase::ProfileSelect => {
                 self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
                 self.render_profile_select(ctx);
@@ -1042,22 +1045,6 @@ impl ZodeApp {
                     ui.add_space(4.0);
                 }
 
-                ui.add_space(16.0);
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Skip")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(100, 100, 108)),
-                        )
-                        .frame(false),
-                    )
-                    .clicked()
-                {
-                    self.boot_zode();
-                    self.phase = AppPhase::Revealing;
-                    self.reveal_start = None;
-                }
             });
         });
     }
@@ -1141,23 +1128,6 @@ impl ZodeApp {
                     ui.add_space(4.0);
                 }
 
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Skip")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(100, 100, 108)),
-                        )
-                        .frame(false),
-                    )
-                    .clicked()
-                {
-                    self.unlock_password.clear();
-                    self.unlock_error = None;
-                    self.boot_zode();
-                    self.phase = AppPhase::Revealing;
-                    self.reveal_start = None;
-                }
             });
 
             if let Some(ref err) = self.unlock_error {

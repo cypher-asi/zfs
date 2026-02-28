@@ -10,6 +10,7 @@ mod profile;
 mod render;
 mod render_storage;
 mod settings;
+mod setup;
 mod state;
 mod vault;
 mod visualization;

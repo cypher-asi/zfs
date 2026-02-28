@@ -54,6 +54,7 @@ pub(crate) enum Tab {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AppPhase {
+    Setup,
     ProfileSelect,
     Unlock { profile_id: String },
     Revealing,
@@ -76,6 +77,8 @@ pub(crate) struct IdentityState {
     pub save_password: String,
     pub save_profile_name: String,
     pub save_status: Option<String>,
+    pub setup_step: u8,
+    pub setup_password_confirm: String,
 }
 
 impl Default for IdentityState {
@@ -96,6 +99,8 @@ impl Default for IdentityState {
             save_password: String::new(),
             save_profile_name: String::from("Default"),
             save_status: None,
+            setup_step: 0,
+            setup_password_confirm: String::new(),
         }
     }
 }

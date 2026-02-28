@@ -61,7 +61,7 @@ fn render_no_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
-fn generate_new_identity(app: &mut ZodeApp) {
+pub(crate) fn generate_new_identity(app: &mut ZodeApp) {
     let mut rng = rand::thread_rng();
     let mut identity_id = [0u8; 16];
     rand::RngCore::fill_bytes(&mut rng, &mut identity_id);
@@ -193,7 +193,7 @@ fn render_recovery(app: &mut ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
-fn attempt_recovery(app: &mut ZodeApp) {
+pub(crate) fn attempt_recovery(app: &mut ZodeApp) {
     let parsed: Result<Vec<ShamirShare>, _> = app
         .identity_state
         .recovery_inputs
