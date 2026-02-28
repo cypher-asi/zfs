@@ -180,7 +180,7 @@ fn render_program_list(frame: &mut Frame, app: &mut App, area: Rect) {
 fn render_peers(frame: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Connected Peers ");
+        .title(" Connected Zodes ");
 
     let Some(ref status) = app.status else {
         frame.render_widget(Paragraph::new("Loading...").block(block), area);
@@ -207,7 +207,7 @@ fn render_peers(frame: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Peer discovery via GossipSub / bootstrap peers / Kademlia DHT.",
+        "Zode discovery via GossipSub / bootstrap peers / Kademlia DHT.",
         Style::default().fg(Color::DarkGray),
     )));
 

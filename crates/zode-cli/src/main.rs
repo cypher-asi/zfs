@@ -53,7 +53,7 @@ struct Cli {
     #[arg(long)]
     topic: Vec<String>,
 
-    /// Disable Kademlia DHT automatic peer discovery.
+    /// Disable Kademlia DHT automatic zode discovery.
     #[arg(long)]
     no_kademlia: bool,
 

@@ -147,7 +147,7 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "Discovery", |ui| {
         hint_label(
             ui,
-            "Automatic peer discovery via Kademlia DHT. Nodes find each other transitively.",
+            "Automatic zode discovery via Kademlia DHT. Nodes find each other transitively.",
         );
         ui.add_space(8.0);
         ui.checkbox(&mut app.settings.enable_kademlia, "Enable DHT Discovery");
@@ -156,7 +156,7 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui.indent("kad_settings", |ui| {
                 ui.checkbox(
                     &mut app.settings.kademlia_server_mode,
-                    "Server mode (respond to DHT queries from other peers)",
+                    "Server mode (respond to DHT queries from other zodes)",
                 );
                 ui.horizontal(|ui| {
                     field_label(ui, "Random walk interval (seconds)");
@@ -416,7 +416,7 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
         return;
     };
 
-    section(ui, "Connected Peers", |ui| {
+    section(ui, "Connected Zodes", |ui| {
         ui.set_min_height(ui.available_height());
         info_grid(ui, "peer_info", |ui| {
             kv_row(ui, "Local ZODE", &status.zode_id);
@@ -426,7 +426,7 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
         ui.add_space(4.0);
         hint_label(
             ui,
-            "Peer discovery via GossipSub / bootstrap peers / Kademlia DHT.",
+            "Zode discovery via GossipSub / bootstrap peers / Kademlia DHT.",
         );
         ui.add_space(8.0);
 

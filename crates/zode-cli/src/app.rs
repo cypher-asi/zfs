@@ -28,7 +28,7 @@ impl Screen {
         match self {
             Screen::Status => "Status",
             Screen::Traverse => "Traverse",
-            Screen::Peers => "Peers",
+            Screen::Peers => "Zodes",
             Screen::Log => "Log",
             Screen::Info => "Info",
         }
