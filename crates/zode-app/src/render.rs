@@ -61,9 +61,9 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
 fn render_settings_general(app: &mut ZodeApp, ui: &mut egui::Ui, running: bool) {
     section(ui, "General", |ui| {
         let msg = if running {
-            "The Zode is running. Edit settings below and click Restart to apply."
+            "The ZODE is running. Edit settings below and click Restart to apply."
         } else {
-            "The Zode is stopped. Edit settings and click Start."
+            "The ZODE is stopped. Edit settings and click Start."
         };
         hint_label(ui, msg);
         ui.add_space(8.0);
@@ -86,7 +86,7 @@ fn render_bootstrap_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "Bootstrap Peers", |ui| {
         hint_label(
             ui,
-            "Multiaddrs of other Zode nodes to connect to on startup.",
+            "Multiaddrs of other ZODE nodes to connect to on startup.",
         );
         ui.add_space(8.0);
         editable_list(
@@ -120,7 +120,7 @@ fn render_default_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "Default Programs", |ui| {
         hint_label(
             ui,
-            "Standard programs the Zode subscribes to. Toggle off to skip.",
+            "Standard programs the ZODE subscribes to. Toggle off to skip.",
         );
         ui.add_space(8.0);
         ui.checkbox(&mut app.settings.enable_zid, "ZID (Zero Identity)");
@@ -275,9 +275,9 @@ fn render_zode_status(ui: &mut egui::Ui, status: &zode::ZodeStatus, state: &Stat
         .as_ref()
         .map(|listen| format!("{listen}/p2p/{}", status.zode_id));
 
-    section(ui, "Zode", |ui| {
+    section(ui, "ZODE", |ui| {
         info_grid(ui, "status_grid", |ui| {
-            kv_row_copyable(ui, "Zode ID", &status.zode_id);
+            kv_row_copyable(ui, "ZODE ID", &status.zode_id);
 
             field_label(ui, "Address");
             ui.horizontal(|ui| {
@@ -384,7 +384,7 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
     section(ui, "Connected Peers", |ui| {
         ui.set_min_height(ui.available_height());
         info_grid(ui, "peer_info", |ui| {
-            kv_row(ui, "Local Zode", &status.zode_id);
+            kv_row(ui, "Local ZODE", &status.zode_id);
             kv_row(ui, "Connected", &format!("{}", status.peer_count));
         });
 
@@ -396,7 +396,7 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
         ui.add_space(8.0);
 
         if status.connected_peers.is_empty() {
-            muted_label(ui, "No connected Zodes.");
+            muted_label(ui, "No connected ZODEs.");
         } else {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
@@ -467,9 +467,9 @@ pub(crate) fn render_info(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapsh
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
         .show(ui, |ui| {
-            section(ui, "Zode Info", |ui| {
+            section(ui, "ZODE Info", |ui| {
                 info_grid(ui, "info_grid", |ui| {
-                    kv_row(ui, "Zode ID", &status.zode_id);
+                    kv_row(ui, "ZODE ID", &status.zode_id);
                     kv_row(ui, "DB Size", &format_bytes(status.metrics.db_size_bytes));
                     kv_row(
                         ui,

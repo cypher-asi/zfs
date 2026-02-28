@@ -21,11 +21,11 @@ use zode::{DefaultProgramsConfig, RpcConfig, Zode, ZodeConfig};
 
 use crate::app::{App, Screen};
 
-/// Zode CLI — console-only Zode with TUI.
+/// ZODE CLI — console-only ZODE with TUI.
 #[derive(Parser, Debug)]
 #[command(name = "zode-cli", version, about)]
 struct Cli {
-    /// Path to the Zode configuration file (TOML).
+    /// Path to the ZODE configuration file (TOML).
     #[arg(short, long, value_name = "FILE")]
     config: Option<PathBuf>,
 
@@ -65,7 +65,7 @@ struct Cli {
     #[arg(long)]
     relay: Vec<String>,
 
-    /// Kademlia mode: "server" (default, for Zodes) or "client" (for SDK clients).
+    /// Kademlia mode: "server" (default, for ZODEs) or "client" (for SDK clients).
     #[arg(long, default_value = "server")]
     kademlia_mode: String,
 
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
         .init();
 
     let config = build_config(&cli)?;
-    let zode = Zode::start(config).await.context("failed to start Zode")?;
+    let zode = Zode::start(config).await.context("failed to start ZODE")?;
 
     let result = run_tui(&zode).await;
 

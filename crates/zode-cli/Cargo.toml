@@ -2,7 +2,7 @@
 name = "zode-cli"
 version = "0.2.0"
 edition = "2021"
-description = "Zode CLI/TUI — console interface for the Zode"
+description = "ZODE CLI/TUI — console interface for the ZODE"
 
 [[bin]]
 name = "zode-cli"

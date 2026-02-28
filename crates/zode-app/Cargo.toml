@@ -2,7 +2,7 @@
 name = "zode-app"
 version = "0.2.0"
 edition = "2021"
-description = "Zode App — standalone desktop GUI for the Zode"
+description = "ZODE App — standalone desktop GUI for the ZODE"
 
 [[bin]]
 name = "zode-app"

@@ -37,7 +37,7 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(" Zode CLI "))
+        .block(Block::default().borders(Borders::ALL).title(" ZODE CLI "))
         .select(app.screen.index())
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
@@ -81,7 +81,7 @@ fn render_status(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn build_zode_lines(status: &zode::ZodeStatus) -> Vec<Line<'static>> {
     vec![
-        kv_line_owned("Zode ID:  ", status.zode_id.clone()),
+        kv_line_owned("ZODE ID:  ", status.zode_id.clone()),
         kv_line_owned("Peers:    ", format!("{}", status.peer_count)),
         Line::from(""),
         kv_line_owned("Programs: ", format!("{}", status.topics.len())),
@@ -188,14 +188,14 @@ fn render_peers(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let mut lines = vec![
-        kv_line_owned("Local Zode: ", status.zode_id.clone()),
+        kv_line_owned("Local ZODE: ", status.zode_id.clone()),
         kv_line_owned("Connected:  ", format!("{}", status.peer_count)),
         Line::from(""),
     ];
 
     if status.connected_peers.is_empty() {
         lines.push(Line::from(Span::styled(
-            "  No connected Zodes.",
+            "  No connected ZODEs.",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
@@ -241,7 +241,7 @@ fn render_log(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
-    let block = Block::default().borders(Borders::ALL).title(" Zode Info ");
+    let block = Block::default().borders(Borders::ALL).title(" ZODE Info ");
 
     let Some(ref status) = app.status else {
         frame.render_widget(Paragraph::new("Loading...").block(block), area);
@@ -249,7 +249,7 @@ fn render_info(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let mut lines = vec![
-        kv_line_owned("Zode ID:        ", status.zode_id.clone()),
+        kv_line_owned("ZODE ID:        ", status.zode_id.clone()),
         kv_line_owned(
             "DB Size:        ",
             format_bytes(status.metrics.db_size_bytes),

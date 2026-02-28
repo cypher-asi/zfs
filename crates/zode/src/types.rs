@@ -2,13 +2,15 @@ use std::fmt;
 
 use crate::metrics::MetricsSnapshot;
 
-/// Produce a short display form of a Zode ID, stripping the common
-/// `Zx12D3KooW` multicodec prefix shared by all libp2p PeerIds.
+/// Produce a short display form of a Zode ID showing the last 6
+/// characters of the unique portion (after the common `Zx12D3KooW`
+/// multicodec prefix shared by all libp2p PeerIds).
 fn short_zode_id(id: &str) -> String {
     const PREFIX: &str = "Zx12D3KooW";
     if id.starts_with(PREFIX) {
         let unique = &id[PREFIX.len()..];
-        format!("Zx..{}", &unique[..6.min(unique.len())])
+        let n = 6.min(unique.len());
+        format!("Zx..{}", &unique[unique.len() - n..])
     } else if id.len() > 10 {
         format!("{}..{}", &id[..4], &id[id.len() - 6..])
     } else {
@@ -124,7 +126,7 @@ impl fmt::Display for LogEvent {
                 let status = if *success { "OK" } else { "ERR" };
                 write!(f, "[RPC] {method} {status}")
             }
-            Self::ShuttingDown => write!(f, "[SHUTDOWN] Zode shutting down"),
+            Self::ShuttingDown => write!(f, "[SHUTDOWN] ZODE shutting down"),
         }
     }
 }

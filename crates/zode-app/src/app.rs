@@ -664,7 +664,7 @@ impl ZodeApp {
                         ui.add_space((rect.height() / 2.0 - 25.0).max(0.0));
                         ui.spinner();
                         ui.add_space(4.0);
-                        ui.label("Zode is stopped. Go to Settings to start.");
+                        ui.label("ZODE is stopped. Go to Settings to start.");
                     });
                     return;
                 }

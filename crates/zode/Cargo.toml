@@ -2,7 +2,7 @@
 name = "zode"
 version = "0.2.0"
 edition = "2021"
-description = "Zode — ties together storage, network, proof, and programs"
+description = "ZODE — ties together storage, network, proof, and programs"
 
 [dependencies]
 grid-core = { path = "../grid-core" }

@@ -130,7 +130,7 @@ impl ZodeApp {
     pub(crate) fn send_message(&mut self) {
         let Some(ref zode) = self.zode else {
             if let Some(ref mut il) = self.interlink_state {
-                il.error = Some("Zode is not running".into());
+                il.error = Some("ZODE is not running".into());
             }
             return;
         };
@@ -438,8 +438,13 @@ fn drain_interlink_updates(app: &mut ZodeApp) {
 }
 
 fn short_sender(did: &str) -> String {
-    if did.len() > 6 {
-        format!("...{}", &did[did.len() - 6..])
+    const COMMON_PREFIX: &str = "Zx12D3KooW";
+    if did.starts_with(COMMON_PREFIX) {
+        let unique = &did[COMMON_PREFIX.len()..];
+        let n = 6.min(unique.len());
+        format!("Zx..{}", &unique[unique.len() - n..])
+    } else if did.len() > 10 {
+        format!("{}..{}", &did[..4], &did[did.len() - 6..])
     } else {
         did.to_string()
     }

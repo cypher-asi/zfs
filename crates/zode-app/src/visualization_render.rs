@@ -6,15 +6,17 @@ use crate::visualization::{color_of, radius_of, Camera, GraphNode, NetworkVisual
 ///
 /// Raw libp2p PeerIds share a common `"12D3KooW"` multicodec prefix, so
 /// the formatted `"Zx12D3KooW…"` string only becomes unique after 10
-/// characters.  We skip that prefix and show `"Zx..<unique>"` instead.
+/// characters.  We skip that prefix and show the last N unique chars.
 fn short_zid(id: &str, unique_chars: usize) -> String {
     const COMMON_PREFIX: &str = "Zx12D3KooW";
     if id.starts_with(COMMON_PREFIX) {
         let unique = &id[COMMON_PREFIX.len()..];
-        let tail = &unique[..unique_chars.min(unique.len())];
-        format!("Zx..{tail}")
+        let n = unique_chars.min(unique.len());
+        format!("Zx..{}", &unique[unique.len() - n..])
+    } else if id.len() > unique_chars + 4 {
+        format!("{}..{}", &id[..4], &id[id.len() - unique_chars..])
     } else {
-        id[..(unique_chars + 4).min(id.len())].to_string()
+        id.to_string()
     }
 }
 
