@@ -343,6 +343,9 @@ impl NetworkService {
     }
 
     /// Try to auto-dial a newly discovered peer (respects concurrency limit).
+    ///
+    /// Always dials by `PeerId` so libp2p tries all known addresses
+    /// (direct, relay circuit, etc.) rather than just the first one.
     fn try_discovery_dial(&mut self, peer_id: &PeerId, addrs: &[Multiaddr]) {
         if self.swarm.is_connected(peer_id) {
             return;
@@ -355,15 +358,15 @@ impl NetworkService {
             return;
         }
 
-        let dial_result = if let Some(addr) = addrs.first() {
-            debug!(%peer_id, %addr, "auto-dialing discovered peer");
-            self.swarm.dial(addr.clone())
-        } else {
-            debug!(%peer_id, "auto-dialing discovered peer by peer_id");
-            self.swarm.dial(*peer_id)
-        };
+        for addr in addrs {
+            self.swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(peer_id, addr.clone());
+        }
 
-        match dial_result {
+        debug!(%peer_id, num_addrs = addrs.len(), "auto-dialing discovered peer");
+        match self.swarm.dial(*peer_id) {
             Ok(()) => {
                 self.pending_discovery_dials += 1;
             }
