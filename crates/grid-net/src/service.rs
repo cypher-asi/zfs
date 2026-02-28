@@ -25,11 +25,12 @@ pub struct NetworkService {
     discovered_peers: HashSet<PeerId>,
     /// Observed addresses for peers (from connection endpoints and Kademlia).
     peer_addresses: HashMap<PeerId, Vec<Multiaddr>>,
-    /// Relay multiaddrs the zode should listen on via p2p-circuit once
-    /// the underlying connection to the relay is established.
-    pending_relay_listeners: Vec<Multiaddr>,
+    /// Raw relay transport addresses (without /p2p/ or /p2p-circuit), used
+    /// to recognise when a newly-established connection is to a relay so we
+    /// can start a circuit listener on it.
+    relay_transport_addrs: Vec<Multiaddr>,
     /// Relay circuit addresses we have already started listening on.
-    active_relay_listeners: HashSet<Multiaddr>,
+    active_relay_listeners: HashSet<PeerId>,
 }
 
 impl NetworkService {
@@ -61,13 +62,10 @@ impl NetworkService {
 
         dial_bootstrap_peers(&mut swarm, &config.bootstrap_peers, kademlia_enabled)?;
 
-        let mut pending_relay_listeners = Vec::new();
+        let mut relay_transport_addrs = Vec::new();
         if relay_enabled {
             for relay_addr in &config.relay.relay_peers {
-                let circuit_addr = relay_addr
-                    .clone()
-                    .with(libp2p::multiaddr::Protocol::P2pCircuit);
-                pending_relay_listeners.push(circuit_addr);
+                relay_transport_addrs.push(strip_p2p(relay_addr));
             }
             dial_relay_peers(&mut swarm, &config.relay.relay_peers, kademlia_enabled);
             debug!(
@@ -91,7 +89,7 @@ impl NetworkService {
             pending_discovery_dials: 0,
             discovered_peers: HashSet::new(),
             peer_addresses: HashMap::new(),
-            pending_relay_listeners,
+            relay_transport_addrs,
             active_relay_listeners: HashSet::new(),
         })
     }
@@ -251,10 +249,10 @@ impl NetworkService {
                     self.swarm
                         .behaviour_mut()
                         .kademlia
-                        .add_address(&peer_id, addr);
+                        .add_address(&peer_id, addr.clone());
                 }
 
-                self.try_start_relay_listeners(&peer_id);
+                self.try_start_relay_listeners(&peer_id, &addr);
 
                 (num_established.get() == 1).then(|| NetworkEvent::PeerConnected(peer_id))
             }
@@ -279,31 +277,32 @@ impl NetworkService {
 
     /// When we connect to a relay peer, start listening on its circuit address
     /// so other zodes can reach us through the relay.
-    fn try_start_relay_listeners(&mut self, connected_peer: &PeerId) {
-        let to_listen: Vec<Multiaddr> = self
-            .pending_relay_listeners
-            .iter()
-            .filter(|addr| {
-                addr.iter().any(|proto| match proto {
-                    libp2p::multiaddr::Protocol::P2p(pid) => pid == *connected_peer,
-                    _ => false,
-                })
-            })
-            .cloned()
-            .collect();
+    fn try_start_relay_listeners(&mut self, connected_peer: &PeerId, remote_addr: &Multiaddr) {
+        if self.active_relay_listeners.contains(connected_peer) {
+            return;
+        }
 
-        for circuit_addr in to_listen {
-            if self.active_relay_listeners.contains(&circuit_addr) {
-                continue;
+        let remote_transport = strip_p2p(remote_addr);
+        let is_relay = self
+            .relay_transport_addrs
+            .iter()
+            .any(|ra| *ra == remote_transport);
+
+        if !is_relay {
+            return;
+        }
+
+        let circuit_addr = remote_transport
+            .with(libp2p::multiaddr::Protocol::P2p(*connected_peer))
+            .with(libp2p::multiaddr::Protocol::P2pCircuit);
+
+        match self.swarm.listen_on(circuit_addr.clone()) {
+            Ok(_) => {
+                info!(%circuit_addr, "listening via relay circuit");
+                self.active_relay_listeners.insert(*connected_peer);
             }
-            match self.swarm.listen_on(circuit_addr.clone()) {
-                Ok(_) => {
-                    info!(%circuit_addr, "listening via relay circuit");
-                    self.active_relay_listeners.insert(circuit_addr.clone());
-                }
-                Err(e) => {
-                    warn!(%circuit_addr, error = %e, "failed to listen on relay circuit");
-                }
+            Err(e) => {
+                warn!(%circuit_addr, error = %e, "failed to listen on relay circuit");
             }
         }
     }
@@ -529,4 +528,13 @@ impl NetworkService {
         }
         first_new_peer
     }
+}
+
+/// Strip any trailing `/p2p/<peer_id>` component from a multiaddr so only
+/// the transport portion remains. Used to compare relay addresses regardless
+/// of whether they were configured with or without an explicit peer ID.
+fn strip_p2p(addr: &Multiaddr) -> Multiaddr {
+    addr.iter()
+        .filter(|p| !matches!(p, libp2p::multiaddr::Protocol::P2p(_)))
+        .collect()
 }

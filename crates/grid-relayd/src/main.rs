@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -11,9 +12,11 @@ use tracing::{debug, info, warn};
 
 const ENV_LISTEN: &str = "GRID_RELAY_LISTEN";
 const ENV_LOG: &str = "GRID_RELAY_LOG";
+const ENV_KEY_FILE: &str = "GRID_RELAY_KEY_FILE";
 const ENV_MAX_RESERVATIONS: &str = "GRID_RELAY_MAX_RESERVATIONS";
 const ENV_MAX_CIRCUITS: &str = "GRID_RELAY_MAX_CIRCUITS";
 const DEFAULT_LISTEN: &str = "/ip4/0.0.0.0/tcp/3690";
+const DEFAULT_KEY_FILE: &str = "/var/lib/grid-relayd/keypair";
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "grid-relayd", version, about)]
@@ -25,6 +28,10 @@ struct Cli {
     /// Log filter override (falls back to GRID_RELAY_LOG, then RUST_LOG).
     #[arg(long)]
     log: Option<String>,
+
+    /// Path to persist the relay keypair (ensures stable peer ID across restarts).
+    #[arg(long)]
+    key_file: Option<String>,
 
     /// Max relay reservations (CLI overrides GRID_RELAY_MAX_RESERVATIONS).
     #[arg(long)]
@@ -39,6 +46,7 @@ struct Cli {
 struct RelaydConfig {
     listen: Multiaddr,
     log_filter: Option<String>,
+    key_file: PathBuf,
     max_reservations: Option<usize>,
     max_circuits: Option<usize>,
 }
@@ -81,7 +89,7 @@ async fn main() -> Result<()> {
         warn!("relay limits are parsed but not currently applied to libp2p relay config");
     }
 
-    let key = libp2p::identity::Keypair::generate_ed25519();
+    let key = load_or_generate_keypair(&config.key_file)?;
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(key)
         .with_tokio()
         .with_tcp(
@@ -144,6 +152,12 @@ fn parse_config(cli: &Cli, env: &HashMap<String, String>) -> Result<RelaydConfig
         .map_err(|e| anyhow::anyhow!("{ENV_LISTEN}: invalid multiaddr '{listen_raw}': {e}"))?;
 
     let log_filter = cli.log.clone().or_else(|| env.get(ENV_LOG).cloned());
+    let key_file = PathBuf::from(
+        cli.key_file
+            .clone()
+            .or_else(|| env.get(ENV_KEY_FILE).cloned())
+            .unwrap_or_else(|| DEFAULT_KEY_FILE.to_string()),
+    );
     let max_reservations = parse_usize(
         cli.max_reservations,
         env.get(ENV_MAX_RESERVATIONS),
@@ -158,6 +172,7 @@ fn parse_config(cli: &Cli, env: &HashMap<String, String>) -> Result<RelaydConfig
     Ok(RelaydConfig {
         listen,
         log_filter,
+        key_file,
         max_reservations,
         max_circuits,
     })
@@ -182,6 +197,30 @@ fn current_env() -> HashMap<String, String> {
     std::env::vars().collect()
 }
 
+fn load_or_generate_keypair(path: &std::path::Path) -> Result<libp2p::identity::Keypair> {
+    if path.exists() {
+        let bytes = std::fs::read(path)
+            .with_context(|| format!("failed to read keypair from {}", path.display()))?;
+        let kp = libp2p::identity::Keypair::from_protobuf_encoding(&bytes)
+            .with_context(|| format!("failed to decode keypair from {}", path.display()))?;
+        info!(path = %path.display(), peer_id = %kp.public().to_peer_id(), "loaded existing keypair");
+        return Ok(kp);
+    }
+
+    let kp = libp2p::identity::Keypair::generate_ed25519();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create keypair directory {}", parent.display()))?;
+    }
+    let bytes = kp
+        .to_protobuf_encoding()
+        .context("failed to encode keypair")?;
+    std::fs::write(path, bytes)
+        .with_context(|| format!("failed to write keypair to {}", path.display()))?;
+    info!(path = %path.display(), peer_id = %kp.public().to_peer_id(), "generated and saved new keypair");
+    Ok(kp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +230,7 @@ mod tests {
         let cli = Cli {
             listen: None,
             log: None,
+            key_file: None,
             max_reservations: None,
             max_circuits: None,
         };
@@ -215,6 +255,7 @@ mod tests {
         let cli = Cli {
             listen: Some("/ip4/0.0.0.0/tcp/4910".to_string()),
             log: Some("trace".to_string()),
+            key_file: None,
             max_reservations: Some(5),
             max_circuits: Some(9),
         };
@@ -239,6 +280,7 @@ mod tests {
         let cli = Cli {
             listen: None,
             log: None,
+            key_file: None,
             max_reservations: None,
             max_circuits: None,
         };

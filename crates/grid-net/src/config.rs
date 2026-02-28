@@ -52,6 +52,8 @@ pub enum KademliaMode {
 }
 
 /// The well-known relay peer that all nodes connect to by default.
+/// Default relay peer address. Append `/p2p/<peer_id>` once the relay has
+/// a stable persisted identity to enable direct Kademlia seeding.
 pub const DEFAULT_RELAY_PEER: &str = "/ip4/3.129.15.45/tcp/3691";
 
 /// Relay transport configuration.
