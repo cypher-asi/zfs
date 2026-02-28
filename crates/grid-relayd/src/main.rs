@@ -503,6 +503,12 @@ fn load_or_generate_keypair(path: &std::path::Path) -> Result<libp2p::identity::
     Ok(kp)
 }
 
+/// Ingest the identify observed address as our own external address.
+///
+/// Peer-reported `listen_addrs` are intentionally NOT added to Kademlia here.
+/// NAT-ed peers report dozens of stale ephemeral port mappings that pollute
+/// the DHT and cause dial storms across the network. The verified connection
+/// address is already added in the `ConnectionEstablished` handler.
 fn ingest_identify_update(
     swarm: &mut libp2p::Swarm<RelayBehaviour>,
     peer_id: &libp2p::PeerId,
@@ -512,20 +518,10 @@ fn ingest_identify_update(
         %peer_id,
         observed = %info.observed_addr,
         listen_addrs = info.listen_addrs.len(),
-        "ingesting identify: adding external addr + kademlia entries"
+        "ingesting identify: adding external addr"
     );
     if is_globally_routable(&info.observed_addr) {
         swarm.add_external_address(info.observed_addr.clone());
-    }
-    for addr in &info.listen_addrs {
-        let normalized = normalize_multiaddr(addr);
-        if is_globally_routable(&normalized) {
-            debug!(%peer_id, %normalized, "adding peer listen addr to kademlia");
-            swarm
-                .behaviour_mut()
-                .kademlia
-                .add_address(peer_id, normalized);
-        }
     }
 }
 
