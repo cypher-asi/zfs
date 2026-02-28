@@ -341,12 +341,6 @@ impl ZodeApp {
     }
 
     pub fn stop_zode(&mut self) {
-        if let Some(ref zode) = self.zode {
-            let addrs = self.rt.block_on(zode.peer_multiaddrs());
-            self.settings.remember_peers(&addrs);
-        }
-        self.save_settings();
-
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.try_send(());
         }
@@ -356,6 +350,13 @@ impl ZodeApp {
         if let Some(handle) = self.poller_handle.take() {
             let _ = self.rt.block_on(handle);
         }
+
+        if let Some(ref zode) = self.zode {
+            let addrs = self.rt.block_on(zode.peer_multiaddrs());
+            self.settings.remember_peers(&addrs);
+        }
+        self.save_settings();
+
         self.zode = None;
         self.interlink_state = None;
     }

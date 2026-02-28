@@ -270,21 +270,18 @@ impl Zode {
         &self.keypair_protobuf
     }
 
-    /// Returns connected peers as full multiaddr strings suitable for
-    /// persistence and later bootstrap dialing.
+    /// Returns all peer multiaddrs observed during this session, suitable
+    /// for persistence and later bootstrap dialing.  Safe to call after
+    /// [`shutdown`](Self::shutdown) (uses addresses cached in the service,
+    /// not the live swarm connection list).
     pub async fn peer_multiaddrs(&self) -> Vec<String> {
         let net = self.network.lock().await;
-        net.connected_peers_with_addrs()
+        net.all_known_peer_addrs()
             .into_iter()
             .flat_map(|(peer, addrs)| {
-                if addrs.is_empty() {
-                    Vec::new()
-                } else {
-                    addrs
-                        .into_iter()
-                        .map(|a| format!("{a}/p2p/{peer}"))
-                        .collect()
-                }
+                addrs
+                    .into_iter()
+                    .map(move |a| format!("{a}/p2p/{peer}"))
             })
             .collect()
     }

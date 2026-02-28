@@ -171,6 +171,16 @@ impl NetworkService {
             .collect()
     }
 
+    /// Returns all peer addresses observed during this session regardless
+    /// of current connection status. Safe to call after shutdown when the
+    /// swarm may have already closed connections.
+    pub fn all_known_peer_addrs(&self) -> Vec<(PeerId, Vec<Multiaddr>)> {
+        self.peer_addresses
+            .iter()
+            .map(|(peer, addrs)| (*peer, addrs.clone()))
+            .collect()
+    }
+
     /// Dial a peer at the given multiaddr.
     pub fn dial(&mut self, addr: Multiaddr) -> Result<(), NetworkError> {
         self.swarm
