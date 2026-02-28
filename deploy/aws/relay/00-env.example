@@ -1,0 +1,33 @@
+# Copy this file to .env and update values before running scripts.
+# Most values are optional; scripts auto-detect defaults when omitted.
+
+# AWS
+AWS_REGION=us-east-1
+# Optional: leave empty to use default AWS CLI profile.
+AWS_PROFILE=
+
+# Relay settings
+RELAY_NAME=grid-relayd
+RELAY_PORT=3691
+RELAY_LOG=info
+RELAY_MAX_RESERVATIONS=256
+RELAY_MAX_CIRCUITS=512
+
+# Source build settings (built on the Ubuntu host in stage 04)
+GRID_REPO_URL=https://github.com/cypher-asi/the-grid
+GRID_REPO_REF=master
+RELAY_BUILD_DIR=/opt/the-grid
+
+# EC2 settings
+EC2_AMI_ID=
+EC2_INSTANCE_TYPE=t3.small
+EC2_KEY_NAME=
+EC2_SSH_USER=ubuntu
+EC2_VPC_ID=
+EC2_SUBNET_ID=
+
+# Optional: existing SG; if empty script 02 creates one.
+EC2_SECURITY_GROUP_ID=
+
+# SSH key used by ssh/scp.
+SSH_PRIVATE_KEY=
