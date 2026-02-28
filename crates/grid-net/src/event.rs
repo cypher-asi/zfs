@@ -48,4 +48,22 @@ pub enum NetworkEvent {
 
     /// A new listen address was established.
     ListenAddress(Multiaddr),
+
+    /// The relay circuit listener started successfully.
+    RelayListening { circuit_addr: Multiaddr },
+
+    /// The relay circuit listener failed to start.
+    RelayFailed {
+        circuit_addr: Multiaddr,
+        error: String,
+    },
+
+    /// An outgoing dial/connection attempt failed.
+    ConnectionFailed {
+        peer: Option<ZodeId>,
+        error: String,
+    },
+
+    /// Kademlia DHT bootstrap started successfully.
+    KademliaBootstrapped,
 }

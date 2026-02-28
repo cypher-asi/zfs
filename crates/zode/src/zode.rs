@@ -421,6 +421,32 @@ impl Zode {
                 debug!(%zode_id, addr_count = addresses.len(), "zode discovered via DHT");
                 let _ = event_tx.send(LogEvent::PeerDiscovered(format_zode_id(&zode_id)));
             }
+            NetworkEvent::RelayListening { circuit_addr } => {
+                let _ = event_tx.send(LogEvent::RelayReady {
+                    circuit_addr: circuit_addr.to_string(),
+                });
+            }
+            NetworkEvent::RelayFailed {
+                circuit_addr,
+                error,
+            } => {
+                let _ = event_tx.send(LogEvent::RelayFailed {
+                    circuit_addr: circuit_addr.to_string(),
+                    error,
+                });
+            }
+            NetworkEvent::ConnectionFailed { peer, error } => {
+                let peer_str = peer
+                    .map(|id| format_zode_id(&id))
+                    .unwrap_or_else(|| "unknown".into());
+                let _ = event_tx.send(LogEvent::ConnectionFailed {
+                    peer: peer_str,
+                    error,
+                });
+            }
+            NetworkEvent::KademliaBootstrapped => {
+                let _ = event_tx.send(LogEvent::KademliaReady);
+            }
             NetworkEvent::SectorRequestResult { .. }
             | NetworkEvent::SectorOutboundFailure { .. } => {}
         }

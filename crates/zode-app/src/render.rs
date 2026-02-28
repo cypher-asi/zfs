@@ -478,6 +478,8 @@ fn log_entry_color(entry: &str) -> egui::Color32 {
         LogLevel::Discovery => egui::Color32::from_rgb(100, 150, 255),
         LogLevel::PeerConnect => colors::CONNECTED,
         LogLevel::PeerDisconnect => egui::Color32::from_rgb(255, 255, 100),
+        LogLevel::Relay => egui::Color32::from_rgb(180, 130, 255),
+        LogLevel::DialError => egui::Color32::from_rgb(255, 140, 60),
         LogLevel::Rpc => egui::Color32::from_rgb(100, 220, 220),
         LogLevel::Shutdown => egui::Color32::from_rgb(200, 100, 255),
         LogLevel::Normal => egui::Color32::from_rgb(200, 200, 200),

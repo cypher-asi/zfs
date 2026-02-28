@@ -324,6 +324,8 @@ fn log_entry_style(entry: &str) -> Style {
         LogLevel::Discovery => Style::default().fg(Color::Blue),
         LogLevel::PeerConnect => Style::default().fg(Color::Green),
         LogLevel::PeerDisconnect => Style::default().fg(Color::Yellow),
+        LogLevel::Relay => Style::default().fg(Color::Magenta),
+        LogLevel::DialError => Style::default().fg(Color::LightRed),
         LogLevel::Rpc => Style::default().fg(Color::Cyan),
         LogLevel::Shutdown => Style::default().fg(Color::Magenta),
         LogLevel::Normal => Style::default(),

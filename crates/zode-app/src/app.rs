@@ -110,16 +110,38 @@ impl ZodeApp {
 
     /// Merge previously cached peers into a network config's bootstrap list.
     fn merge_peer_cache(&self, config: &mut zode::ZodeConfig) {
-        let cached = crate::settings::load_peer_cache(&self.peer_cache_path());
-        for s in cached {
-            if let Ok(addr) = grid_net::strip_zx_multiaddr(&s)
-                .parse::<grid_net::Multiaddr>()
-            {
-                if !config.network.bootstrap_peers.contains(&addr) {
-                    config.network.bootstrap_peers.push(addr);
+        let path = self.peer_cache_path();
+        let cached = crate::settings::load_peer_cache(&path);
+        let total = cached.len();
+        let mut parsed = 0usize;
+        let mut failed = 0usize;
+        for s in &cached {
+            let stripped = grid_net::strip_zx_multiaddr(s);
+            match stripped.parse::<grid_net::Multiaddr>() {
+                Ok(addr) => {
+                    parsed += 1;
+                    if !config.network.bootstrap_peers.contains(&addr) {
+                        config.network.bootstrap_peers.push(addr);
+                    }
+                }
+                Err(e) => {
+                    failed += 1;
+                    tracing::warn!(
+                        raw = %s,
+                        error = %e,
+                        "peer cache entry failed to parse"
+                    );
                 }
             }
         }
+        tracing::info!(
+            path = %path.display(),
+            total,
+            parsed,
+            failed,
+            bootstrap_total = config.network.bootstrap_peers.len(),
+            "peer cache merged"
+        );
     }
 
     /// Persist current settings to disk.
@@ -355,12 +377,18 @@ impl ZodeApp {
                 }
                 let addrs = bg_zode.peer_multiaddrs().await;
                 if addrs.is_empty() {
+                    tracing::debug!("peer cache tick: no peers to persist");
                     continue;
                 }
+                let sample: Vec<_> = addrs.iter().take(5).collect();
+                tracing::info!(
+                    count = addrs.len(),
+                    sample = ?sample,
+                    path = %cache_path.display(),
+                    "persisting peer cache"
+                );
                 if let Err(e) = crate::settings::save_peer_cache(&cache_path, &addrs) {
                     tracing::warn!("failed to persist peer cache: {e}");
-                } else {
-                    tracing::debug!(count = addrs.len(), "peer cache persisted");
                 }
             }
         })
@@ -432,6 +460,12 @@ impl ZodeApp {
 
         if let Some(ref zode) = self.zode {
             let addrs = self.rt.block_on(zode.peer_multiaddrs());
+            let sample: Vec<_> = addrs.iter().take(5).collect();
+            tracing::info!(
+                count = addrs.len(),
+                sample = ?sample,
+                "shutdown: saving peer cache"
+            );
             self.settings.remember_peers(&addrs);
             if let Err(e) = crate::settings::save_peer_cache(&self.peer_cache_path(), &addrs) {
                 tracing::warn!("failed to persist peer cache on shutdown: {e}");

@@ -53,6 +53,14 @@ pub enum LogEvent {
     RpcStarted { bind_addr: String },
     /// An RPC request was processed.
     RpcRequest { method: String, success: bool },
+    /// Relay circuit listener started.
+    RelayReady { circuit_addr: String },
+    /// Relay circuit listener failed.
+    RelayFailed { circuit_addr: String, error: String },
+    /// An outgoing dial / connection attempt failed.
+    ConnectionFailed { peer: String, error: String },
+    /// Kademlia DHT bootstrap started.
+    KademliaReady,
     /// The Zode is shutting down.
     ShuttingDown,
 }
@@ -126,6 +134,19 @@ impl fmt::Display for LogEvent {
                 let status = if *success { "OK" } else { "ERR" };
                 write!(f, "[RPC] {method} {status}")
             }
+            Self::RelayReady { circuit_addr } => {
+                write!(f, "[RELAY] listening via {circuit_addr}")
+            }
+            Self::RelayFailed {
+                circuit_addr,
+                error,
+            } => {
+                write!(f, "[RELAY ERR] failed {circuit_addr}: {error}")
+            }
+            Self::ConnectionFailed { peer, error } => {
+                write!(f, "[DIAL ERR] {peer}: {error}")
+            }
+            Self::KademliaReady => write!(f, "[DHT] kademlia bootstrap started"),
             Self::ShuttingDown => write!(f, "[SHUTDOWN] ZODE shutting down"),
         }
     }
@@ -197,6 +218,8 @@ pub enum LogLevel {
     Discovery,
     PeerConnect,
     PeerDisconnect,
+    Relay,
+    DialError,
     Rpc,
     Shutdown,
     Normal,
@@ -217,6 +240,10 @@ impl LogLevel {
             Self::PeerConnect
         } else if line.starts_with("[PEER-") {
             Self::PeerDisconnect
+        } else if line.starts_with("[RELAY ERR") || line.starts_with("[DIAL ERR") {
+            Self::DialError
+        } else if line.starts_with("[RELAY") {
+            Self::Relay
         } else if line.starts_with("[RPC") {
             Self::Rpc
         } else if line.starts_with("[SHUTDOWN") {

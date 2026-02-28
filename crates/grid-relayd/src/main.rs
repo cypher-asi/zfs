@@ -153,6 +153,12 @@ async fn main() -> Result<()> {
                 peer_id, endpoint, ..
             }) => {
                 let addr = endpoint.get_remote_address().clone();
+                info!(
+                    %peer_id,
+                    remote_addr = %addr,
+                    direction = ?endpoint,
+                    "peer connected"
+                );
                 swarm
                     .behaviour_mut()
                     .kademlia
@@ -163,28 +169,57 @@ async fn main() -> Result<()> {
                         .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
                         .with(libp2p::multiaddr::Protocol::P2pCircuit)
                         .with(libp2p::multiaddr::Protocol::P2p(peer_id));
+                    debug!(
+                        %peer_id,
+                        %circuit,
+                        "registered circuit addr in kademlia"
+                    );
                     swarm
                         .behaviour_mut()
                         .kademlia
                         .add_address(&peer_id, circuit);
                 }
-                info!(%peer_id, "peer connected");
+                info!(
+                    connected_count = connected_peer_ids.len(),
+                    external_addrs = relay_external_addrs.len(),
+                    "peer roster updated"
+                );
             }
             Some(SwarmEvent::ConnectionClosed { peer_id, .. }) => {
                 connected_peer_ids.remove(&peer_id);
-                info!(%peer_id, "peer disconnected");
+                info!(
+                    %peer_id,
+                    connected_count = connected_peer_ids.len(),
+                    "peer disconnected"
+                );
+            }
+            Some(SwarmEvent::OutgoingConnectionError {
+                peer_id, error, ..
+            }) => {
+                warn!(
+                    peer_id = ?peer_id,
+                    error = %error,
+                    "outgoing connection failed"
+                );
             }
             Some(SwarmEvent::Behaviour(event)) => {
-                match &event {
+                match event {
                     RelayBehaviourEvent::Identify(identify::Event::Received {
                         peer_id,
                         info,
                         ..
                     }) => {
-                        ingest_identify_update(&mut swarm, peer_id, info);
+                        info!(
+                            %peer_id,
+                            listen_addrs = ?info.listen_addrs,
+                            observed = %info.observed_addr,
+                            protocols = ?info.protocols,
+                            "identify received"
+                        );
+                        ingest_identify_update(&mut swarm, &peer_id, &info);
                         ingest_circuit_addrs(
                             &mut swarm,
-                            peer_id,
+                            &peer_id,
                             &info.observed_addr,
                             local_peer_id,
                             &mut relay_external_addrs,
@@ -196,21 +231,100 @@ async fn main() -> Result<()> {
                         info,
                         ..
                     }) => {
-                        ingest_identify_update(&mut swarm, peer_id, info);
+                        debug!(
+                            %peer_id,
+                            listen_addrs = ?info.listen_addrs,
+                            observed = %info.observed_addr,
+                            "identify pushed"
+                        );
+                        ingest_identify_update(&mut swarm, &peer_id, &info);
                         ingest_circuit_addrs(
                             &mut swarm,
-                            peer_id,
+                            &peer_id,
                             &info.observed_addr,
                             local_peer_id,
                             &mut relay_external_addrs,
                             &connected_peer_ids,
                         );
                     }
-                    _ => {}
+                    RelayBehaviourEvent::Identify(ref ev) => {
+                        debug!(?ev, "identify event");
+                    }
+                    RelayBehaviourEvent::Relay(relay::Event::ReservationReqAccepted {
+                        src_peer_id,
+                        ..
+                    }) => {
+                        info!(%src_peer_id, "relay reservation accepted");
+                    }
+                    RelayBehaviourEvent::Relay(relay::Event::ReservationReqDenied {
+                        src_peer_id, ..
+                    }) => {
+                        warn!(%src_peer_id, "relay reservation DENIED");
+                    }
+                    RelayBehaviourEvent::Relay(relay::Event::CircuitReqAccepted {
+                        src_peer_id,
+                        dst_peer_id,
+                        ..
+                    }) => {
+                        info!(
+                            %src_peer_id,
+                            %dst_peer_id,
+                            "relay circuit opened"
+                        );
+                    }
+                    RelayBehaviourEvent::Relay(relay::Event::CircuitReqDenied {
+                        src_peer_id,
+                        dst_peer_id, ..
+                    }) => {
+                        warn!(
+                            %src_peer_id,
+                            %dst_peer_id,
+                            "relay circuit DENIED"
+                        );
+                    }
+                    RelayBehaviourEvent::Relay(ref ev) => {
+                        debug!(?ev, "relay event");
+                    }
+                    RelayBehaviourEvent::Kademlia(kad::Event::RoutingUpdated {
+                        peer,
+                        ref addresses,
+                        ..
+                    }) => {
+                        let addrs: Vec<_> = addresses.iter().collect();
+                        debug!(
+                            %peer,
+                            addresses = ?addrs,
+                            "kademlia routing updated"
+                        );
+                    }
+                    RelayBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+                        ref result,
+                        ..
+                    }) => {
+                        debug!(?result, "kademlia query progressed");
+                    }
+                    RelayBehaviourEvent::Kademlia(ref ev) => {
+                        debug!(?ev, "kademlia event");
+                    }
+                    RelayBehaviourEvent::Ping(ref ev) => {
+                        debug!(?ev, "ping event");
+                    }
                 }
-                debug!(?event, "relay behaviour event");
             }
-            Some(_) => {}
+            Some(SwarmEvent::IncomingConnectionError {
+                send_back_addr,
+                error,
+                ..
+            }) => {
+                warn!(
+                    %send_back_addr,
+                    error = %error,
+                    "incoming connection error"
+                );
+            }
+            Some(other) => {
+                debug!(?other, "swarm event");
+            }
             None => break,
         }
     }
@@ -309,8 +423,15 @@ fn ingest_identify_update(
     peer_id: &libp2p::PeerId,
     info: &identify::Info,
 ) {
+    debug!(
+        %peer_id,
+        observed = %info.observed_addr,
+        listen_addrs = info.listen_addrs.len(),
+        "ingesting identify: adding external addr + kademlia entries"
+    );
     swarm.add_external_address(info.observed_addr.clone());
     for addr in &info.listen_addrs {
+        debug!(%peer_id, %addr, "adding peer listen addr to kademlia");
         swarm
             .behaviour_mut()
             .kademlia
@@ -333,6 +454,11 @@ fn ingest_circuit_addrs(
 ) {
     let is_new_ext = !relay_external_addrs.contains(observed_addr);
     if is_new_ext {
+        info!(
+            %observed_addr,
+            total_external = relay_external_addrs.len() + 1,
+            "new external address learned"
+        );
         relay_external_addrs.push(observed_addr.clone());
     }
 
@@ -341,6 +467,11 @@ fn ingest_circuit_addrs(
             .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
             .with(libp2p::multiaddr::Protocol::P2pCircuit)
             .with(libp2p::multiaddr::Protocol::P2p(*peer_id));
+        debug!(
+            %peer_id,
+            %circuit,
+            "adding circuit addr to kademlia for peer"
+        );
         swarm
             .behaviour_mut()
             .kademlia
@@ -348,11 +479,21 @@ fn ingest_circuit_addrs(
     }
 
     if is_new_ext {
+        info!(
+            %observed_addr,
+            connected_peers = connected_peer_ids.len(),
+            "backfilling circuit addrs for existing peers under new external addr"
+        );
         for &existing_peer in connected_peer_ids {
             let circuit = strip_p2p_suffix(observed_addr)
                 .with(libp2p::multiaddr::Protocol::P2p(local_peer_id))
                 .with(libp2p::multiaddr::Protocol::P2pCircuit)
                 .with(libp2p::multiaddr::Protocol::P2p(existing_peer));
+            debug!(
+                %existing_peer,
+                %circuit,
+                "backfill: adding circuit addr to kademlia"
+            );
             swarm
                 .behaviour_mut()
                 .kademlia

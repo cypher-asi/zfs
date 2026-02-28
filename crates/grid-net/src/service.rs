@@ -35,6 +35,9 @@ pub struct NetworkService {
     /// Pre-computed relay circuit base addresses derived from relay config,
     /// used to speculatively construct circuit-routed paths for discovered peers.
     relay_circuit_bases: Vec<Multiaddr>,
+    /// Events queued by helper methods (relay listeners, kademlia bootstrap)
+    /// that must be returned from the next `next_event` call.
+    pending_relay_events: Vec<NetworkEvent>,
 }
 
 impl NetworkService {
@@ -97,6 +100,17 @@ impl NetworkService {
             Vec::new()
         };
 
+        info!(
+            bootstrap_peers = config.bootstrap_peers.len(),
+            relay_enabled,
+            relay_peers = config.relay.relay_peers.len(),
+            relay_transport_addrs = ?relay_transport_addrs,
+            relay_circuit_bases = ?relay_circuit_bases,
+            kademlia_enabled,
+            kademlia_mode = ?kademlia_mode,
+            "network service initialised"
+        );
+
         let mut kademlia_bootstrapped = false;
         if kademlia_enabled {
             match swarm.behaviour_mut().kademlia.bootstrap() {
@@ -122,6 +136,7 @@ impl NetworkService {
             relay_transport_addrs,
             active_relay_listeners: HashSet::new(),
             relay_circuit_bases,
+            pending_relay_events: Vec::new(),
         })
     }
 
@@ -263,6 +278,10 @@ impl NetworkService {
     /// Must be called in a loop to keep the network alive. When Kademlia is
     /// enabled, a periodic random walk timer fires between swarm events.
     pub async fn next_event(&mut self) -> Option<NetworkEvent> {
+        if let Some(ev) = self.pending_relay_events.pop() {
+            return Some(ev);
+        }
+
         let sleep = tokio::time::sleep(self.random_walk_interval);
         tokio::pin!(sleep);
 
@@ -271,6 +290,9 @@ impl NetworkService {
                 event = self.swarm.select_next_some() => {
                     if let Some(net_event) = self.handle_swarm_event(event) {
                         return Some(net_event);
+                    }
+                    if let Some(ev) = self.pending_relay_events.pop() {
+                        return Some(ev);
                     }
                 }
                 () = &mut sleep, if self.kademlia_enabled => {
@@ -332,6 +354,24 @@ impl NetworkService {
                 info!(%address, "listening");
                 Some(NetworkEvent::ListenAddress(address))
             }
+            SwarmEvent::OutgoingConnectionError {
+                peer_id,
+                error,
+                ..
+            } => {
+                warn!(
+                    peer_id = ?peer_id,
+                    error = %error,
+                    "outgoing connection failed"
+                );
+                if self.pending_discovery_dials > 0 {
+                    self.pending_discovery_dials -= 1;
+                }
+                Some(NetworkEvent::ConnectionFailed {
+                    peer: peer_id,
+                    error: error.to_string(),
+                })
+            }
             _ => None,
         }
     }
@@ -350,6 +390,13 @@ impl NetworkService {
             .any(|ra| *ra == remote_transport);
 
         if !is_relay {
+            debug!(
+                %connected_peer,
+                %remote_addr,
+                remote_transport = %remote_transport,
+                known_relay_addrs = ?self.relay_transport_addrs,
+                "peer is not a known relay, skipping circuit listener"
+            );
             return;
         }
 
@@ -361,9 +408,18 @@ impl NetworkService {
             Ok(_) => {
                 info!(%circuit_addr, "listening via relay circuit");
                 self.active_relay_listeners.insert(*connected_peer);
+                self.pending_relay_events
+                    .push(NetworkEvent::RelayListening {
+                        circuit_addr,
+                    });
             }
             Err(e) => {
                 warn!(%circuit_addr, error = %e, "failed to listen on relay circuit");
+                self.pending_relay_events
+                    .push(NetworkEvent::RelayFailed {
+                        circuit_addr,
+                        error: e.to_string(),
+                    });
             }
         }
     }
@@ -377,6 +433,8 @@ impl NetworkService {
             Ok(_) => {
                 self.kademlia_bootstrapped = true;
                 info!("kademlia bootstrap started");
+                self.pending_relay_events
+                    .push(NetworkEvent::KademliaBootstrapped);
             }
             Err(e) => {
                 debug!("kademlia bootstrap still waiting for peers: {e:?}");
@@ -610,6 +668,11 @@ impl NetworkService {
     }
 
     fn handle_closest_peers(&mut self, ok: kad::GetClosestPeersOk) -> Option<NetworkEvent> {
+        debug!(
+            num_peers = ok.peers.len(),
+            peers = ?ok.peers.iter().map(|p| (&p.peer_id, &p.addrs)).collect::<Vec<_>>(),
+            "kademlia closest peers result"
+        );
         let mut first_new_peer = None;
         for peer in &ok.peers {
             let peer_id = peer.peer_id;
