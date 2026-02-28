@@ -276,14 +276,7 @@ impl Zode {
     /// not the live swarm connection list).
     pub async fn peer_multiaddrs(&self) -> Vec<String> {
         let net = self.network.lock().await;
-        net.all_known_peer_addrs()
-            .into_iter()
-            .flat_map(|(peer, addrs)| {
-                addrs
-                    .into_iter()
-                    .map(move |a| format!("{a}/p2p/{peer}"))
-            })
-            .collect()
+        net.peer_multiaddr_strings()
     }
 
     /// The actual data directory (unique per peer ID).

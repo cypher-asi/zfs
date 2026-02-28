@@ -225,6 +225,32 @@ impl NetworkService {
             .collect()
     }
 
+    /// Returns all observed peer addresses as dial-ready multiaddr strings
+    /// (each ending with exactly one `/p2p/<peer_id>` suffix).
+    ///
+    /// Relay circuit addresses already embed the destination peer ID
+    /// (e.g. `.../p2p-circuit/p2p/<peer>`), so blindly appending would
+    /// produce a malformed doubled suffix. This method normalises that.
+    pub fn peer_multiaddr_strings(&self) -> Vec<String> {
+        self.peer_addresses
+            .iter()
+            .flat_map(|(peer, addrs)| {
+                let peer = *peer;
+                addrs.iter().map(move |a| {
+                    let already_ends_with_peer = a
+                        .iter()
+                        .last()
+                        .is_some_and(|p| p == libp2p::multiaddr::Protocol::P2p(peer));
+                    if already_ends_with_peer {
+                        a.to_string()
+                    } else {
+                        format!("{a}/p2p/{peer}")
+                    }
+                })
+            })
+            .collect()
+    }
+
     /// Dial a peer at the given multiaddr.
     pub fn dial(&mut self, addr: Multiaddr) -> Result<(), NetworkError> {
         self.swarm
@@ -297,6 +323,9 @@ impl NetworkService {
                     self.pending_discovery_dials -= 1;
                 }
                 debug!(%peer_id, num = %num_established, "connection closed");
+                if num_established == 0 {
+                    self.active_relay_listeners.remove(&peer_id);
+                }
                 (num_established == 0).then(|| NetworkEvent::PeerDisconnected(peer_id))
             }
             SwarmEvent::NewListenAddr { address, .. } => {

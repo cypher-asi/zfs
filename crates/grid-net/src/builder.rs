@@ -43,6 +43,7 @@ pub(crate) fn build_swarm(
         .map_err(|e| NetworkError::Transport(format!("{e}")))?
         .with_behaviour(|key, relay| build_behaviour(key, gossipsub_config, relay))
         .map_err(|e| NetworkError::Transport(format!("{e}")))?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
     Ok((swarm, kp))
 }
