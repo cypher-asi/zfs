@@ -16,9 +16,9 @@ pub(crate) struct PersistedSettings {
     pub listen_addr: String,
     #[serde(default)]
     pub bootstrap_peers: Vec<String>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub enable_relay: bool,
-    #[serde(default)]
+    #[serde(default = "default_relay_peers")]
     pub relay_peers: Vec<String>,
     #[serde(default = "default_true")]
     pub enable_zid: bool,
@@ -58,6 +58,9 @@ fn default_random_walk() -> u64 {
 fn default_rpc_bind() -> String {
     "127.0.0.1:4690".into()
 }
+fn default_relay_peers() -> Vec<String> {
+    vec!["/ip4/3.129.15.45/tcp/3691".into()]
+}
 
 pub(crate) struct Settings {
     pub data_dir: String,
@@ -88,9 +91,9 @@ impl Default for Settings {
             listen_addr: "/ip4/127.0.0.1/udp/3690/quic-v1".into(),
             bootstrap_input: String::new(),
             bootstrap_peers: Vec::new(),
-            enable_relay: false,
+            enable_relay: true,
             relay_input: String::new(),
-            relay_peers: Vec::new(),
+            relay_peers: vec!["/ip4/3.129.15.45/tcp/3691".into()],
             enable_zid: true,
             enable_interlink: true,
             topic_input: String::new(),
