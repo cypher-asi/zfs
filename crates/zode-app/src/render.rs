@@ -43,6 +43,7 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             render_settings_general(app, ui, running);
             render_bootstrap_peers(app, ui);
+            render_relay_peers(app, ui);
             render_default_programs(app, ui);
             render_topics(app, ui);
             render_discovery_settings(app, ui);
@@ -92,6 +93,24 @@ fn render_bootstrap_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             &mut app.settings.bootstrap_peers,
             &mut app.settings.bootstrap_input,
+            360.0,
+        );
+    });
+}
+
+fn render_relay_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
+    section(ui, "Relay", |ui| {
+        hint_label(
+            ui,
+            "Relay-first connectivity for NAT-restricted nodes. Add public relay peers and enable relay transport.",
+        );
+        ui.add_space(8.0);
+        ui.checkbox(&mut app.settings.enable_relay, "Enable Relay Transport");
+        ui.add_space(8.0);
+        editable_list(
+            ui,
+            &mut app.settings.relay_peers,
+            &mut app.settings.relay_input,
             360.0,
         );
     });
@@ -245,11 +264,7 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
             egui::Order::Foreground,
             egui::Id::new("status_fade"),
         ));
-        painter.rect_filled(
-            full_rect,
-            0.0,
-            egui::Color32::from_black_alpha(alpha),
-        );
+        painter.rect_filled(full_rect, 0.0, egui::Color32::from_black_alpha(alpha));
         ui.ctx().request_repaint();
     }
 }

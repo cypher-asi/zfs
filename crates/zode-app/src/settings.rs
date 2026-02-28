@@ -11,6 +11,9 @@ pub(crate) struct Settings {
     pub listen_addr: String,
     pub bootstrap_input: String,
     pub bootstrap_peers: Vec<String>,
+    pub enable_relay: bool,
+    pub relay_input: String,
+    pub relay_peers: Vec<String>,
     pub enable_zid: bool,
     pub enable_interlink: bool,
     pub topic_input: String,
@@ -30,6 +33,9 @@ impl Default for Settings {
             listen_addr: "/ip4/127.0.0.1/udp/3690/quic-v1".into(),
             bootstrap_input: String::new(),
             bootstrap_peers: Vec::new(),
+            enable_relay: false,
+            relay_input: String::new(),
+            relay_peers: Vec::new(),
             enable_zid: true,
             enable_interlink: true,
             topic_input: String::new(),
@@ -52,6 +58,7 @@ impl Settings {
             .map_err(|e| format!("Bad listen address: {e}"))?;
 
         let bootstrap = self.parse_bootstrap_peers()?;
+        let relay = self.parse_relay_peers()?;
         let topic_set = self.parse_topics()?;
 
         let kad_mode = if self.kademlia_server_mode {
@@ -69,6 +76,10 @@ impl Settings {
 
         let network = NetworkConfig::new(listen_addr)
             .with_bootstrap_peers(bootstrap)
+            .with_relay(grid_net::RelayConfig {
+                enabled: self.enable_relay || !relay.is_empty(),
+                relay_peers: relay,
+            })
             .with_discovery(discovery);
         let storage = StorageConfig::new(PathBuf::from(&self.data_dir));
 
@@ -119,6 +130,17 @@ impl Settings {
         self.topics
             .iter()
             .map(|hex| ProgramId::from_hex(hex).map_err(|e| format!("Bad topic '{hex}': {e}")))
+            .collect()
+    }
+
+    fn parse_relay_peers(&self) -> Result<Vec<grid_net::Multiaddr>, String> {
+        self.relay_peers
+            .iter()
+            .map(|s| {
+                grid_net::strip_zx_multiaddr(s)
+                    .parse()
+                    .map_err(|e| format!("Bad relay addr '{s}': {e}"))
+            })
             .collect()
     }
 }
