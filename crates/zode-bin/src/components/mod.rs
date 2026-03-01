@@ -1,20 +1,8 @@
+pub(crate) mod tokens;
+pub(crate) use tokens::colors;
+pub(crate) use tokens::{ICON_SIZE, WIDGET_HEIGHT};
+
 use eframe::egui;
-
-// ---------------------------------------------------------------------------
-// Theme colors
-// ---------------------------------------------------------------------------
-
-pub(crate) mod colors {
-    use eframe::egui::Color32;
-
-    pub const SURFACE: Color32 = Color32::from_rgb(1, 1, 1);
-    pub const SURFACE_DIM: Color32 = Color32::from_rgb(1, 1, 1);
-    pub const BORDER: Color32 = Color32::from_rgb(48, 48, 52);
-    pub const ERROR: Color32 = Color32::from_rgb(255, 80, 80);
-    pub const WARN: Color32 = Color32::from_rgb(255, 200, 100);
-    pub const CONNECTED: Color32 = Color32::from_rgb(46, 230, 176);
-    pub const DISCONNECTED: Color32 = Color32::from_rgb(255, 80, 80);
-}
 
 // ---------------------------------------------------------------------------
 // Section panel — card-like container with an uppercased title
@@ -24,23 +12,23 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
     egui::Frame::default()
         .fill(colors::SURFACE)
         .corner_radius(0.0)
-        .inner_margin(16.0)
-        .stroke(egui::Stroke::new(1.0, colors::BORDER))
+        .inner_margin(tokens::spacing::XL)
+        .stroke(tokens::border_stroke())
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_heading(ui, title);
             ui.add_space(10.0);
             add_contents(ui);
         });
-    ui.add_space(8.0);
+    ui.add_space(tokens::spacing::MD);
 }
 
 pub(crate) fn section_heading(ui: &mut egui::Ui, title: &str) {
     ui.label(
         egui::RichText::new(title.to_uppercase())
             .strong()
-            .size(10.0)
-            .color(egui::Color32::from_rgb(140, 140, 145)),
+            .size(tokens::font_size::HEADING)
+            .color(colors::TEXT_HEADING),
     );
 }
 
@@ -56,9 +44,9 @@ pub(crate) fn action_panel(
     egui::TopBottomPanel::bottom(id)
         .frame(
             egui::Frame::default()
-                .fill(colors::SURFACE_DIM)
+                .fill(colors::SURFACE)
                 .inner_margin(egui::Margin::symmetric(16, 12))
-                .stroke(egui::Stroke::new(1.0, colors::BORDER)),
+                .stroke(tokens::border_stroke()),
         )
         .show_inside(ui, |ui| {
             ui.with_layout(
@@ -75,7 +63,7 @@ pub(crate) fn action_panel(
 pub(crate) fn info_grid(ui: &mut egui::Ui, id: &str, add_rows: impl FnOnce(&mut egui::Ui)) {
     egui::Grid::new(id)
         .num_columns(2)
-        .spacing([12.0, 2.0])
+        .spacing([tokens::spacing::LG, tokens::spacing::XS])
         .show(ui, add_rows);
 }
 
@@ -100,10 +88,6 @@ pub(crate) fn kv_row_copyable(ui: &mut egui::Ui, key: &str, value: &str) {
 // Buttons
 // ---------------------------------------------------------------------------
 
-const ICON_SIZE: f32 = 16.0;
-
-pub(crate) const WIDGET_HEIGHT: f32 = 24.0;
-
 pub(crate) fn text_input(buf: &mut String, width: f32) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(buf)
         .desired_width(width)
@@ -122,7 +106,7 @@ fn styled_button(ui: &mut egui::Ui, label: &str, padding: egui::Vec2, font_size:
                 .size(font_size),
         )
         .fill(egui::Color32::BLACK)
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 60)))
+        .stroke(tokens::default_stroke())
         .corner_radius(0.0)
         .min_size(egui::vec2(0.0, WIDGET_HEIGHT)),
     );
@@ -132,12 +116,12 @@ fn styled_button(ui: &mut egui::Ui, label: &str, padding: egui::Vec2, font_size:
 
 /// Standard button — black bg, white uppercase text, compact padding.
 pub(crate) fn std_button(ui: &mut egui::Ui, label: &str) -> bool {
-    styled_button(ui, label, egui::vec2(10.0, 4.0), 10.0)
+    styled_button(ui, label, egui::vec2(10.0, 4.0), tokens::font_size::BUTTON)
 }
 
 /// Primary action button — uses standard style, slightly larger.
 pub(crate) fn action_button(ui: &mut egui::Ui, label: &str) -> bool {
-    styled_button(ui, label, egui::vec2(12.0, 5.0), 11.0)
+    styled_button(ui, label, egui::vec2(12.0, 5.0), tokens::font_size::ACTION)
 }
 
 /// Horizontal row whose content is centered within the available width.
@@ -161,7 +145,7 @@ pub(crate) fn centered_row(ui: &mut egui::Ui, id_salt: &str, add_contents: impl 
 
 /// Title-bar icon button (custom-painted for tight layout control).
 pub(crate) fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egui::Response {
-    let font_id = egui::FontId::proportional(16.0);
+    let font_id = egui::FontId::proportional(ICON_SIZE);
     let galley =
         ui.fonts_mut(|f| f.layout_no_wrap(icon.to_string(), font_id, egui::Color32::PLACEHOLDER));
     let bp = ui.spacing().button_padding;
@@ -180,7 +164,7 @@ pub(crate) fn title_bar_icon(ui: &mut egui::Ui, icon: &str, active: bool) -> egu
     let galley = ui.fonts_mut(|f| {
         f.layout_no_wrap(
             icon.to_string(),
-            egui::FontId::proportional(16.0),
+            egui::FontId::proportional(ICON_SIZE),
             text_color,
         )
     });
@@ -238,7 +222,7 @@ pub(crate) fn muted_label(ui: &mut egui::Ui, text: &str) {
 /// Red error message with spacing below.
 pub(crate) fn error_label(ui: &mut egui::Ui, text: &str) {
     ui.colored_label(colors::ERROR, text);
-    ui.add_space(4.0);
+    ui.add_space(tokens::spacing::SM);
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +238,7 @@ fn square_icon_button(ui: &mut egui::Ui, icon: &str) -> bool {
                 .color(egui::Color32::WHITE),
         )
         .fill(egui::Color32::BLACK)
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 60)))
+        .stroke(tokens::default_stroke())
         .corner_radius(0.0)
         .min_size(size),
     )

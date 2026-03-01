@@ -138,19 +138,21 @@ fn corner_alpha(cx: f64, cy: f64, w: f64, h: f64, r: f64) -> f64 {
 }
 
 fn configure_theme(ctx: &egui::Context) {
+    use components::tokens::{colors, font_size};
+
     let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::BLACK;
-    visuals.window_fill = egui::Color32::from_rgb(28, 28, 30);
-    visuals.extreme_bg_color = egui::Color32::from_rgb(20, 20, 22);
-    visuals.faint_bg_color = egui::Color32::from_rgb(28, 28, 30);
-    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(28, 28, 30);
+    visuals.panel_fill = colors::PANEL_BG;
+    visuals.window_fill = colors::SURFACE_RAISED;
+    visuals.extreme_bg_color = colors::SURFACE_DARK;
+    visuals.faint_bg_color = colors::SURFACE_RAISED;
+    visuals.widgets.noninteractive.bg_fill = colors::SURFACE_RAISED;
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
-    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(38, 38, 42);
+    visuals.widgets.inactive.bg_fill = colors::SURFACE_INTERACTIVE;
     visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(50, 50, 55);
+    visuals.widgets.hovered.bg_fill = colors::BORDER_DIM;
     visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
     visuals.widgets.hovered.expansion = 0.0;
-    visuals.widgets.active.bg_fill = egui::Color32::BLACK;
+    visuals.widgets.active.bg_fill = colors::PANEL_BG;
     visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
     visuals.widgets.active.expansion = 0.0;
     visuals.selection.bg_fill = egui::Color32::WHITE;
@@ -161,12 +163,12 @@ fn configure_theme(ctx: &egui::Context) {
         s.spacing.interact_size.y = 20.0;
         use egui::{FontId, TextStyle};
         s.text_styles
-            .insert(TextStyle::Body, FontId::proportional(11.0));
+            .insert(TextStyle::Body, FontId::proportional(font_size::ACTION));
         s.text_styles
-            .insert(TextStyle::Button, FontId::proportional(11.0));
+            .insert(TextStyle::Button, FontId::proportional(font_size::ACTION));
         s.text_styles
-            .insert(TextStyle::Small, FontId::proportional(9.0));
+            .insert(TextStyle::Small, FontId::proportional(font_size::SMALL));
         s.text_styles
-            .insert(TextStyle::Monospace, FontId::monospace(10.0));
+            .insert(TextStyle::Monospace, FontId::monospace(font_size::BODY));
     });
 }
