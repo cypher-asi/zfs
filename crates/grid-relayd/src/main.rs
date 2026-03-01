@@ -240,7 +240,7 @@ async fn main() -> Result<()> {
                         protocols = ?info.protocols,
                         "identify received"
                     );
-                    ingest_identify_update(&mut swarm, &peer_id, &info);
+                    ingest_identify_update(&mut swarm, local_peer_id, &peer_id, &info);
                     ingest_circuit_addrs(
                         &mut swarm,
                         &peer_id,
@@ -259,7 +259,7 @@ async fn main() -> Result<()> {
                         observed = %info.observed_addr,
                         "identify pushed"
                     );
-                    ingest_identify_update(&mut swarm, &peer_id, &info);
+                    ingest_identify_update(&mut swarm, local_peer_id, &peer_id, &info);
                     ingest_circuit_addrs(
                         &mut swarm,
                         &peer_id,
@@ -549,6 +549,7 @@ fn load_or_generate_keypair(path: &std::path::Path) -> Result<libp2p::identity::
 /// address is already added in the `ConnectionEstablished` handler.
 fn ingest_identify_update(
     swarm: &mut libp2p::Swarm<RelayBehaviour>,
+    local_peer_id: libp2p::PeerId,
     peer_id: &libp2p::PeerId,
     info: &identify::Info,
 ) {
@@ -561,6 +562,51 @@ fn ingest_identify_update(
     if is_globally_routable(&info.observed_addr) {
         swarm.add_external_address(info.observed_addr.clone());
     }
+
+    // Also ingest relay-circuit listen addresses advertised by this peer.
+    // We intentionally ignore direct listen_addrs here (they can be stale NAT
+    // ephemeral ports), but valid `.../p2p/<this-relay>/p2p-circuit/p2p/<peer>`
+    // addresses are high-signal and required for relay-routed discovery.
+    for advertised in &info.listen_addrs {
+        let normalized = normalize_multiaddr(advertised);
+        if is_peer_circuit_addr_via_relay(&normalized, *peer_id, local_peer_id) {
+            debug!(
+                %peer_id,
+                %normalized,
+                "ingesting identify circuit listen addr into kademlia"
+            );
+            swarm
+                .behaviour_mut()
+                .kademlia
+                .add_address(peer_id, normalized);
+        }
+    }
+}
+
+fn is_peer_circuit_addr_via_relay(addr: &Multiaddr, peer_id: PeerId, relay_id: PeerId) -> bool {
+    use libp2p::multiaddr::Protocol;
+
+    let mut saw_circuit = false;
+    let mut relay_before_circuit = None;
+    let mut dest_after_circuit = None;
+
+    for proto in addr.iter() {
+        match proto {
+            Protocol::P2pCircuit => saw_circuit = true,
+            Protocol::P2p(pid) if !saw_circuit => relay_before_circuit = Some(pid),
+            Protocol::P2p(pid) => {
+                if dest_after_circuit.is_none() {
+                    dest_after_circuit = Some(pid);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    saw_circuit
+        && relay_before_circuit == Some(relay_id)
+        && dest_after_circuit == Some(peer_id)
+        && is_globally_routable(addr)
 }
 
 /// Register relay circuit addresses for the identified peer in the Kademlia
