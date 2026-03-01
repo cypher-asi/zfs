@@ -363,7 +363,7 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
                 .fill(colors::PANEL_BG)
                 .inner_margin(egui::Margin {
                     left: 1,
-                    right: 1,
+                    right: 2,
                     top: 8,
                     bottom: 0,
                 }),
