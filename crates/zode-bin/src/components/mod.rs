@@ -19,5 +19,5 @@ pub(crate) use inputs::{text_input, text_input_password};
 pub(crate) use labels::{error_label, field_label, hint_label, muted_label, status_label, warn_label};
 pub(crate) use layout::{
     action_panel, auth_panel_frame, auth_screen_panel, card_frame, centered_row, form_grid,
-    overlay_frame, scrollable_section, section, section_heading, title_bar_frame,
+    overlay_frame, section, section_heading, title_bar_frame,
 };

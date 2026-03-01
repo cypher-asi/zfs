@@ -161,17 +161,3 @@ pub(crate) fn title_bar_frame() -> egui::Frame {
         ))
         .stroke(egui::Stroke::NONE)
 }
-
-/// Section that fills available height with a vertical scroll area.
-pub(crate) fn scrollable_section(
-    ui: &mut egui::Ui,
-    title: &str,
-    add_contents: impl FnOnce(&mut egui::Ui),
-) {
-    section(ui, title, |ui| {
-        ui.set_min_height(ui.available_height());
-        egui::ScrollArea::vertical()
-            .auto_shrink([false; 2])
-            .show(ui, add_contents);
-    });
-}
