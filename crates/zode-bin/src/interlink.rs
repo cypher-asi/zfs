@@ -19,9 +19,10 @@ use zid::MachineKeyCapabilities;
 
 use crate::app::ZodeApp;
 use crate::components::{
-    error_label, field_label, info_grid, kv_row, section, std_button, text_input,
+    error_label, failed_icon, field_label, info_grid, kv_row, section, std_button, text_input,
+    verified_icon,
 };
-use crate::helpers::format_timestamp_ms;
+use crate::helpers::{format_timestamp_ms, shorten_zid};
 use crate::state::{DisplayMessage, InterlinkState, InterlinkUpdate, SignatureStatus};
 
 fn derive_test_sector_key() -> SectorKey {
@@ -565,20 +566,6 @@ fn drain_interlink_updates(app: &mut ZodeApp) {
     }
 }
 
-fn short_sender(id: &str) -> String {
-    const ZODE_PREFIX: &str = "Zx12D3KooW";
-    const DID_PREFIX: &str = "did:key:z6Mk";
-    if let Some(unique) = id.strip_prefix(ZODE_PREFIX) {
-        let n = 6.min(unique.len());
-        format!("Zx..{}", &unique[unique.len() - n..])
-    } else if let Some(unique) = id.strip_prefix(DID_PREFIX) {
-        let n = 6.min(unique.len());
-        format!("did:..{}", &unique[unique.len() - n..])
-    } else {
-        crate::helpers::shorten_id(id, 4, 6)
-    }
-}
-
 fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
     let il = app.interlink_state.as_mut().unwrap();
     let should_scroll = il.scroll_to_bottom;
@@ -611,7 +598,7 @@ fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
 
 fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
     let time = format_timestamp_ms(msg.timestamp_ms);
-    let name = short_sender(&msg.sender);
+    let name = shorten_zid(&msg.sender, 6);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("[{time}]")).monospace().weak());
         ui.label(egui::RichText::new(format!("{name}:")).monospace().strong());
@@ -620,35 +607,8 @@ fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
         ui.with_layout(
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| match msg.signature_status {
-                SignatureStatus::Verified => {
-                    let size = 14.0;
-                    let (resp, painter) =
-                        ui.allocate_painter(egui::Vec2::splat(size), egui::Sense::hover());
-                    let c = resp.rect.center();
-                    painter.add(egui::Shape::line(
-                        vec![
-                            c + egui::vec2(-3.5, 0.5),
-                            c + egui::vec2(-1.0, 3.0),
-                            c + egui::vec2(4.5, -3.5),
-                        ],
-                        egui::Stroke::new(2.0, crate::components::colors::CONNECTED),
-                    ));
-                }
-                SignatureStatus::Failed => {
-                    let size = 14.0;
-                    let (resp, painter) =
-                        ui.allocate_painter(egui::Vec2::splat(size), egui::Sense::hover());
-                    let c = resp.rect.center();
-                    let stroke = egui::Stroke::new(2.0, crate::components::colors::ERROR);
-                    painter.line_segment(
-                        [c + egui::vec2(-3.0, -3.0), c + egui::vec2(3.0, 3.0)],
-                        stroke,
-                    );
-                    painter.line_segment(
-                        [c + egui::vec2(3.0, -3.0), c + egui::vec2(-3.0, 3.0)],
-                        stroke,
-                    );
-                }
+                SignatureStatus::Verified => verified_icon(ui),
+                SignatureStatus::Failed => failed_icon(ui),
                 SignatureStatus::None => {}
             },
         );

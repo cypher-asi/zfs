@@ -1,22 +1,8 @@
 use eframe::egui;
 
 use crate::components::tokens::colors;
+use crate::helpers::shorten_zid;
 use crate::visualization::{color_of, radius_of, Camera, GraphNode, NetworkVisualization};
-
-/// Produce a short, distinguishing label for a ZID.
-///
-/// Raw libp2p PeerIds share a common `"12D3KooW"` multicodec prefix, so
-/// the formatted `"Zx12D3KooW…"` string only becomes unique after 10
-/// characters.  We skip that prefix and show the last N unique chars.
-fn short_zid(id: &str, unique_chars: usize) -> String {
-    const COMMON_PREFIX: &str = "Zx12D3KooW";
-    if let Some(unique) = id.strip_prefix(COMMON_PREFIX) {
-        let n = unique_chars.min(unique.len());
-        format!("Zx..{}", &unique[unique.len() - n..])
-    } else {
-        crate::helpers::shorten_id(id, 4, unique_chars)
-    }
-}
 
 impl NetworkVisualization {
     pub fn render(&mut self, ui: &mut egui::Ui) {
@@ -125,7 +111,7 @@ impl NetworkVisualization {
                 egui::Color32::WHITE,
             );
         } else if self.camera.zoom > 0.6 {
-            let short = short_zid(&node.id, 6);
+            let short = shorten_zid(&node.id, 6);
             painter.text(
                 sp + egui::vec2(0.0, r + 8.0),
                 egui::Align2::CENTER_TOP,
@@ -146,7 +132,7 @@ impl NetworkVisualization {
         let node = &self.nodes[idx];
         let sp = self.world_to_screen(node.pos, center);
         let r = radius_of(node) * self.camera.zoom.sqrt();
-        let short = short_zid(&node.id, 12);
+        let short = shorten_zid(&node.id, 12);
         let tip = if node.is_local {
             format!("YOU  {short}")
         } else if node.connected {

@@ -6,9 +6,10 @@ use grid_storage::SectorStore;
 
 use crate::app::ZodeApp;
 use crate::components::{
-    colors, copy_button, field_label, hint_label, info_grid, kv_row, loading_state, muted_label,
-    section,
+    colors, copy_button, error_label, field_label, hint_label, info_grid, kv_row, loading_state,
+    muted_label, section,
 };
+use crate::components::tokens::spacing;
 use crate::helpers::format_bytes;
 use crate::state::StateSnapshot;
 
@@ -28,7 +29,7 @@ pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnap
         .collect();
 
     render_stats_section(ui, zode);
-    ui.add_space(8.0);
+    ui.add_space(spacing::MD);
     render_programs_section(ui, zode, status, &known_programs);
 }
 
@@ -44,7 +45,7 @@ fn render_stats_section(ui: &mut egui::Ui, zode: &zode::Zode) {
                 });
             }
             Err(e) => {
-                ui.colored_label(colors::ERROR, format!("Sector stats error: {e}"));
+                error_label(ui, &format!("Sector stats error: {e}"));
             }
         }
     });
@@ -157,7 +158,7 @@ fn render_log_entry(
         .id_salt(&entry_id)
         .show(ui, |ui| {
             render_entry_content(ui, data, &format!("{short}_{index}"));
-            ui.add_space(4.0);
+            ui.add_space(spacing::SM);
             render_proof_section(ui, zode, program_id, sector_id, index, short);
         });
 }
@@ -225,14 +226,14 @@ fn render_entry_content(ui: &mut egui::Ui, data: &[u8], label: &str) {
     });
 
     render_text_preview(ui, data, label);
-    ui.add_space(4.0);
+    ui.add_space(spacing::SM);
     render_hex_preview(ui, data, label);
 }
 
 fn render_text_preview(ui: &mut egui::Ui, data: &[u8], short_sid: &str) {
     if let Ok(text) = std::str::from_utf8(data) {
         hint_label(ui, "Content appears to be valid UTF-8.");
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         let preview = if text.len() > 2048 {
             format!("{}...", &text[..2048])
         } else {

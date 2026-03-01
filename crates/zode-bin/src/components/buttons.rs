@@ -58,6 +58,21 @@ pub(crate) fn link_button(ui: &mut egui::Ui, label: &str) -> bool {
     .clicked()
 }
 
+/// Transparent ghost-style button with icon + label.
+pub(crate) fn ghost_button(ui: &mut egui::Ui, icon: &str, label: &str) -> bool {
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(format!("{icon} {label}"))
+                .size(font_size::ACTION)
+                .color(colors::TEXT_HEADING),
+        )
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(4.0),
+    )
+    .clicked()
+}
+
 /// Frameless destructive-action button (error-colored text).
 pub(crate) fn danger_button(ui: &mut egui::Ui, label: &str) -> bool {
     ui.add(
@@ -127,7 +142,7 @@ pub(crate) fn copy_button(ui: &mut egui::Ui, text: &str) {
     }
 }
 
-pub(super) fn square_icon_button(ui: &mut egui::Ui, icon: &str) -> bool {
+pub(crate) fn square_icon_button(ui: &mut egui::Ui, icon: &str) -> bool {
     let size = egui::vec2(WIDGET_HEIGHT, WIDGET_HEIGHT);
 
     let wv = &mut ui.visuals_mut().widgets;

@@ -11,7 +11,8 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
         .outer_margin(egui::Margin::symmetric(1, 0))
         .stroke(tokens::border_stroke())
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
+            // Fill horizontally without forcing an exact width that can clip the right stroke.
+            ui.set_min_width(ui.available_width());
             section_heading(ui, title);
             ui.add_space(10.0);
             add_contents(ui);
@@ -133,12 +134,44 @@ pub(crate) fn auth_screen_panel(
             ui.label(
                 egui::RichText::new(title)
                     .strong()
-                    .size(12.0)
+                    .size(font_size::SUBTITLE)
                     .color(colors::TEXT_HEADING),
             );
             ui.add_space(spacing::XL);
 
             add_contents(ui);
         });
+    });
+}
+
+/// Standard frame for pre-auth / setup central panels.
+pub(crate) fn auth_panel_frame() -> egui::Frame {
+    egui::Frame::default()
+        .fill(colors::PANEL_BG)
+        .inner_margin(spacing::XXXL)
+}
+
+/// Standard frame for the title bar panel.
+pub(crate) fn title_bar_frame() -> egui::Frame {
+    egui::Frame::default()
+        .fill(colors::PANEL_BG)
+        .inner_margin(egui::Margin::symmetric(
+            spacing::LG as i8,
+            spacing::MD as i8,
+        ))
+        .stroke(egui::Stroke::NONE)
+}
+
+/// Section that fills available height with a vertical scroll area.
+pub(crate) fn scrollable_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    section(ui, title, |ui| {
+        ui.set_min_height(ui.available_height());
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, add_contents);
     });
 }

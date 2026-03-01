@@ -10,8 +10,9 @@ use crate::app::ZodeApp;
 use crate::components::{
     action_button, card_frame, colors, copy_button, danger_button, editable_list, error_label,
     field_label, form_grid, hint_label, info_grid, kv_row, kv_row_copyable, link_button, section,
-    std_button, text_input_password,
+    status_label, std_button, text_input_password, warn_label,
 };
+use crate::components::tokens::{font_size, spacing};
 use crate::helpers::shorten_id;
 use crate::profile;
 use crate::state::DerivedMachineKey;
@@ -24,20 +25,20 @@ pub(crate) fn render_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
         render_recovery(app, ui);
     } else if has_identity {
         render_identity_info(app, ui);
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         if app.identity_state.pending_save {
             render_save_profile(app, ui);
         } else if app.active_profile_id.is_some() {
             render_profile_panel(app, ui);
         }
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         render_machine_keys(app, ui);
     } else {
         render_no_identity(app, ui);
     }
 
     if let Some(ref err) = app.identity_state.error.clone() {
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         error_label(ui, err);
     }
 }
@@ -48,13 +49,13 @@ fn render_no_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "No identity loaded. Generate a new Neural Key or recover from existing shards.",
         );
-        ui.add_space(12.0);
+        ui.add_space(spacing::LG);
 
         ui.horizontal(|ui| {
             if action_button(ui, "Generate Neural Key") {
                 generate_new_identity(app);
             }
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if action_button(ui, "Recover from Shards") {
                 app.identity_state.recovery_mode = true;
                 app.identity_state.error = None;
@@ -119,7 +120,7 @@ fn render_identity_info(app: &mut ZodeApp, ui: &mut egui::Ui) {
             );
         });
 
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         ui.horizontal(|ui| {
             if std_button(
@@ -132,19 +133,16 @@ fn render_identity_info(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ) {
                 app.identity_state.show_shares = !app.identity_state.show_shares;
             }
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if std_button(ui, "Clear Identity") {
                 app.identity_state = Default::default();
             }
         });
 
         if app.identity_state.show_shares {
-            ui.add_space(8.0);
-            ui.colored_label(
-                colors::WARN,
-                "Store these shares in separate secure locations.",
-            );
-            ui.add_space(4.0);
+            ui.add_space(spacing::MD);
+            warn_label(ui, "Store these shares in separate secure locations.");
+            ui.add_space(spacing::SM);
             for share in &app.identity_state.shares {
                 let hex = share.to_hex();
                 ui.horizontal(|ui| {
@@ -169,7 +167,7 @@ fn render_recovery(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "Enter your Shamir shares (hex-encoded) to recover your identity.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         editable_list(
             ui,
@@ -178,13 +176,13 @@ fn render_recovery(app: &mut ZodeApp, ui: &mut egui::Ui) {
             0.0,
         );
 
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         ui.horizontal(|ui| {
             if action_button(ui, "Recover") {
                 attempt_recovery(app);
             }
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if std_button(ui, "Cancel") {
                 app.identity_state.recovery_mode = false;
                 app.identity_state.recovery_inputs.clear();
@@ -258,7 +256,7 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "MACHINE KEYS", |ui| {
         if app.identity_state.machine_keys.is_empty() {
             hint_label(ui, "No machine keys yet.");
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if action_button(ui, "Derive Machine Key") {
                 auto_derive_machine_key(app);
             }
@@ -271,7 +269,7 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
                             kv_row(ui, "Caps", &format!("{:?}", mk.capabilities));
                         });
                     });
-                ui.add_space(4.0);
+                ui.add_space(spacing::SM);
             }
 
             if std_button(ui, "Derive Additional Key") {
@@ -337,7 +335,7 @@ fn render_save_profile(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "SAVE PROFILE", |ui| {
         if has_session_password {
             hint_label(ui, "Vault will be updated using your session password.");
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if action_button(ui, "Update Vault") {
                 do_save = true;
             }
@@ -346,7 +344,7 @@ fn render_save_profile(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 ui,
                 "Save your identity and machine keys to an encrypted vault on disk.",
             );
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
 
             form_grid(ui, "save_profile_form", |ui| {
                 field_label(ui, "Profile Name");
@@ -364,15 +362,15 @@ fn render_save_profile(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 ui.end_row();
             });
 
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if action_button(ui, "Save Profile") {
                 do_save = true;
             }
         }
 
         if let Some(ref status) = app.identity_state.save_status {
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(status).weak().italics());
+            ui.add_space(spacing::SM);
+            status_label(ui, status);
         }
     });
 
@@ -499,17 +497,17 @@ fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
         }
 
         if let Some(ref status) = app.identity_state.save_status {
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(status).weak().italics());
+            ui.add_space(spacing::SM);
+            status_label(ui, status);
         }
 
-        ui.add_space(12.0);
+        ui.add_space(spacing::LG);
 
         if app.confirm_delete_profile.as_deref() == Some(&*profile_id) {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Delete this profile?")
-                        .size(11.0)
+                        .size(font_size::ACTION)
                         .color(colors::ERROR),
                 );
                 if danger_button(ui, "Yes, delete") {

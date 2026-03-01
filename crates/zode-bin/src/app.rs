@@ -5,7 +5,11 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use zode::{LogEvent, Zode};
 
-use crate::components::{auth_screen_panel, colors, link_button, status_dot, title_bar_icon};
+use crate::components::{
+    auth_panel_frame, auth_screen_panel, colors, error_label, link_button, status_dot,
+    text_input_password, title_bar_frame, title_bar_icon,
+};
+use crate::components::tokens::{font_size, spacing};
 use crate::profile::{self, ProfileMeta};
 use crate::settings::Settings;
 use crate::state::{AppPhase, AppState, SettingsSection, Tab, MAX_LOG_ENTRIES};
@@ -549,19 +553,20 @@ impl ZodeApp {
         }
     }
 
-    fn render_title_bar(&mut self, ctx: &egui::Context, maximized: bool, on_resize_edge: bool) {
-        egui::TopBottomPanel::top("tabs")
-            .frame(
-                egui::Frame::default()
-                    .fill(colors::PANEL_BG)
-                    .inner_margin(egui::Margin::symmetric(12, 8))
-                    .stroke(egui::Stroke::NONE),
-            )
+    fn render_title_bar_shell(
+        ctx: &egui::Context,
+        panel_id: &'static str,
+        maximized: bool,
+        on_resize_edge: bool,
+        content: impl FnOnce(&mut egui::Ui),
+    ) {
+        egui::TopBottomPanel::top(panel_id)
+            .frame(title_bar_frame())
             .show(ctx, |ui| {
                 let title_bar_rect = ui.max_rect();
                 let title_resp = ui.interact(
                     title_bar_rect,
-                    egui::Id::new("title_bar"),
+                    egui::Id::new(panel_id),
                     egui::Sense::click_and_drag(),
                 );
                 if !on_resize_edge && title_resp.drag_started_by(egui::PointerButton::Primary) {
@@ -578,16 +583,19 @@ impl ZodeApp {
                 ui.visuals_mut().widgets.active.fg_stroke =
                     egui::Stroke::new(1.0, egui::Color32::WHITE);
 
-                ui.horizontal(|ui| {
-                    self.render_tab_buttons(ui);
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.render_window_controls(ui)
-                    });
-                });
+                ui.horizontal(content);
 
                 Self::handle_title_bar_drag(ui, &title_resp, title_bar_rect, on_resize_edge);
             });
+    }
+
+    fn render_title_bar(&mut self, ctx: &egui::Context, maximized: bool, on_resize_edge: bool) {
+        Self::render_title_bar_shell(ctx, "tabs", maximized, on_resize_edge, |ui| {
+            self.render_tab_buttons(ui);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.render_window_controls(ui)
+            });
+        });
     }
 
     fn render_tab_buttons(&mut self, ui: &mut egui::Ui) {
@@ -597,7 +605,7 @@ impl ZodeApp {
                 .fit_to_exact_size(egui::vec2(20.0, 20.0))
                 .corner_radius(3.0),
         );
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
         ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
         ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
@@ -627,7 +635,7 @@ impl ZodeApp {
                 .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
 
         let is_settings = self.tab == Tab::Settings;
         if title_bar_icon(ui, egui_phosphor::regular::GEAR_SIX, is_settings).clicked() {
@@ -683,77 +691,46 @@ impl ZodeApp {
         maximized: bool,
         on_resize_edge: bool,
     ) {
-        egui::TopBottomPanel::top("pre_auth_title")
-            .frame(
-                egui::Frame::default()
-                    .fill(colors::PANEL_BG)
-                    .inner_margin(egui::Margin::symmetric(12, 8))
-                    .stroke(egui::Stroke::NONE),
-            )
-            .show(ctx, |ui| {
-                let title_bar_rect = ui.max_rect();
-                let title_resp = ui.interact(
-                    title_bar_rect,
-                    egui::Id::new("pre_auth_title_bar"),
-                    egui::Sense::click_and_drag(),
-                );
-                if !on_resize_edge && title_resp.drag_started_by(egui::PointerButton::Primary) {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        Self::render_title_bar_shell(ctx, "pre_auth_title", maximized, on_resize_edge, |ui| {
+            let tex = self.icon_texture(ui.ctx());
+            ui.add(
+                egui::Image::new(&tex)
+                    .fit_to_exact_size(egui::vec2(20.0, 20.0))
+                    .corner_radius(3.0),
+            );
+            ui.add_space(spacing::SM);
+            ui.label(
+                egui::RichText::new("ZODE")
+                    .strong()
+                    .size(font_size::ACTION)
+                    .color(colors::TEXT_HEADING),
+            );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                if title_resp.double_clicked() {
+                let max_icon = if maximized {
+                    egui_phosphor::regular::CORNERS_IN
+                } else {
+                    egui_phosphor::regular::CORNERS_OUT
+                };
+                if title_bar_icon(ui, max_icon, false).clicked() {
                     ui.ctx()
                         .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                 }
-
-                ui.visuals_mut().widgets.active = ui.visuals().widgets.hovered;
-                ui.visuals_mut().selection.bg_fill = egui::Color32::TRANSPARENT;
-                ui.visuals_mut().selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-                ui.visuals_mut().widgets.active.fg_stroke =
-                    egui::Stroke::new(1.0, egui::Color32::WHITE);
-
-                ui.horizontal(|ui| {
-                    let tex = self.icon_texture(ui.ctx());
-                    ui.add(
-                        egui::Image::new(&tex)
-                            .fit_to_exact_size(egui::vec2(20.0, 20.0))
-                            .corner_radius(3.0),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new("ZODE")
-                            .strong()
-                            .size(11.0)
-                            .color(colors::TEXT_HEADING),
-                    );
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked() {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                        let max_icon = if maximized {
-                            egui_phosphor::regular::CORNERS_IN
-                        } else {
-                            egui_phosphor::regular::CORNERS_OUT
-                        };
-                        if title_bar_icon(ui, max_icon, false).clicked() {
-                            ui.ctx()
-                                .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
-                        }
-                        if title_bar_icon(ui, egui_phosphor::regular::MINUS, false).clicked() {
-                            ui.ctx()
-                                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                        }
-                    });
-                });
-
-                Self::handle_title_bar_drag(ui, &title_resp, title_bar_rect, on_resize_edge);
+                if title_bar_icon(ui, egui_phosphor::regular::MINUS, false).clicked() {
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                }
             });
+        });
     }
 
     fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
         let central_frame = egui::Frame::default()
             .fill(colors::PANEL_BG)
-            .inner_margin(8.0);
+            .inner_margin(spacing::MD);
 
         egui::CentralPanel::default()
             .frame(central_frame)
@@ -763,7 +740,7 @@ impl ZodeApp {
                     ui.vertical_centered(|ui| {
                         ui.add_space((rect.height() / 2.0 - 25.0).max(0.0));
                         ui.spinner();
-                        ui.add_space(4.0);
+                        ui.add_space(spacing::SM);
                         ui.label("ZODE is stopped. Go to Settings to start.");
                     });
                     return;
@@ -955,27 +932,29 @@ impl ZodeApp {
 
     fn render_profile_select(&mut self, ctx: &egui::Context) {
         let tex = self.icon_texture(ctx);
-        let frame = egui::Frame::default()
-            .fill(colors::PANEL_BG)
-            .inner_margin(32.0);
 
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            auth_screen_panel(ui, &tex, "SELECT PROFILE", 200.0, |ui| {
-                let profiles = self.profiles.clone();
-                for p in &profiles {
-                    let btn =
-                        egui::Button::new(egui::RichText::new(&p.name).monospace().size(12.0))
-                            .min_size(egui::vec2(230.0, 36.0));
+        egui::CentralPanel::default()
+            .frame(auth_panel_frame())
+            .show(ctx, |ui| {
+                auth_screen_panel(ui, &tex, "SELECT PROFILE", 200.0, |ui| {
+                    let profiles = self.profiles.clone();
+                    for p in &profiles {
+                        let btn = egui::Button::new(
+                            egui::RichText::new(&p.name)
+                                .monospace()
+                                .size(font_size::SUBTITLE),
+                        )
+                        .min_size(egui::vec2(230.0, 36.0));
 
-                    if ui.add(btn).clicked() {
-                        self.phase = AppPhase::Unlock {
-                            profile_id: p.id.clone(),
-                        };
+                        if ui.add(btn).clicked() {
+                            self.phase = AppPhase::Unlock {
+                                profile_id: p.id.clone(),
+                            };
+                        }
+                        ui.add_space(spacing::SM);
                     }
-                    ui.add_space(4.0);
-                }
+                });
             });
-        });
     }
 
     fn render_unlock_screen(&mut self, ctx: &egui::Context, profile_id: &str) {
@@ -988,62 +967,58 @@ impl ZodeApp {
             .unwrap_or_else(|| profile_id.clone());
 
         let tex = self.icon_texture(ctx);
-        let frame = egui::Frame::default()
-            .fill(colors::PANEL_BG)
-            .inner_margin(32.0);
 
         let mut do_unlock = false;
 
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            let rect = ui.max_rect();
+        egui::CentralPanel::default()
+            .frame(auth_panel_frame())
+            .show(ctx, |ui| {
+                let rect = ui.max_rect();
 
-            auth_screen_panel(ui, &tex, &profile_name, 220.0, |ui| {
-                ui.add_space(4.0);
+                auth_screen_panel(ui, &tex, &profile_name, 220.0, |ui| {
+                    ui.add_space(spacing::SM);
 
-                let resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.unlock_password)
-                        .password(true)
-                        .desired_width(280.0)
-                        .hint_text("Enter your password")
-                        .margin(egui::Margin::symmetric(8, 6)),
-                );
-                if self.unlock_password.is_empty() && !resp.has_focus() {
-                    resp.request_focus();
-                }
-                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    do_unlock = true;
-                }
-
-                ui.add_space(8.0);
-
-                if crate::components::action_button(ui, "Unlock") {
-                    do_unlock = true;
-                }
-
-                ui.add_space(24.0);
-
-                if self.profiles.len() > 1 {
-                    if link_button(ui, "Back to profiles") {
-                        self.unlock_password.clear();
-                        self.unlock_error = None;
-                        self.phase = AppPhase::ProfileSelect;
+                    let resp = ui.add(
+                        text_input_password(&mut self.unlock_password, 280.0)
+                            .hint_text("Enter your password"),
+                    );
+                    if self.unlock_password.is_empty() && !resp.has_focus() {
+                        resp.request_focus();
                     }
-                    ui.add_space(4.0);
+                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        do_unlock = true;
+                    }
+
+                    ui.add_space(spacing::MD);
+
+                    if crate::components::action_button(ui, "Unlock") {
+                        do_unlock = true;
+                    }
+
+                    ui.add_space(spacing::XXL);
+
+                    if self.profiles.len() > 1 {
+                        if link_button(ui, "Back to profiles") {
+                            self.unlock_password.clear();
+                            self.unlock_error = None;
+                            self.phase = AppPhase::ProfileSelect;
+                        }
+                        ui.add_space(spacing::SM);
+                    }
+                });
+
+                if let Some(ref err) = self.unlock_error {
+                    let err_rect = egui::Rect::from_min_size(
+                        egui::pos2(rect.left(), rect.bottom() - 28.0),
+                        egui::vec2(rect.width(), 20.0),
+                    );
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(err_rect), |ui| {
+                        ui.vertical_centered(|ui| {
+                            error_label(ui, err);
+                        });
+                    });
                 }
             });
-
-            if let Some(ref err) = self.unlock_error {
-                let err_rect = egui::Rect::from_min_size(
-                    egui::pos2(rect.left(), rect.bottom() - 28.0),
-                    egui::vec2(rect.width(), 20.0),
-                );
-                ui.scope_builder(egui::UiBuilder::new().max_rect(err_rect), |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.colored_label(colors::ERROR, err);
-                    });
-                });
-            }
-        });
 
         if do_unlock {
             self.attempt_unlock(&profile_id);

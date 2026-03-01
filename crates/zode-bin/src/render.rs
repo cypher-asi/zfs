@@ -3,8 +3,8 @@ use eframe::egui;
 use crate::app::ZodeApp;
 use crate::components::{
     action_button, action_panel, colors, copy_button, editable_list, error_label, field_label,
-    form_grid, hint_label, info_grid, kv_row, kv_row_copyable, loading_state, muted_label,
-    section, text_input,
+    form_grid, hint_label, icon_button, info_grid, kv_row, kv_row_copyable, loading_state,
+    muted_label, section, text_input,
 };
 use crate::components::tokens::{font_size, spacing};
 use crate::helpers::format_bytes;
@@ -24,7 +24,7 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             if action_button(ui, "STOP ZODE") {
                 do_stop = true;
             }
-            ui.add_space(12.0);
+            ui.add_space(spacing::LG);
         }
         let label = if running {
             "RESTART ZODE"
@@ -178,7 +178,7 @@ fn render_settings_general(app: &mut ZodeApp, ui: &mut egui::Ui, running: bool) 
             "The ZODE is stopped. Edit settings and click Start."
         };
         hint_label(ui, msg);
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         form_grid(ui, "settings_grid", |ui| {
                 field_label(ui, "Data Directory");
@@ -197,7 +197,7 @@ fn render_peers_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "Multiaddrs of other ZODE nodes to connect to on startup.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         editable_list(
             ui,
             &mut app.settings.bootstrap_peers,
@@ -212,13 +212,12 @@ fn render_peers_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 ui,
                 "Peers remembered from previous sessions. They are added to bootstrap on startup.",
             );
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             let mut to_remove = Vec::new();
             for (i, peer) in app.settings.known_peers.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.monospace(peer);
-                    if ui
-                        .small_button(egui_phosphor::regular::TRASH)
+                    if icon_button(ui, egui_phosphor::regular::TRASH)
                         .on_hover_text("Remove")
                         .clicked()
                     {
@@ -229,7 +228,7 @@ fn render_peers_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             for i in to_remove.into_iter().rev() {
                 app.settings.known_peers.remove(i);
             }
-            ui.add_space(4.0);
+            ui.add_space(spacing::SM);
             if action_button(ui, "Clear All") {
                 app.settings.known_peers.clear();
             }
@@ -243,9 +242,9 @@ fn render_relay_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "Relay-first connectivity for NAT-restricted nodes. Add public relay peers and enable relay transport.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         ui.checkbox(&mut app.settings.enable_relay, "Enable Relay Transport");
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         editable_list(
             ui,
             &mut app.settings.relay_peers,
@@ -261,14 +260,14 @@ fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "Standard programs the ZODE subscribes to. Toggle off to skip.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         ui.checkbox(&mut app.settings.enable_zid, "ZID (Zero Identity)");
         ui.checkbox(&mut app.settings.enable_interlink, "Interlink");
     });
 
     section(ui, "Additional Programs", |ui| {
         hint_label(ui, "64-character hex program IDs for non-default programs.");
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         editable_list(
             ui,
             &mut app.settings.topics,
@@ -284,7 +283,7 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
             ui,
             "Automatic zode discovery via Kademlia DHT. Nodes find each other transitively.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         ui.checkbox(&mut app.settings.enable_kademlia, "Enable DHT Discovery");
 
         if app.settings.enable_kademlia {
@@ -309,7 +308,7 @@ fn render_discovery_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
 fn render_rpc_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "RPC Server", |ui| {
         hint_label(ui, "JSON-RPC HTTP server for external app access.");
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
         ui.checkbox(&mut app.settings.enable_rpc, "Enable RPC Server");
 
         if app.settings.enable_rpc {
@@ -518,12 +517,12 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
             kv_row(ui, "Connected", &format!("{}", status.peer_count));
         });
 
-        ui.add_space(4.0);
+        ui.add_space(spacing::SM);
         hint_label(
             ui,
             "ZODE discovery via GossipSub / bootstrap peers / Kademlia DHT.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         if status.connected_peers.is_empty() {
             muted_label(ui, "No connected ZODEs.");

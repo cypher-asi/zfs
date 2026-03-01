@@ -2,9 +2,11 @@ use eframe::egui;
 
 use crate::app::ZodeApp;
 use crate::components::{
-    action_button, auth_screen_panel, centered_row, colors, editable_list, error_label,
-    field_label, form_grid, hint_label, link_button, text_input_password,
+    action_button, auth_panel_frame, auth_screen_panel, centered_row, editable_list, error_label,
+    field_label, form_grid, ghost_button, hint_label, link_button, status_label, text_input_password,
+    warn_label,
 };
+use crate::components::tokens::spacing;
 use crate::helpers::shorten_id;
 use crate::identity;
 use crate::profile;
@@ -22,17 +24,14 @@ impl ZodeApp {
 
     fn render_setup_step_generate(&mut self, ctx: &egui::Context) {
         let tex = self.icon_texture(ctx);
-        let frame = egui::Frame::default()
-            .fill(colors::PANEL_BG)
-            .inner_margin(32.0);
 
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(auth_panel_frame()).show(ctx, |ui| {
             auth_screen_panel(ui, &tex, "SETUP YOUR ZODE", 220.0, |ui| {
                 if self.identity_state.recovery_mode {
                     self.render_setup_recovery(ui);
                 } else {
                     hint_label(ui, "Generate a new Neural Key or recover from existing shards.");
-                    ui.add_space(16.0);
+                    ui.add_space(spacing::XL);
 
                     centered_row(ui, "setup_btns", |ui| {
                         if action_button(ui, "Generate Neural Key") {
@@ -41,7 +40,7 @@ impl ZodeApp {
                                 self.identity_state.setup_step = 1;
                             }
                         }
-                        ui.add_space(8.0);
+                        ui.add_space(spacing::MD);
                         if action_button(ui, "Recover from Shards") {
                             self.identity_state.recovery_mode = true;
                             self.identity_state.error = None;
@@ -50,7 +49,7 @@ impl ZodeApp {
                 }
 
                 if let Some(ref err) = self.identity_state.error.clone() {
-                    ui.add_space(8.0);
+                    ui.add_space(spacing::MD);
                     error_label(ui, err);
                 }
             });
@@ -62,7 +61,7 @@ impl ZodeApp {
             ui,
             "Enter your Shamir shares (hex-encoded) to recover your identity.",
         );
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         editable_list(
             ui,
@@ -71,7 +70,7 @@ impl ZodeApp {
             0.0,
         );
 
-        ui.add_space(8.0);
+        ui.add_space(spacing::MD);
 
         centered_row(ui, "recovery_btns", |ui| {
             if action_button(ui, "Recover") {
@@ -80,7 +79,7 @@ impl ZodeApp {
                     self.identity_state.setup_step = 1;
                 }
             }
-            ui.add_space(8.0);
+            ui.add_space(spacing::MD);
             if action_button(ui, "Cancel") {
                 self.identity_state.recovery_mode = false;
                 self.identity_state.recovery_inputs.clear();
@@ -92,13 +91,10 @@ impl ZodeApp {
 
     fn render_setup_step_profile(&mut self, ctx: &egui::Context) {
         let tex = self.icon_texture(ctx);
-        let frame = egui::Frame::default()
-            .fill(colors::PANEL_BG)
-            .inner_margin(32.0);
 
         let mut do_create = false;
 
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(auth_panel_frame()).show(ctx, |ui| {
             let panel = ui.max_rect();
 
             let back_rect = egui::Rect::from_min_size(
@@ -106,22 +102,7 @@ impl ZodeApp {
                 egui::vec2(80.0, 28.0),
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(back_rect), |ui| {
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new(format!(
-                                "{} Back",
-                                egui_phosphor::regular::ARROW_LEFT
-                            ))
-                            .size(11.0)
-                            .color(colors::TEXT_HEADING),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE)
-                        .corner_radius(4.0),
-                    )
-                    .clicked()
-                {
+                if ghost_button(ui, egui_phosphor::regular::ARROW_LEFT, "Back") {
                     self.identity_state.setup_step = 0;
                     self.identity_state.error = None;
                     self.identity_state.show_shares = false;
@@ -135,10 +116,7 @@ impl ZodeApp {
             );
             ui.scope_builder(egui::UiBuilder::new().max_rect(warn_rect), |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.colored_label(
-                        colors::WARN,
-                        "Back up your Neural Key shards before continuing.",
-                    );
+                    warn_label(ui, "Back up your Neural Key shards before continuing.");
                 });
             });
 
@@ -149,10 +127,10 @@ impl ZodeApp {
                             field_label(ui, "DID");
                             ui.monospace(shorten_id(did, 16, 8));
                         });
-                        ui.add_space(4.0);
+                        ui.add_space(spacing::SM);
                     }
 
-                    ui.add_space(4.0);
+                    ui.add_space(spacing::SM);
                     for share in &self.identity_state.shares {
                         let hex = share.to_hex();
                         let visible_len = hex.len().min(24);
@@ -172,7 +150,7 @@ impl ZodeApp {
                             },
                         );
                     }
-                    ui.add_space(4.0);
+                    ui.add_space(spacing::SM);
                     if link_button(ui, if self.identity_state.show_shares {
                         "Hide Shards"
                     } else {
@@ -181,7 +159,7 @@ impl ZodeApp {
                         self.identity_state.show_shares = !self.identity_state.show_shares;
                     }
 
-                    ui.add_space(16.0);
+                    ui.add_space(spacing::XL);
 
                     form_grid(ui, "setup_profile_form", |ui| {
                         field_label(ui, "Profile Name");
@@ -217,18 +195,18 @@ impl ZodeApp {
                         }
                     });
 
-                    ui.add_space(16.0);
+                    ui.add_space(spacing::XL);
                     if action_button(ui, "Create Profile") {
                         do_create = true;
                     }
 
                     if let Some(ref err) = self.identity_state.error.clone() {
-                        ui.add_space(8.0);
+                        ui.add_space(spacing::MD);
                         error_label(ui, err);
                     }
                     if let Some(ref status) = self.identity_state.save_status.clone() {
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new(status).weak().italics());
+                        ui.add_space(spacing::SM);
+                        status_label(ui, status);
                     }
             });
         });
