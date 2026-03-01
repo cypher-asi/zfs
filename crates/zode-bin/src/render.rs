@@ -356,24 +356,10 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
         return;
     };
 
-    egui::TopBottomPanel::bottom("status_sections_panel")
-        .resizable(false)
-        .frame(
-            egui::Frame::default()
-                .fill(colors::PANEL_BG)
-                .inner_margin(egui::Margin {
-                    left: 1,
-                    right: 1,
-                    top: 8,
-                    bottom: 0,
-                }),
-        )
-        .show_inside(ui, |ui| {
-            render_zode_status(ui, status, state);
-            render_storage_status(ui, status);
-            render_metrics_status(ui, &status.metrics);
-            render_rpc_status(ui, status);
-        });
+    let sections_id = egui::Id::new("status_sections_h");
+    let prev_sections_h: f32 =
+        ui.ctx().data_mut(|d| d.get_temp(sections_id).unwrap_or(300.0));
+    let viz_h = (ui.available_height() - prev_sections_h - spacing::MD).max(100.0);
 
     egui::Frame::default()
         .fill(colors::SURFACE)
@@ -383,9 +369,19 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
         .stroke(egui::Stroke::new(1.0, colors::BORDER))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(ui.available_height());
+            ui.set_height(viz_h);
             app.visualization.render(ui);
         });
+
+    ui.add_space(spacing::MD);
+    let sections_top = ui.cursor().top();
+    render_zode_status(ui, status, state);
+    render_storage_status(ui, status);
+    render_metrics_status(ui, &status.metrics);
+    render_rpc_status(ui, status);
+    let sections_h = ui.min_rect().bottom() - sections_top;
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(sections_id, sections_h.max(50.0)));
 
     let fade_t = app
         .status_first_seen
