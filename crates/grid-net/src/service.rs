@@ -441,7 +441,9 @@ impl NetworkService {
                 if num_established == 0 {
                     self.active_relay_listeners.remove(&peer_id);
                     self.discovered_peers.remove(&peer_id);
-                    self.peer_addresses.remove(&peer_id);
+                    // NOTE: peer_addresses is intentionally kept so that
+                    // recently-disconnected peers survive into the peer cache
+                    // and are re-dialed on next boot.
                     self.try_reconnect_relay(&peer_id);
                 }
                 (num_established == 0).then(|| NetworkEvent::PeerDisconnected(peer_id))

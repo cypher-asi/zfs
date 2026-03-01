@@ -501,6 +501,8 @@ impl ZodeApp {
     }
 
     pub(crate) fn lock_session(&mut self) {
+        self.stop_zode();
+
         self.unlock_password.clear();
         self.unlock_error = None;
         self.confirm_delete_profile = None;
