@@ -159,10 +159,10 @@ fn settings_nav_item(
         egui::Color32::from_gray(180)
     };
 
-    let text_pos = row_rect.min + egui::vec2(spacing::LG, (row_height - font_size::BODY) / 2.0);
+    let text_pos = egui::pos2(row_rect.min.x + spacing::LG, row_rect.center().y);
     ui.painter().text(
         text_pos,
-        egui::Align2::LEFT_TOP,
+        egui::Align2::LEFT_CENTER,
         &label_text,
         egui::FontId::proportional(font_size::BODY),
         text_color,
