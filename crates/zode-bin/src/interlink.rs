@@ -149,16 +149,20 @@ impl ZodeApp {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
             let mut event_rx = zode.subscribe_events();
+            let mut total_stored = 0u64;
             loop {
                 match interlink_catchup(&zode, program_id, &sector_id).await {
-                    Ok(0) => {
-                        info!("interlink catch-up: already up to date");
-                        break;
-                    }
                     Ok(count) => {
-                        info!(count, "interlink catch-up complete");
-                        let _ = refresh_tx.try_send(());
-                        break;
+                        total_stored += count;
+                        if count > 0 {
+                            info!(count, total_stored, "interlink catch-up: fetched entries");
+                            let _ = refresh_tx.try_send(());
+                        } else {
+                            info!(total_stored, "interlink catch-up: up to date with best peer");
+                        }
+                        if total_stored > 0 {
+                            break;
+                        }
                     }
                     Err(e) => {
                         info!(error = %e, "interlink catch-up deferred, waiting for peers");
@@ -337,44 +341,45 @@ async fn interlink_catchup(
     program_id: ProgramId,
     sector_id: &SectorId,
 ) -> Result<u64, String> {
-    const MIN_CATCHUP: u64 = 100;
     const BATCH_SIZE: u32 = 64;
 
     let status = zode.status();
-    let peer = status
-        .connected_peers
-        .first()
-        .ok_or_else(|| "no connected peers".to_string())?
-        .clone();
+    let peers = &status.connected_peers;
+    if peers.is_empty() {
+        return Err("no connected peers".to_string());
+    }
 
     let storage = zode.storage();
     let local_len = storage.log_length(&program_id, sector_id).unwrap_or(0);
 
-    let len_request = SectorRequest::LogLength(SectorLogLengthRequest {
-        program_id,
-        sector_id: sector_id.clone(),
-    });
-    let peer_len = match zode.sector_request(&peer, len_request).await? {
-        SectorResponse::LogLength(r) if r.error_code.is_none() => r.length,
-        SectorResponse::LogLength(r) => {
-            return Err(format!("peer returned error: {:?}", r.error_code));
-        }
-        _ => return Err("unexpected response type".to_string()),
-    };
+    let mut best_peer = None;
+    let mut best_len: u64 = 0;
 
-    if peer_len == 0 || peer_len <= local_len {
+    for peer in peers {
+        let len_request = SectorRequest::LogLength(SectorLogLengthRequest {
+            program_id,
+            sector_id: sector_id.clone(),
+        });
+        match zode.sector_request(peer, len_request).await {
+            Ok(SectorResponse::LogLength(r)) if r.error_code.is_none() && r.length > best_len => {
+                best_len = r.length;
+                best_peer = Some(peer.clone());
+            }
+            _ => continue,
+        }
+    }
+
+    let peer = best_peer.ok_or_else(|| "no peers have sector data".to_string())?;
+
+    if best_len == 0 || best_len <= local_len {
         return Ok(0);
     }
 
-    let from_index = if local_len == 0 {
-        peer_len.saturating_sub(MIN_CATCHUP)
-    } else {
-        local_len
-    };
+    info!(local_len, peer_len = best_len, %peer, "interlink catch-up: fetching from best peer");
 
     let mut stored = 0u64;
-    let mut cursor = from_index;
-    while cursor < peer_len {
+    let mut cursor = local_len;
+    while cursor < best_len {
         let read_request = SectorRequest::ReadLog(SectorReadLogRequest {
             program_id,
             sector_id: sector_id.clone(),
