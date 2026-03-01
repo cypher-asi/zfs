@@ -123,6 +123,51 @@ impl ZodeApp {
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let panel = ui.max_rect();
+
+            // Back button pinned to top-left
+            let back_rect = egui::Rect::from_min_size(
+                panel.min,
+                egui::vec2(80.0, 28.0),
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(back_rect), |ui| {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new(format!(
+                                "{} Back",
+                                egui_phosphor::regular::ARROW_LEFT
+                            ))
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(140, 140, 145)),
+                        )
+                        .fill(egui::Color32::TRANSPARENT)
+                        .stroke(egui::Stroke::NONE)
+                        .corner_radius(4.0),
+                    )
+                    .clicked()
+                {
+                    self.identity_state.setup_step = 0;
+                    self.identity_state.error = None;
+                    self.identity_state.show_shares = false;
+                }
+            });
+
+            // Warning pinned to bottom-center
+            let warn_h = 20.0;
+            let warn_rect = egui::Rect::from_min_max(
+                egui::pos2(panel.min.x, panel.max.y - warn_h),
+                panel.max,
+            );
+            ui.scope_builder(egui::UiBuilder::new().max_rect(warn_rect), |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.colored_label(
+                        crate::components::colors::WARN,
+                        "Back up your Neural Key shards before continuing.",
+                    );
+                });
+            });
+
+            // Centered column for main content
             let col_w = 380.0_f32.min(panel.width());
             let col = egui::Rect::from_center_size(
                 panel.center(),
@@ -131,11 +176,7 @@ impl ZodeApp {
 
             ui.scope_builder(egui::UiBuilder::new().max_rect(col), |ui| {
                 ui.vertical_centered(|ui| {
-                    let content_h = if self.identity_state.show_shares {
-                        520.0
-                    } else {
-                        380.0
-                    };
+                    let content_h = 520.0;
                     ui.add_space(((panel.height() - content_h) / 2.0).max(20.0));
 
                     ui.add(
@@ -161,40 +202,34 @@ impl ZodeApp {
                         ui.add_space(4.0);
                     }
 
-                    ui.colored_label(
-                        crate::components::colors::WARN,
-                        "Back up your Neural Key shares before continuing.",
-                    );
-
-                    if self.identity_state.show_shares {
-                        ui.add_space(4.0);
-                        for share in &self.identity_state.shares {
-                            let hex = share.to_hex();
-                            centered_row(
-                                ui,
-                                &format!("share_{}", share.index()),
-                                |ui| {
-                                    ui.monospace(
-                                        egui::RichText::new(format!(
-                                            "Share {}: {}...",
-                                            share.index(),
-                                            &hex[..hex.len().min(24)]
-                                        ))
-                                        .weak(),
-                                    );
-                                    crate::components::copy_button(ui, &hex);
-                                },
-                            );
-                        }
+                    ui.add_space(4.0);
+                    for share in &self.identity_state.shares {
+                        let hex = share.to_hex();
+                        let visible_len = hex.len().min(24);
+                        let truncated = format!("{}...", &hex[..visible_len]);
+                        let masked = "*".repeat(visible_len) + "...";
+                        let display = format!(
+                            "Shard {}: {}",
+                            share.index(),
+                            if self.identity_state.show_shares { &truncated } else { &masked },
+                        );
+                        centered_row(
+                            ui,
+                            &format!("share_{}", share.index()),
+                            |ui| {
+                                ui.monospace(egui::RichText::new(display).weak());
+                                crate::components::copy_button(ui, &hex);
+                            },
+                        );
                     }
                     ui.add_space(4.0);
                     if ui
                         .add(
                             egui::Button::new(
                                 egui::RichText::new(if self.identity_state.show_shares {
-                                    "Hide Shares"
+                                    "Hide Shards"
                                 } else {
-                                    "Show Shares"
+                                    "Show Shards"
                                 })
                                 .size(11.0)
                                 .color(egui::Color32::from_rgb(100, 100, 108)),
