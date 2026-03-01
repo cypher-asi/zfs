@@ -28,6 +28,7 @@ const MAX_ADDRS_PER_PEER: usize = 8;
 pub struct NetworkService {
     swarm: libp2p::Swarm<GridBehaviour>,
     keypair: libp2p::identity::Keypair,
+    listener_id: Option<libp2p::core::transport::ListenerId>,
     kademlia_enabled: bool,
     kademlia_bootstrapped: bool,
     random_walk_interval: Duration,
@@ -88,7 +89,7 @@ impl NetworkService {
             swarm.behaviour_mut().kademlia.set_mode(Some(mode));
         }
 
-        swarm
+        let listener_id = swarm
             .listen_on(config.listen_addr)
             .map_err(|e| NetworkError::Transport(e.to_string()))?;
 
@@ -168,6 +169,7 @@ impl NetworkService {
         Ok(Self {
             swarm,
             keypair,
+            listener_id: Some(listener_id),
             kademlia_enabled,
             kademlia_bootstrapped,
             random_walk_interval,
@@ -185,6 +187,23 @@ impl NetworkService {
             dial_backoff: HashMap::new(),
             dial_backoff_duration,
         })
+    }
+
+    /// Remove the main listener and briefly poll the swarm so the
+    /// underlying transport releases its socket.  Call before dropping
+    /// the service when you intend to re-bind the same port.
+    pub async fn close(&mut self) {
+        if let Some(id) = self.listener_id.take() {
+            self.swarm.remove_listener(id);
+            // Drive the swarm briefly so the transport processes the
+            // removal and releases the socket.
+            for _ in 0..20 {
+                tokio::select! {
+                    _ = self.swarm.select_next_some() => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => { break; }
+                }
+            }
+        }
     }
 
     /// The local Zode ID.

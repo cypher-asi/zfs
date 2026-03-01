@@ -300,47 +300,13 @@ impl ZodeApp {
     }
 
     pub fn boot_zode(&mut self) {
-        let config = match self.settings.build_config() {
-            Ok(mut c) => {
-                self.merge_peer_cache(&mut c);
-                c
-            }
-            Err(e) => {
-                self.settings_error = Some(e);
-                return;
-            }
-        };
-        self.settings_error = None;
-        self.stop_zode();
+        // Preserve the keypair from the running node so the identity
+        // survives a restart triggered from settings.
+        let keypair = self.zode.as_ref().and_then(|z| {
+            grid_net::Keypair::from_protobuf_encoding(z.keypair_protobuf()).ok()
+        });
 
-        let shared = Arc::new(Mutex::new(AppState::default()));
-        self.shared = Arc::clone(&shared);
-
-        let start_result = self.rt.block_on(async { Zode::start(config).await });
-        match start_result {
-            Ok(zode) => {
-                self.settings.data_dir = zode.data_dir().to_string_lossy().to_string();
-                let zode = Arc::new(zode);
-                self.zode = Some(Arc::clone(&zode));
-                let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
-                self.shutdown_tx = Some(stop_tx);
-                self.poller_handle =
-                    Some(Self::spawn_status_poller(&self.rt, &zode, &shared, stop_rx));
-                Self::spawn_log_listener(&self.rt, &zode, &shared);
-
-                let (persist_tx, persist_rx) = tokio::sync::mpsc::channel::<()>(1);
-                self.peer_persist_tx = Some(persist_tx);
-                self.peer_persist_handle = Some(Self::spawn_peer_persister(
-                    &self.rt,
-                    &zode,
-                    self.peer_cache_path(),
-                    persist_rx,
-                ));
-            }
-            Err(e) => {
-                self.settings_error = Some(format!("Start failed: {e}"));
-            }
-        }
+        self.boot_zode_with_keypair(keypair);
     }
 
     fn spawn_status_poller(

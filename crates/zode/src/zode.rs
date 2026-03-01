@@ -362,6 +362,11 @@ impl Zode {
         if let Some(handle) = self.event_loop_handle.lock().await.take() {
             let _ = handle.await;
         }
+        // Close the network listener so the transport releases its
+        // socket *before* the service is dropped.  Without this the
+        // QUIC endpoint's background I/O task may still hold the port
+        // when a restart tries to bind the same address.
+        self.network.lock().await.close().await;
         info!("zode shutdown complete");
     }
 
