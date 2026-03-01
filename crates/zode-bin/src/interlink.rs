@@ -69,6 +69,14 @@ impl ZodeApp {
         let (update_tx, update_rx) = tokio::sync::mpsc::channel::<InterlinkUpdate>(4);
         let (refresh_tx, refresh_rx) = tokio::sync::mpsc::channel::<()>(4);
 
+        let (initial_messages, initial_seen, initial_len) = self
+            .zode
+            .as_ref()
+            .map(|z| {
+                load_local_messages(z.storage(), &sector_key, &program_id, &sector_id)
+            })
+            .unwrap_or_default();
+
         if let Some(ref zode) = self.zode {
             Self::spawn_interlink_updater(
                 &self.rt,
@@ -78,6 +86,7 @@ impl ZodeApp {
                 sector_id.clone(),
                 update_tx,
                 refresh_rx,
+                initial_len,
             );
             Self::spawn_interlink_catchup(
                 &self.rt,
@@ -89,8 +98,8 @@ impl ZodeApp {
         }
 
         self.interlink_state = Some(InterlinkState {
-            messages: Vec::new(),
-            seen_messages: std::collections::HashSet::new(),
+            messages: initial_messages,
+            seen_messages: initial_seen,
             compose: String::new(),
             sector_key: Some(sector_key),
             machine_did,
@@ -116,11 +125,12 @@ impl ZodeApp {
         sector_id: SectorId,
         update_tx: tokio::sync::mpsc::Sender<InterlinkUpdate>,
         mut refresh_rx: tokio::sync::mpsc::Receiver<()>,
+        initial_known_len: u64,
     ) {
         let bg_storage = Arc::clone(zode.storage());
         let bg_key = sector_key.clone();
         rt.spawn(async move {
-            let mut known_len: u64 = 0;
+            let mut known_len: u64 = initial_known_len;
             loop {
                 known_len = poll_new_entries(
                     &bg_storage,
@@ -303,6 +313,49 @@ fn encrypt_message(
     let schema = InterlinkDescriptor::field_schema();
     grid_sdk::sector_encrypt_and_prove(&plaintext, key, program_id, sector_id, prover, &schema)
         .map_err(|e| format!("Encrypt+prove failed: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Synchronous local load (instant display of persisted messages)
+// ---------------------------------------------------------------------------
+
+fn load_local_messages(
+    storage: &Arc<grid_storage::RocksStorage>,
+    sector_key: &SectorKey,
+    program_id: &ProgramId,
+    sector_id: &SectorId,
+) -> (Vec<DisplayMessage>, std::collections::HashSet<u64>, u64) {
+    let len = storage.log_length(program_id, sector_id).unwrap_or(0);
+    if len == 0 {
+        return (Vec::new(), std::collections::HashSet::new(), 0);
+    }
+
+    let mut messages = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut cursor: u64 = 0;
+    const BATCH: usize = 64;
+
+    while cursor < len {
+        let indexed = storage
+            .read_log_indexed(program_id, sector_id, cursor, BATCH)
+            .unwrap_or_default();
+        if indexed.is_empty() {
+            break;
+        }
+        let next = indexed.last().unwrap().0 + 1;
+        for (_, ct) in &indexed {
+            if let Ok(msg) = decrypt_one(ct, sector_key, program_id, sector_id) {
+                let h = msg.dedup_hash();
+                if seen.insert(h) {
+                    messages.push(msg);
+                }
+            }
+        }
+        cursor = next;
+    }
+
+    info!(count = messages.len(), "loaded local interlink messages");
+    (messages, seen, len)
 }
 
 // ---------------------------------------------------------------------------
