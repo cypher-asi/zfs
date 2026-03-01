@@ -28,7 +28,6 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
         add_contents(ui);
     }
 
-    prepared.frame.stroke = egui::Stroke::NONE;
     let resp = prepared.end(ui);
 
     let border_rect = egui::Rect::from_min_max(
