@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::{
     poseidon::{PoseidonConfig, PoseidonSponge},
@@ -33,8 +35,7 @@ pub fn poseidon_encrypt(
     nonce: &[u8; 32],
     aad: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    let config = default_poseidon_config();
-    let mut sponge = PoseidonSponge::<Fr>::new(&config);
+    let mut sponge = PoseidonSponge::<Fr>::new(&POSEIDON_CONFIG);
 
     let key_elems = bytes_to_field_elements(key.as_bytes());
     let nonce_elems = bytes_to_field_elements(nonce);
@@ -100,8 +101,7 @@ pub fn poseidon_decrypt(
 
     let ciphertext_elems = bytes_to_field_elements_exact(ct_body)?;
 
-    let config = default_poseidon_config();
-    let mut sponge = PoseidonSponge::<Fr>::new(&config);
+    let mut sponge = PoseidonSponge::<Fr>::new(&POSEIDON_CONFIG);
 
     let key_elems = bytes_to_field_elements(key.as_bytes());
     let nonce_elems = bytes_to_field_elements(nonce);
@@ -143,8 +143,7 @@ pub fn poseidon_decrypt(
 /// Compute `Poseidon(data)` — a collision-resistant hash returning 32 bytes.
 /// Used for ciphertext binding (the Zode computes this independently).
 pub fn poseidon_hash(data: &[u8]) -> [u8; 32] {
-    let config = default_poseidon_config();
-    let mut sponge = PoseidonSponge::<Fr>::new(&config);
+    let mut sponge = PoseidonSponge::<Fr>::new(&POSEIDON_CONFIG);
     let elems = bytes_to_field_elements(data);
     for e in &elems {
         sponge.absorb(e);
@@ -170,8 +169,7 @@ pub fn poseidon_ciphertext_hash(sealed: &[u8]) -> Result<[u8; 32], CryptoError> 
     let ct_body = &sealed[NONCE_LEN..sealed.len() - TAG_LEN];
     let ct_elems = bytes_to_field_elements_exact(ct_body)?;
 
-    let config = default_poseidon_config();
-    let mut sponge = PoseidonSponge::<Fr>::new(&config);
+    let mut sponge = PoseidonSponge::<Fr>::new(&POSEIDON_CONFIG);
     for e in &ct_elems {
         sponge.absorb(e);
     }
@@ -282,7 +280,7 @@ fn field_element_to_bytes_32(e: &Fr) -> [u8; 32] {
 // Poseidon configuration (BN254, width=3, rate=2, capacity=1)
 // ---------------------------------------------------------------------------
 
-fn default_poseidon_config() -> PoseidonConfig<Fr> {
+static POSEIDON_CONFIG: LazyLock<PoseidonConfig<Fr>> = LazyLock::new(|| {
     let full_rounds = 8;
     let partial_rounds = 57;
     let alpha = 5;
@@ -316,4 +314,4 @@ fn default_poseidon_config() -> PoseidonConfig<Fr> {
         rate,
         capacity,
     }
-}
+});
