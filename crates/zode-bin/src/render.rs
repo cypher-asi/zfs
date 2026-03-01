@@ -15,10 +15,6 @@ use crate::state::{SettingsSection, StateSnapshot};
 // ---------------------------------------------------------------------------
 
 pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
-    if let Some(ref err) = app.settings_error {
-        error_label(ui, err);
-    }
-
     let running = app.zode.is_some();
     let mut do_boot = false;
     let mut do_stop = false;
@@ -138,11 +134,6 @@ fn settings_nav_item(
     let row_width = ui.available_width();
     let (row_id, row_rect) = ui.allocate_space(egui::vec2(row_width, row_height));
     let response = ui.interact(row_rect, row_id, egui::Sense::click());
-
-    if !active && response.hovered() {
-        ui.painter()
-            .rect_filled(row_rect, 0.0, colors::SURFACE_RAISED);
-    }
 
     let text_color = if active || response.hovered() {
         egui::Color32::WHITE
