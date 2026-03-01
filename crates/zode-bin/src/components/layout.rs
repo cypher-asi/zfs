@@ -11,8 +11,7 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
         .outer_margin(egui::Margin::symmetric(1, 0))
         .stroke(tokens::border_stroke())
         .show(ui, |ui| {
-            // Fill horizontally without forcing an exact width that can clip the right stroke.
-            ui.set_min_width(ui.available_width());
+            ui.set_width(ui.available_width());
             section_heading(ui, title);
             ui.add_space(10.0);
             add_contents(ui);
