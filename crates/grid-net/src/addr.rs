@@ -87,6 +87,14 @@ pub fn sanitize_dial_addr(addr: &Multiaddr) -> Multiaddr {
     }
 }
 
+/// Extract the first `PeerId` from a multiaddr's `/p2p/<peer>` component.
+pub fn extract_peer_id(addr: &Multiaddr) -> Option<libp2p::PeerId> {
+    addr.iter().find_map(|proto| match proto {
+        Protocol::P2p(peer_id) => Some(peer_id),
+        _ => None,
+    })
+}
+
 /// Returns `true` when the multiaddr contains at least one transport component
 /// (IP + port), as opposed to a bare `/p2p/<peer_id>` with no dialable address.
 pub fn has_transport(addr: &Multiaddr) -> bool {

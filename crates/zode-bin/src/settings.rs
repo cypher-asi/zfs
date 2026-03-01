@@ -174,13 +174,16 @@ impl Settings {
     }
 
     /// Merge currently connected peers into `known_peers` for next startup.
-    /// Sanitizes addresses to prevent persisting malformed entries.
+    /// Deduplicates by (peer_id, IP) so that NAT port rotations replace old
+    /// entries instead of accumulating stale addresses across sessions.
     pub fn remember_peers(&mut self, connected: &[String]) {
         for peer in connected {
             let sanitized = sanitize_peer_string(peer);
-            if !self.known_peers.contains(&sanitized) {
-                self.known_peers.push(sanitized);
+            if let Some(key) = peer_ip_key(&sanitized) {
+                self.known_peers
+                    .retain(|existing| peer_ip_key(existing).as_ref() != Some(&key));
             }
+            self.known_peers.push(sanitized);
         }
         const MAX_KNOWN: usize = 200;
         if self.known_peers.len() > MAX_KNOWN {
@@ -204,7 +207,27 @@ impl Settings {
                 bootstrap.push(addr);
             }
         }
-        let relay = self.parse_relay_peers()?;
+        let mut relay = self.parse_relay_peers()?;
+
+        let default_relay: grid_net::Multiaddr = grid_net::DEFAULT_RELAY_PEER
+            .parse()
+            .expect("DEFAULT_RELAY_PEER is a valid multiaddr");
+        let default_relay_transport = grid_net::addr::strip_all_p2p(&default_relay);
+
+        // Replace any relay/bootstrap entry at the default relay's transport
+        // address that has a stale peer ID (e.g. from before a relay key
+        // rotation).
+        let is_stale_relay = |addr: &grid_net::Multiaddr| -> bool {
+            grid_net::addr::strip_all_p2p(addr) == default_relay_transport && *addr != default_relay
+        };
+        relay.retain(|addr| !is_stale_relay(addr));
+        if !relay.contains(&default_relay) {
+            relay.push(default_relay.clone());
+        }
+        bootstrap.retain(|addr| !is_stale_relay(addr));
+        if !bootstrap.contains(&default_relay) {
+            bootstrap.push(default_relay);
+        }
         let topic_set = self.parse_topics()?;
 
         let kad_mode = if self.kademlia_server_mode {
@@ -304,6 +327,15 @@ impl Settings {
 }
 
 const MAX_CACHED_PEERS: usize = 200;
+
+/// Extract a (peer_id, ip) deduplication key from a multiaddr string.
+fn peer_ip_key(s: &str) -> Option<(String, String)> {
+    let stripped = grid_net::strip_zx_multiaddr(s);
+    let addr: grid_net::Multiaddr = stripped.parse().ok()?;
+    let ip = grid_net::extract_ip(&addr)?;
+    let peer_id = grid_net::extract_peer_id(&addr)?;
+    Some((peer_id.to_string(), ip))
+}
 
 /// Parse-sanitize-reserialize a peer multiaddr string, removing duplicate
 /// `/p2p/` segments. Returns the original string unchanged if parsing fails.

@@ -1,4 +1,5 @@
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
@@ -104,19 +105,27 @@ fn build_behaviour(
     })
 }
 
+/// Max addresses to dial per peer during bootstrap.  Avoids hammering
+/// stale NAT-mapped ports that have accumulated in the peer cache.
+const MAX_BOOTSTRAP_ADDRS_PER_PEER: usize = 2;
+
 pub(crate) fn dial_bootstrap_peers(
     swarm: &mut libp2p::Swarm<GridBehaviour>,
     peers: &[Multiaddr],
     kademlia_enabled: bool,
 ) {
     let local_peer_id = *swarm.local_peer_id();
+
+    let mut by_peer: HashMap<PeerId, Vec<Multiaddr>> = HashMap::new();
+    let mut no_peer: Vec<Multiaddr> = Vec::new();
+
     for peer_addr in peers {
         let normalized = crate::addr::normalize_multiaddr(peer_addr);
         if !crate::addr::has_transport(&normalized) {
             debug!(%peer_addr, "skipping bootstrap peer with no transport address");
             continue;
         }
-        if let Some(peer_id) = extract_peer_id(peer_addr) {
+        if let Some(peer_id) = crate::addr::extract_peer_id(peer_addr) {
             if peer_id == local_peer_id {
                 debug!(%peer_addr, "skipping self-dial");
                 continue;
@@ -126,12 +135,32 @@ pub(crate) fn dial_bootstrap_peers(
                     .behaviour_mut()
                     .kademlia
                     .add_address(&peer_id, normalized);
-                debug!(%peer_id, %peer_addr, "added bootstrap peer to kademlia");
+            }
+            by_peer.entry(peer_id).or_default().push(peer_addr.clone());
+        } else {
+            no_peer.push(peer_addr.clone());
+        }
+    }
+
+    for (peer_id, addrs) in &by_peer {
+        let to_dial = if addrs.len() > MAX_BOOTSTRAP_ADDRS_PER_PEER {
+            &addrs[addrs.len() - MAX_BOOTSTRAP_ADDRS_PER_PEER..]
+        } else {
+            addrs.as_slice()
+        };
+        debug!(%peer_id, total = addrs.len(), dialing = to_dial.len(), "bootstrap peer");
+        for addr in to_dial {
+            match swarm.dial(addr.clone()) {
+                Ok(()) => debug!(%addr, "dialed bootstrap peer"),
+                Err(e) => debug!(%addr, error = %e, "failed to dial bootstrap peer"),
             }
         }
-        match swarm.dial(peer_addr.clone()) {
-            Ok(()) => debug!(%peer_addr, "dialed bootstrap peer"),
-            Err(e) => debug!(%peer_addr, error = %e, "failed to dial bootstrap peer"),
+    }
+
+    for addr in &no_peer {
+        match swarm.dial(addr.clone()) {
+            Ok(()) => debug!(%addr, "dialed bootstrap peer (no peer id)"),
+            Err(e) => debug!(%addr, error = %e, "failed to dial bootstrap peer"),
         }
     }
 }
@@ -143,7 +172,7 @@ pub(crate) fn dial_relay_peers(
 ) {
     for relay_addr in peers {
         if kademlia_enabled {
-            if let Some(peer_id) = extract_peer_id(relay_addr) {
+            if let Some(peer_id) = crate::addr::extract_peer_id(relay_addr) {
                 let normalized = crate::addr::normalize_multiaddr(relay_addr);
                 swarm
                     .behaviour_mut()
@@ -157,11 +186,4 @@ pub(crate) fn dial_relay_peers(
             Err(e) => debug!(%relay_addr, error = %e, "failed to dial relay peer"),
         }
     }
-}
-
-pub(crate) fn extract_peer_id(addr: &Multiaddr) -> Option<PeerId> {
-    addr.iter().find_map(|proto| match proto {
-        libp2p::multiaddr::Protocol::P2p(peer_id) => Some(peer_id),
-        _ => None,
-    })
 }

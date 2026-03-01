@@ -11,7 +11,8 @@ use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
 use crate::behaviour::{GridBehaviour, GridBehaviourEvent};
-use crate::builder::{build_swarm, dial_bootstrap_peers, dial_relay_peers, extract_peer_id};
+use crate::addr::extract_peer_id;
+use crate::builder::{build_swarm, dial_bootstrap_peers, dial_relay_peers};
 use crate::config::{KademliaMode, NetworkConfig};
 use crate::error::NetworkError;
 use crate::event::NetworkEvent;
