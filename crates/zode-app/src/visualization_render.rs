@@ -205,11 +205,13 @@ impl NetworkVisualization {
         let margin = 12.0;
         let line_h = 14.0;
         let font = egui::FontId::monospace(11.0);
+        let ip_label = node.ip_addr.as_deref().unwrap_or("Unknown");
+        let loc_label = node.location.as_deref().unwrap_or("Unknown");
         let lines = [
             format!("ID: {}", node.id),
             format!("Status: {status_label}"),
-            "IP: Unknown".to_string(),
-            "Location: Unknown".to_string(),
+            format!("IP: {ip_label}"),
+            format!("Location: {loc_label}"),
         ];
 
         let max_w = lines

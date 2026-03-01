@@ -582,7 +582,7 @@ impl ZodeApp {
         }
         if let Some(ref status) = state.status {
             self.visualization
-                .reconcile(&status.zode_id, &status.connected_peers);
+                .reconcile(&status.zode_id, &status.connected_peers, &status.peer_ips);
         }
     }
 

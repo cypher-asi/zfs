@@ -29,6 +29,8 @@ pub(crate) struct GraphNode {
     pub(crate) is_local: bool,
     pub(crate) connected: bool,
     pub(crate) discovered: bool,
+    pub(crate) ip_addr: Option<String>,
+    pub(crate) location: Option<String>,
 }
 
 pub(crate) struct Camera {
@@ -46,7 +48,12 @@ impl Default for Camera {
 }
 
 impl NetworkVisualization {
-    pub fn reconcile(&mut self, local_id: &str, peers: &[String]) {
+    pub fn reconcile(
+        &mut self,
+        local_id: &str,
+        peers: &[String],
+        peer_ips: &HashMap<String, String>,
+    ) {
         if self.local_id.as_deref() != Some(local_id) {
             self.nodes.clear();
             self.edges.clear();
@@ -63,6 +70,9 @@ impl NetworkVisualization {
         for p in peers {
             let i = self.ensure_node(p, false);
             self.nodes[i].connected = true;
+            if let Some(ip) = peer_ips.get(p) {
+                self.nodes[i].ip_addr = Some(ip.clone());
+            }
         }
 
         let local = local_id.to_string();
@@ -136,6 +146,8 @@ impl NetworkVisualization {
             is_local,
             connected: false,
             discovered: false,
+            ip_addr: None,
+            location: None,
         });
         self.index.insert(id.to_string(), idx);
         idx
