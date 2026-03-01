@@ -64,8 +64,6 @@ impl ZodeApp {
             .expect("Interlink descriptor is valid");
         let sector_id = channel_id.sector_id();
 
-        let prover = load_or_generate_prover(&data_dir);
-
         let (update_tx, update_rx) = tokio::sync::mpsc::channel::<InterlinkUpdate>(4);
         let (refresh_tx, refresh_rx) = tokio::sync::mpsc::channel::<()>(4);
 
@@ -97,6 +95,13 @@ impl ZodeApp {
             );
         }
 
+        let (prover_tx, prover_rx) =
+            tokio::sync::mpsc::channel::<Box<Groth16ShapeProver>>(1);
+        std::thread::spawn(move || {
+            let prover = load_or_generate_prover(&data_dir);
+            let _ = prover_tx.blocking_send(prover);
+        });
+
         self.interlink_state = Some(InterlinkState {
             messages: initial_messages,
             seen_messages: initial_seen,
@@ -107,7 +112,8 @@ impl ZodeApp {
             channel_id: Some(channel_id),
             program_id: Some(program_id),
             sector_id: Some(sector_id),
-            prover: Some(prover),
+            prover: None,
+            prover_rx: Some(prover_rx),
             error: None,
             initialized: true,
             scroll_to_bottom: true,
@@ -208,10 +214,14 @@ impl ZodeApp {
             return;
         }
 
-        let (Some(ref sector_key), Some(ref program_id), Some(ref sector_id), Some(ref prover)) =
-            (&il.sector_key, &il.program_id, &il.sector_id, &il.prover)
+        let (Some(ref sector_key), Some(ref program_id), Some(ref sector_id)) =
+            (&il.sector_key, &il.program_id, &il.sector_id)
         else {
             il.error = Some("Interlink not fully initialized".into());
+            return;
+        };
+        let Some(ref prover) = il.prover else {
+            il.error = Some("Proving keys still loading, try again shortly".into());
             return;
         };
 
@@ -603,6 +613,16 @@ fn render_interlink_header(app: &ZodeApp, ui: &mut egui::Ui) {
 
 fn drain_interlink_updates(app: &mut ZodeApp) {
     let il = app.interlink_state.as_mut().unwrap();
+
+    if il.prover.is_none() {
+        if let Some(ref mut rx) = il.prover_rx {
+            if let Ok(prover) = rx.try_recv() {
+                il.prover = Some(prover);
+                il.prover_rx = None;
+            }
+        }
+    }
+
     if let Some(ref mut rx) = il.update_rx {
         while let Ok(upd) = rx.try_recv() {
             if upd.error.is_some() {

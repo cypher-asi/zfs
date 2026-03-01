@@ -191,6 +191,8 @@ pub(crate) struct InterlinkState {
     /// Per-channel sector ID (one sector per channel in append model).
     pub sector_id: Option<SectorId>,
     pub prover: Option<Box<grid_proof_groth16::Groth16ShapeProver>>,
+    /// Receives the prover once background loading completes.
+    pub prover_rx: Option<tokio::sync::mpsc::Receiver<Box<grid_proof_groth16::Groth16ShapeProver>>>,
     pub error: Option<String>,
     pub initialized: bool,
     pub scroll_to_bottom: bool,
@@ -212,6 +214,7 @@ impl InterlinkState {
             program_id: None,
             sector_id: None,
             prover: None,
+            prover_rx: None,
             error: Some(msg.to_string()),
             initialized: true,
             scroll_to_bottom: false,
