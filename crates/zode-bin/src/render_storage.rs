@@ -6,19 +6,15 @@ use grid_storage::SectorStore;
 
 use crate::app::ZodeApp;
 use crate::components::{
-    colors, copy_button, field_label, hint_label, info_grid, kv_row, muted_label, section,
+    colors, copy_button, field_label, hint_label, info_grid, kv_row, loading_state, muted_label,
+    section,
 };
 use crate::helpers::format_bytes;
 use crate::state::StateSnapshot;
 
 pub(crate) fn render_storage(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
     let Some(ref status) = state.status else {
-        ui.vertical_centered(|ui| {
-            let avail = ui.available_height();
-            ui.add_space((avail / 2.0 - 20.0).max(0.0));
-            ui.spinner();
-            ui.label("Loading...");
-        });
+        loading_state(ui);
         return;
     };
 

@@ -252,10 +252,11 @@ pub(crate) fn radius_of(node: &GraphNode) -> f32 {
 }
 
 pub(crate) fn color_of(node: &GraphNode, _accent: egui::Color32) -> egui::Color32 {
+    use crate::components::tokens::colors;
     if node.is_local {
         egui::Color32::WHITE
     } else if node.connected {
-        egui::Color32::from_rgb(120, 120, 130)
+        colors::VIZ_PEER_NODE
     } else {
         egui::Color32::from_rgba_premultiplied(70, 70, 70, 100)
     }

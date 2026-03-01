@@ -5,7 +5,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use zode::{LogEvent, Zode};
 
-use crate::components::title_bar_icon;
+use crate::components::{auth_screen_panel, colors, link_button, status_dot, title_bar_icon};
 use crate::profile::{self, ProfileMeta};
 use crate::settings::Settings;
 use crate::state::{AppPhase, AppState, Tab, MAX_LOG_ENTRIES};
@@ -585,7 +585,7 @@ impl ZodeApp {
         egui::TopBottomPanel::top("tabs")
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::BLACK)
+                    .fill(colors::PANEL_BG)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .stroke(egui::Stroke::NONE),
             )
@@ -680,21 +680,7 @@ impl ZodeApp {
             }
         }
 
-        let connected = self.zode.is_some();
-        let dot_color = if connected {
-            crate::components::colors::CONNECTED
-        } else {
-            crate::components::colors::DISCONNECTED
-        };
-        let status_label = if connected { "connected" } else { "stopped" };
-        ui.monospace(egui::RichText::new(status_label).color(dot_color));
-        let dot_radius = 3.5;
-        let (dot_rect, _) = ui.allocate_exact_size(
-            egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
-            egui::Sense::hover(),
-        );
-        ui.painter()
-            .circle_filled(dot_rect.center(), dot_radius, dot_color);
+        status_dot(ui, self.zode.is_some());
     }
 
     /// Drag from any point in the title bar (including over buttons) to move
@@ -732,7 +718,7 @@ impl ZodeApp {
         egui::TopBottomPanel::top("pre_auth_title")
             .frame(
                 egui::Frame::default()
-                    .fill(egui::Color32::BLACK)
+                    .fill(colors::PANEL_BG)
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .stroke(egui::Stroke::NONE),
             )
@@ -769,7 +755,7 @@ impl ZodeApp {
                         egui::RichText::new("ZODE")
                             .strong()
                             .size(11.0)
-                            .color(egui::Color32::from_rgb(140, 140, 145)),
+                            .color(colors::TEXT_HEADING),
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -798,7 +784,7 @@ impl ZodeApp {
 
     fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
         let central_frame = egui::Frame::default()
-            .fill(egui::Color32::BLACK)
+            .fill(colors::PANEL_BG)
             .inner_margin(8.0);
 
         egui::CentralPanel::default()
@@ -846,7 +832,7 @@ impl ZodeApp {
             fg.rect_stroke(
                 ctx.viewport_rect(),
                 0.0,
-                egui::Stroke::new(1.0, crate::components::colors::BORDER),
+                egui::Stroke::new(1.0, colors::BORDER),
                 egui::StrokeKind::Outside,
             );
         }
@@ -1002,30 +988,11 @@ impl ZodeApp {
     fn render_profile_select(&mut self, ctx: &egui::Context) {
         let tex = self.icon_texture(ctx);
         let frame = egui::Frame::default()
-            .fill(egui::Color32::BLACK)
+            .fill(colors::PANEL_BG)
             .inner_margin(32.0);
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            let rect = ui.max_rect();
-            ui.vertical_centered(|ui| {
-                let content_height = 200.0;
-                ui.add_space(((rect.height() - content_height) / 2.0).max(20.0));
-
-                ui.add(
-                    egui::Image::new(&tex)
-                        .fit_to_exact_size(egui::vec2(56.0, 56.0))
-                        .corner_radius(8.0),
-                );
-                ui.add_space(16.0);
-
-                ui.label(
-                    egui::RichText::new("SELECT PROFILE")
-                        .strong()
-                        .size(12.0)
-                        .color(egui::Color32::from_rgb(140, 140, 145)),
-                );
-                ui.add_space(16.0);
-
+            auth_screen_panel(ui, &tex, "SELECT PROFILE", 200.0, |ui| {
                 let profiles = self.profiles.clone();
                 for p in &profiles {
                     let btn =
@@ -1039,7 +1006,6 @@ impl ZodeApp {
                     }
                     ui.add_space(4.0);
                 }
-
             });
         });
     }
@@ -1055,32 +1021,16 @@ impl ZodeApp {
 
         let tex = self.icon_texture(ctx);
         let frame = egui::Frame::default()
-            .fill(egui::Color32::BLACK)
+            .fill(colors::PANEL_BG)
             .inner_margin(32.0);
 
         let mut do_unlock = false;
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             let rect = ui.max_rect();
-            ui.vertical_centered(|ui| {
-                let content_height = 220.0;
-                ui.add_space(((rect.height() - content_height) / 2.0).max(20.0));
 
-                ui.add(
-                    egui::Image::new(&tex)
-                        .fit_to_exact_size(egui::vec2(56.0, 56.0))
-                        .corner_radius(8.0),
-                );
-
-                ui.add_space(16.0);
-
-                ui.label(
-                    egui::RichText::new(&profile_name)
-                        .size(13.0)
-                        .color(egui::Color32::from_rgb(160, 160, 165)),
-                );
-
-                ui.add_space(20.0);
+            auth_screen_panel(ui, &tex, &profile_name, 220.0, |ui| {
+                ui.add_space(4.0);
 
                 let resp = ui.add(
                     egui::TextEdit::singleline(&mut self.unlock_password)
@@ -1105,24 +1055,13 @@ impl ZodeApp {
                 ui.add_space(24.0);
 
                 if self.profiles.len() > 1 {
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("Back to profiles")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(100, 100, 108)),
-                            )
-                            .frame(false),
-                        )
-                        .clicked()
-                    {
+                    if link_button(ui, "Back to profiles") {
                         self.unlock_password.clear();
                         self.unlock_error = None;
                         self.phase = AppPhase::ProfileSelect;
                     }
                     ui.add_space(4.0);
                 }
-
             });
 
             if let Some(ref err) = self.unlock_error {
@@ -1132,7 +1071,7 @@ impl ZodeApp {
                 );
                 ui.scope_builder(egui::UiBuilder::new().max_rect(err_rect), |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.colored_label(crate::components::colors::ERROR, err);
+                        ui.colored_label(colors::ERROR, err);
                     });
                 });
             }

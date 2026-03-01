@@ -1,5 +1,6 @@
 use eframe::egui;
 
+use crate::components::tokens::colors;
 use crate::visualization::{color_of, radius_of, Camera, GraphNode, NetworkVisualization};
 
 /// Produce a short, distinguishing label for a ZID.
@@ -41,10 +42,10 @@ impl NetworkVisualization {
         self.handle_pan_zoom(&resp, ui);
         self.tick_layout();
 
-        painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
+        painter.rect_filled(rect, 0.0, colors::PANEL_BG);
         paint_grid(&painter, rect, center, &self.camera);
 
-        let accent = egui::Color32::from_rgb(0, 180, 255);
+        let accent = colors::ACCENT;
         let hovered_idx = resp.hover_pos().and_then(|pp| self.hit_test(pp, center));
 
         self.paint_edges(&painter, center);
@@ -74,7 +75,7 @@ impl NetworkVisualization {
     }
 
     fn paint_edges(&self, painter: &egui::Painter, center: egui::Pos2) {
-        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(60, 60, 70));
+        let stroke = egui::Stroke::new(1.5, colors::VIZ_EDGE);
         for &[a, b] in &self.edges {
             let p1 = self.world_to_screen(self.nodes[a].pos, center);
             let p2 = self.world_to_screen(self.nodes[b].pos, center);
@@ -158,7 +159,7 @@ impl NetworkVisualization {
             egui::Align2::LEFT_CENTER,
             tip,
             egui::FontId::monospace(10.0),
-            egui::Color32::from_rgb(200, 200, 200),
+            colors::VIZ_TOOLTIP,
         );
     }
 
@@ -190,13 +191,12 @@ impl NetworkVisualization {
             return;
         };
         let node = &self.nodes[idx];
-        let accent = egui::Color32::from_rgb(0, 180, 255);
         let (status_label, status_color) = if node.is_local {
-            ("Local (YOU)", accent)
+            ("Local (YOU)", colors::ACCENT)
         } else if node.connected {
-            ("Connected", crate::components::colors::CONNECTED)
+            ("Connected", colors::CONNECTED)
         } else {
-            ("Discovered", egui::Color32::from_rgb(160, 160, 160))
+            ("Discovered", colors::TEXT_MUTED)
         };
 
         let margin = 12.0;
@@ -232,15 +232,11 @@ impl NetworkVisualization {
             egui::vec2(panel_w, panel_h),
         );
 
-        painter.rect_filled(
-            panel_rect,
-            4.0,
-            egui::Color32::from_rgba_unmultiplied(10, 10, 12, 210),
-        );
+        painter.rect_filled(panel_rect, 4.0, colors::VIZ_OVERLAY_BG);
         painter.rect_stroke(
             panel_rect,
             4.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 50, 55)),
+            egui::Stroke::new(1.0, colors::BORDER_DIM),
             egui::StrokeKind::Outside,
         );
 
@@ -248,7 +244,7 @@ impl NetworkVisualization {
             let color = if i == 1 {
                 status_color
             } else {
-                egui::Color32::from_rgb(190, 190, 190)
+                colors::VIZ_PANEL_TEXT
             };
             painter.text(
                 egui::pos2(
@@ -273,11 +269,7 @@ impl NetworkVisualization {
             .show(ui.ctx(), |ui| {
                 ui.set_width(overlay_w);
                 ui.horizontal(|ui| {
-                    egui::Frame::default()
-                        .fill(egui::Color32::from_rgba_unmultiplied(10, 10, 12, 200))
-                        .corner_radius(6.0)
-                        .inner_margin(egui::Margin::symmetric(12, 6))
-                        .show(ui, |ui| {
+                    crate::components::overlay_frame().show(ui, |ui| {
                             crate::components::section_heading(
                                 ui,
                                 &format!(
@@ -288,9 +280,7 @@ impl NetworkVisualization {
                         });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        egui::Frame::default()
-                            .fill(egui::Color32::from_rgba_unmultiplied(10, 10, 12, 200))
-                            .corner_radius(6.0)
+                        crate::components::overlay_frame()
                             .inner_margin(egui::Margin::symmetric(6, 4))
                             .show(ui, |ui| {
                                 if crate::components::icon_button(
@@ -374,11 +364,9 @@ fn paint_grid(painter: &egui::Painter, clip: egui::Rect, center: egui::Pos2, cam
     paint_grid_dots(painter, &g);
 }
 
-const LINE_RGB: [u8; 3] = [48, 48, 54];
-const DOT_RGB: [u8; 3] = [72, 72, 80];
-
-fn faded_color(rgb: [u8; 3], t: f32) -> egui::Color32 {
-    egui::Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], (t * 255.0) as u8)
+fn faded_color(base: egui::Color32, t: f32) -> egui::Color32 {
+    let [r, g, b, _] = base.to_array();
+    egui::Color32::from_rgba_unmultiplied(r, g, b, (t * 255.0) as u8)
 }
 
 fn paint_vertical_lines(painter: &egui::Painter, g: &GridParams) {
@@ -390,7 +378,7 @@ fn paint_vertical_lines(painter: &egui::Painter, g: &GridParams) {
                 let t = g.fade((prev + gy) * 0.5);
                 painter.line_segment(
                     [egui::pos2(x, prev), egui::pos2(x, gy)],
-                    egui::Stroke::new(1.0, faded_color(LINE_RGB, t)),
+                    egui::Stroke::new(1.0, faded_color(colors::VIZ_GRID_LINE, t)),
                 );
                 prev = gy;
             }
@@ -398,7 +386,7 @@ fn paint_vertical_lines(painter: &egui::Painter, g: &GridParams) {
                 let t = g.fade((prev + g.bottom) * 0.5);
                 painter.line_segment(
                     [egui::pos2(x, prev), egui::pos2(x, g.bottom)],
-                    egui::Stroke::new(1.0, faded_color(LINE_RGB, t)),
+                    egui::Stroke::new(1.0, faded_color(colors::VIZ_GRID_LINE, t)),
                 );
             }
         }
@@ -411,7 +399,7 @@ fn paint_horizontal_lines(painter: &egui::Painter, g: &GridParams) {
         let t = g.fade(gy);
         painter.line_segment(
             [egui::pos2(g.left, gy), egui::pos2(g.right, gy)],
-            egui::Stroke::new(1.0, faded_color(LINE_RGB, t)),
+            egui::Stroke::new(1.0, faded_color(colors::VIZ_GRID_LINE, t)),
         );
     }
 }
@@ -422,7 +410,7 @@ fn paint_grid_dots(painter: &egui::Painter, g: &GridParams) {
         if x >= g.left {
             for &gy in &g.ys {
                 let t = g.fade(gy);
-                painter.circle_filled(egui::pos2(x, gy), g.dot_radius, faded_color(DOT_RGB, t));
+                painter.circle_filled(egui::pos2(x, gy), g.dot_radius, faded_color(colors::VIZ_GRID_DOT, t));
             }
         }
         x += g.spacing;

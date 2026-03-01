@@ -8,8 +8,9 @@ use zid::{
 
 use crate::app::ZodeApp;
 use crate::components::{
-    action_button, copy_button, editable_list, error_label, field_label, hint_label, info_grid,
-    kv_row, kv_row_copyable, section, std_button,
+    action_button, card_frame, colors, copy_button, danger_button, editable_list, error_label,
+    field_label, form_grid, hint_label, info_grid, kv_row, kv_row_copyable, link_button, section,
+    std_button, text_input_password,
 };
 use crate::helpers::shorten_id;
 use crate::profile;
@@ -140,7 +141,7 @@ fn render_identity_info(app: &mut ZodeApp, ui: &mut egui::Ui) {
         if app.identity_state.show_shares {
             ui.add_space(8.0);
             ui.colored_label(
-                crate::components::colors::WARN,
+                colors::WARN,
                 "Store these shares in separate secure locations.",
             );
             ui.add_space(4.0);
@@ -263,12 +264,7 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
             }
         } else {
             for mk in &app.identity_state.machine_keys {
-                egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(20, 20, 22))
-                    .corner_radius(0.0)
-                    .inner_margin(8.0)
-                    .stroke(egui::Stroke::new(1.0, crate::components::colors::BORDER))
-                    .show(ui, |ui| {
+                card_frame().show(ui, |ui| {
                         info_grid(ui, &format!("mk_{}", mk.did), |ui| {
                             kv_row_copyable(ui, "DID", &mk.did);
                             kv_row(ui, "Epoch", &mk.epoch.to_string());
@@ -352,26 +348,21 @@ fn render_save_profile(app: &mut ZodeApp, ui: &mut egui::Ui) {
             );
             ui.add_space(8.0);
 
-            egui::Grid::new("save_profile_form")
-                .num_columns(2)
-                .spacing([12.0, 6.0])
-                .show(ui, |ui| {
-                    field_label(ui, "Profile Name");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.identity_state.save_profile_name)
-                            .desired_width(200.0),
-                    );
-                    ui.end_row();
+            form_grid(ui, "save_profile_form", |ui| {
+                field_label(ui, "Profile Name");
+                ui.add(
+                    egui::TextEdit::singleline(&mut app.identity_state.save_profile_name)
+                        .desired_width(200.0),
+                );
+                ui.end_row();
 
-                    field_label(ui, "Password");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.identity_state.save_password)
-                            .password(true)
-                            .desired_width(200.0)
-                            .hint_text("Vault encryption password"),
-                    );
-                    ui.end_row();
-                });
+                field_label(ui, "Password");
+                ui.add(
+                    text_input_password(&mut app.identity_state.save_password, 200.0)
+                        .hint_text("Vault encryption password"),
+                );
+                ui.end_row();
+            });
 
             ui.add_space(8.0);
             if action_button(ui, "Save Profile") {
@@ -519,46 +510,16 @@ fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 ui.label(
                     egui::RichText::new("Delete this profile?")
                         .size(11.0)
-                        .color(crate::components::colors::ERROR),
+                        .color(colors::ERROR),
                 );
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Yes, delete")
-                                .size(11.0)
-                                .color(crate::components::colors::ERROR),
-                        )
-                        .frame(false),
-                    )
-                    .clicked()
-                {
+                if danger_button(ui, "Yes, delete") {
                     do_delete = true;
                 }
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Cancel")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(160, 160, 165)),
-                        )
-                        .frame(false),
-                    )
-                    .clicked()
-                {
+                if link_button(ui, "Cancel") {
                     app.confirm_delete_profile = None;
                 }
             });
-        } else if ui
-            .add(
-                egui::Button::new(
-                    egui::RichText::new("Delete profile")
-                        .size(11.0)
-                        .color(egui::Color32::from_rgb(100, 100, 108)),
-                )
-                .frame(false),
-            )
-            .clicked()
-        {
+        } else if link_button(ui, "Delete profile") {
             app.confirm_delete_profile = Some(profile_id.clone());
         }
     });

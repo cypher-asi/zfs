@@ -8,15 +8,12 @@ mod labels;
 mod layout;
 
 pub(crate) use tokens::colors;
-pub(crate) use tokens::{ICON_SIZE, WIDGET_HEIGHT};
 
 pub(crate) use buttons::{
     action_button, copy_button, danger_button, icon_button, link_button, std_button,
     title_bar_icon,
 };
-pub(crate) use data_display::{
-    copyable_id_row, editable_list, info_grid, kv_row, kv_row_copyable,
-};
+pub(crate) use data_display::{editable_list, info_grid, kv_row, kv_row_copyable};
 pub(crate) use feedback::{loading_state, status_dot};
 pub(crate) use inputs::{text_input, text_input_password};
 pub(crate) use labels::{error_label, field_label, hint_label, muted_label};

@@ -3,7 +3,8 @@ use eframe::egui;
 use crate::app::ZodeApp;
 use crate::components::{
     action_button, action_panel, colors, copy_button, editable_list, error_label, field_label,
-    hint_label, info_grid, kv_row, kv_row_copyable, muted_label, section, text_input,
+    form_grid, hint_label, info_grid, kv_row, kv_row_copyable, loading_state, muted_label,
+    section, text_input,
 };
 use crate::helpers::format_bytes;
 use crate::state::StateSnapshot;
@@ -70,17 +71,14 @@ fn render_settings_general(app: &mut ZodeApp, ui: &mut egui::Ui, running: bool) 
         hint_label(ui, msg);
         ui.add_space(8.0);
 
-        egui::Grid::new("settings_grid")
-            .num_columns(2)
-            .spacing([12.0, 8.0])
-            .show(ui, |ui| {
+        form_grid(ui, "settings_grid", |ui| {
                 field_label(ui, "Data Directory");
                 ui.add(text_input(&mut app.settings.data_dir, 400.0));
                 ui.end_row();
                 field_label(ui, "Listen Address");
                 ui.add(text_input(&mut app.settings.listen_addr, 400.0));
                 ui.end_row();
-            });
+        });
     });
 }
 
@@ -179,17 +177,14 @@ fn render_rpc_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
 
         if app.settings.enable_rpc {
             ui.indent("rpc_settings", |ui| {
-                egui::Grid::new("rpc_grid")
-                    .num_columns(2)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        field_label(ui, "Bind Address");
-                        ui.add(text_input(&mut app.settings.rpc_bind_addr, 300.0));
-                        ui.end_row();
-                        field_label(ui, "API Key (empty = open)");
-                        ui.add(text_input(&mut app.settings.rpc_api_key, 300.0));
-                        ui.end_row();
-                    });
+                form_grid(ui, "rpc_grid", |ui| {
+                    field_label(ui, "Bind Address");
+                    ui.add(text_input(&mut app.settings.rpc_bind_addr, 300.0));
+                    ui.end_row();
+                    field_label(ui, "API Key (empty = open)");
+                    ui.add(text_input(&mut app.settings.rpc_api_key, 300.0));
+                    ui.end_row();
+                });
             });
         }
     });
@@ -261,7 +256,7 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
         .resizable(false)
         .frame(
             egui::Frame::default()
-                .fill(egui::Color32::BLACK)
+                .fill(colors::PANEL_BG)
                 .inner_margin(egui::Margin {
                     left: 1,
                     right: 1,
@@ -407,12 +402,7 @@ fn render_rpc_status(ui: &mut egui::Ui, status: &zode::ZodeStatus) {
 
 pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
     let Some(ref status) = state.status else {
-        ui.vertical_centered(|ui| {
-            let avail = ui.available_height();
-            ui.add_space((avail / 2.0 - 20.0).max(0.0));
-            ui.spinner();
-            ui.label("Loading...");
-        });
+        loading_state(ui);
         return;
     };
 
@@ -479,16 +469,16 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
 fn log_entry_color(entry: &str) -> egui::Color32 {
     use zode::LogLevel;
     match LogLevel::from_log_line(entry) {
-        LogLevel::Reject => egui::Color32::from_rgb(255, 100, 100),
-        LogLevel::Gossip => egui::Color32::from_rgb(100, 200, 255),
-        LogLevel::Discovery => egui::Color32::from_rgb(100, 150, 255),
+        LogLevel::Reject => colors::LOG_REJECT,
+        LogLevel::Gossip => colors::LOG_GOSSIP,
+        LogLevel::Discovery => colors::LOG_DISCOVERY,
         LogLevel::PeerConnect => colors::CONNECTED,
-        LogLevel::PeerDisconnect => egui::Color32::from_rgb(255, 255, 100),
-        LogLevel::Relay => egui::Color32::from_rgb(180, 130, 255),
-        LogLevel::DialError => egui::Color32::from_rgb(255, 140, 60),
-        LogLevel::Rpc => egui::Color32::from_rgb(100, 220, 220),
-        LogLevel::Shutdown => egui::Color32::from_rgb(200, 100, 255),
-        LogLevel::Normal => egui::Color32::from_rgb(200, 200, 200),
+        LogLevel::PeerDisconnect => colors::LOG_PEER_DISCONNECT,
+        LogLevel::Relay => colors::LOG_RELAY,
+        LogLevel::DialError => colors::LOG_DIAL_ERROR,
+        LogLevel::Rpc => colors::LOG_RPC,
+        LogLevel::Shutdown => colors::LOG_SHUTDOWN,
+        LogLevel::Normal => colors::LOG_NORMAL,
     }
 }
 
@@ -498,12 +488,7 @@ fn log_entry_color(entry: &str) -> egui::Color32 {
 
 pub(crate) fn render_info(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
     let Some(ref status) = state.status else {
-        ui.vertical_centered(|ui| {
-            let avail = ui.available_height();
-            ui.add_space((avail / 2.0 - 20.0).max(0.0));
-            ui.spinner();
-            ui.label("Loading...");
-        });
+        loading_state(ui);
         return;
     };
 
