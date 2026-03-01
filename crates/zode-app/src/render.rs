@@ -426,7 +426,7 @@ pub(crate) fn render_peers(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnaps
         ui.add_space(4.0);
         hint_label(
             ui,
-            "Zode discovery via GossipSub / bootstrap peers / Kademlia DHT.",
+            "ZODE discovery via GossipSub / bootstrap peers / Kademlia DHT.",
         );
         ui.add_space(8.0);
 

@@ -207,7 +207,7 @@ fn render_peers(frame: &mut Frame, app: &mut App, area: Rect) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Zode discovery via GossipSub / bootstrap peers / Kademlia DHT.",
+        "ZODE discovery via GossipSub / bootstrap peers / Kademlia DHT.",
         Style::default().fg(Color::DarkGray),
     )));
 

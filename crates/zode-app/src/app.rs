@@ -630,7 +630,7 @@ impl ZodeApp {
         ui.add_space(4.0);
         ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
         ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
-        ui.selectable_value(&mut self.tab, Tab::Peers, "ZODES");
+        ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
         ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
         ui.selectable_value(&mut self.tab, Tab::Interlink, "INTERLINK");
         ui.selectable_value(&mut self.tab, Tab::Info, "INFO");
