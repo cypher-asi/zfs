@@ -53,7 +53,7 @@ impl ZodeApp {
                     if self.identity_state.recovery_mode {
                         self.render_setup_recovery(ui);
                     } else {
-                        hint_label(ui, "Generate a new Neural Key to get started, or recover from existing shares.");
+                        hint_label(ui, "Generate a new Neural Key or recover from existing shards.");
                         ui.add_space(16.0);
 
                         centered_row(ui, "setup_btns", |ui| {
@@ -64,7 +64,7 @@ impl ZodeApp {
                                 }
                             }
                             ui.add_space(8.0);
-                            if action_button(ui, "Recover from Shares") {
+                            if action_button(ui, "Recover from Shards") {
                                 self.identity_state.recovery_mode = true;
                                 self.identity_state.error = None;
                             }

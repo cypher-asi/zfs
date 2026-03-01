@@ -44,7 +44,7 @@ fn render_no_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "NEURAL KEY", |ui| {
         hint_label(
             ui,
-            "No identity loaded. Generate a new Neural Key or recover from existing shares.",
+            "No identity loaded. Generate a new Neural Key or recover from existing shards.",
         );
         ui.add_space(12.0);
 
@@ -53,7 +53,7 @@ fn render_no_identity(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 generate_new_identity(app);
             }
             ui.add_space(8.0);
-            if action_button(ui, "Recover from Shares") {
+            if action_button(ui, "Recover from Shards") {
                 app.identity_state.recovery_mode = true;
                 app.identity_state.error = None;
             }
