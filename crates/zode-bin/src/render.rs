@@ -122,8 +122,7 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 SettingsSection::General => render_settings_general(app, ui, running),
                 SettingsSection::Peers => render_peers_settings(app, ui),
                 SettingsSection::Relay => render_relay_peers(app, ui),
-                SettingsSection::DefaultPrograms => render_default_programs(app, ui),
-                SettingsSection::AdditionalPrograms => render_topics(app, ui),
+                SettingsSection::Programs => render_programs(app, ui),
                 SettingsSection::Discovery => render_discovery_settings(app, ui),
                 SettingsSection::RpcServer => render_rpc_settings(app, ui),
             }
@@ -256,7 +255,7 @@ fn render_relay_peers(app: &mut ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
-fn render_default_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
+fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "Default Programs", |ui| {
         hint_label(
             ui,
@@ -266,9 +265,7 @@ fn render_default_programs(app: &mut ZodeApp, ui: &mut egui::Ui) {
         ui.checkbox(&mut app.settings.enable_zid, "ZID (Zero Identity)");
         ui.checkbox(&mut app.settings.enable_interlink, "Interlink");
     });
-}
 
-fn render_topics(app: &mut ZodeApp, ui: &mut egui::Ui) {
     section(ui, "Additional Programs", |ui| {
         hint_label(ui, "64-character hex program IDs for non-default programs.");
         ui.add_space(8.0);

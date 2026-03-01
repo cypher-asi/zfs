@@ -58,19 +58,17 @@ pub(crate) enum SettingsSection {
     General,
     Peers,
     Relay,
-    DefaultPrograms,
-    AdditionalPrograms,
+    Programs,
     Discovery,
     RpcServer,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 7] = [
+    pub const ALL: [SettingsSection; 6] = [
         Self::General,
         Self::Peers,
         Self::Relay,
-        Self::DefaultPrograms,
-        Self::AdditionalPrograms,
+        Self::Programs,
         Self::Discovery,
         Self::RpcServer,
     ];
@@ -80,8 +78,7 @@ impl SettingsSection {
             Self::General => "General",
             Self::Peers => "Peers",
             Self::Relay => "Relay",
-            Self::DefaultPrograms => "Default Programs",
-            Self::AdditionalPrograms => "Additional Programs",
+            Self::Programs => "Programs",
             Self::Discovery => "Discovery",
             Self::RpcServer => "RPC Server",
         }
