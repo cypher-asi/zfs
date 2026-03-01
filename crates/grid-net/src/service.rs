@@ -435,9 +435,6 @@ impl NetworkService {
                 num_established,
                 ..
             } => {
-                if self.pending_discovery_dials > 0 {
-                    self.pending_discovery_dials -= 1;
-                }
                 debug!(%peer_id, num = %num_established, "connection closed");
                 if num_established == 0 {
                     self.active_relay_listeners.remove(&peer_id);
@@ -445,6 +442,12 @@ impl NetworkService {
                     // NOTE: peer_addresses is intentionally kept so that
                     // recently-disconnected peers survive into the peer cache
                     // and are re-dialed on next boot.
+                    if !self.relay_peer_ids.contains(&peer_id) {
+                        self.dial_backoff.insert(
+                            peer_id,
+                            Instant::now() + self.dial_backoff_duration,
+                        );
+                    }
                     self.try_reconnect_relay(&peer_id);
                 }
                 (num_established == 0).then(|| NetworkEvent::PeerDisconnected(peer_id))
