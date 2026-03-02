@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use eframe::egui;
 use grid_core::{FieldSchema, ProgramId, ProofSystem};
@@ -13,7 +12,6 @@ use crate::components::{info_grid, kv_row, kv_row_copyable, section_heading};
 use crate::state::DetailSelection;
 
 struct ProgramMeta {
-    name: String,
     version: u32,
     field_schema: FieldSchema,
     proof_required: bool,
@@ -23,62 +21,62 @@ struct ProgramMeta {
 fn build_program_meta() -> HashMap<ProgramId, ProgramMeta> {
     let mut map = HashMap::new();
 
-    let descriptors: Vec<(
-        &str,
-        u32,
-        fn() -> FieldSchema,
-        bool,
-        Option<ProofSystem>,
-        Result<ProgramId, grid_core::GridError>,
-    )> = vec![
-        (
-            "zid",
-            1,
-            ZidDescriptor::field_schema,
-            ZidDescriptor::v1().proof_required,
-            ZidDescriptor::v1().proof_system,
-            ZidDescriptor::v1().program_id(),
-        ),
-        (
-            "zid",
-            2,
-            ZidDescriptor::field_schema,
-            ZidDescriptor::v2().proof_required,
-            ZidDescriptor::v2().proof_system,
-            ZidDescriptor::v2().program_id(),
-        ),
-        (
-            "interlink",
-            1,
-            InterlinkDescriptor::field_schema,
-            InterlinkDescriptor::v1().proof_required,
-            InterlinkDescriptor::v1().proof_system,
-            InterlinkDescriptor::v1().program_id(),
-        ),
-        (
-            "interlink",
-            2,
-            InterlinkDescriptor::field_schema,
-            InterlinkDescriptor::v2().proof_required,
-            InterlinkDescriptor::v2().proof_system,
-            InterlinkDescriptor::v2().program_id(),
-        ),
-    ];
-
-    for (name, version, schema_fn, proof_required, proof_system, pid_result) in descriptors {
-        if let Ok(pid) = pid_result {
+    let mut insert = |version: u32,
+                      schema: FieldSchema,
+                      proof_required: bool,
+                      proof_system: Option<ProofSystem>,
+                      pid: Result<ProgramId, grid_core::GridError>| {
+        if let Ok(pid) = pid {
             map.insert(
                 pid,
                 ProgramMeta {
-                    name: name.to_string(),
                     version,
-                    field_schema: schema_fn(),
+                    field_schema: schema,
                     proof_required,
                     proof_system,
                 },
             );
         }
-    }
+    };
+
+    let zid_schema = ZidDescriptor::field_schema();
+    let il_schema = InterlinkDescriptor::field_schema();
+
+    let z1 = ZidDescriptor::v1();
+    insert(
+        1,
+        zid_schema.clone(),
+        z1.proof_required,
+        z1.proof_system,
+        z1.program_id(),
+    );
+
+    let z2 = ZidDescriptor::v2();
+    insert(
+        2,
+        zid_schema,
+        z2.proof_required,
+        z2.proof_system,
+        z2.program_id(),
+    );
+
+    let i1 = InterlinkDescriptor::v1();
+    insert(
+        1,
+        il_schema.clone(),
+        i1.proof_required,
+        i1.proof_system,
+        i1.program_id(),
+    );
+
+    let i2 = InterlinkDescriptor::v2();
+    insert(
+        2,
+        il_schema,
+        i2.proof_required,
+        i2.proof_system,
+        i2.program_id(),
+    );
 
     map
 }
@@ -129,7 +127,10 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
 
     let id_hex = svc.id.to_hex();
 
-    section_heading(ui, &format!("{} v{}", svc.descriptor.name, svc.descriptor.version));
+    section_heading(
+        ui,
+        &format!("{} v{}", svc.descriptor.name, svc.descriptor.version),
+    );
     ui.add_space(spacing::MD);
 
     let (status_text, status_color) = if svc.running {
@@ -153,11 +154,7 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
             kv_row(ui, "Topic", &topic);
         }
 
-        kv_row(
-            ui,
-            "Endpoint",
-            &format!("/services/{}/", &id_hex),
-        );
+        kv_row(ui, "Endpoint", &format!("/services/{}/", &id_hex));
     });
 
     ui.add_space(spacing::LG);
@@ -268,10 +265,7 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
         .unwrap_or_else(|| format!("{}…", &id_hex[..12.min(id_hex.len())]));
 
     let status = zode.status();
-    let subscribed = status
-        .topics
-        .iter()
-        .any(|t| t == &format!("prog/{id_hex}"));
+    let subscribed = status.topics.iter().any(|t| t == &format!("prog/{id_hex}"));
 
     let registry = zode.service_registry();
     let relation = if let Ok(reg) = registry.try_lock() {
@@ -283,9 +277,7 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     };
 
     let meta = meta_map.get(program_id);
-    let version_str = meta
-        .map(|m| format!("v{}", m.version))
-        .unwrap_or_default();
+    let version_str = meta.map(|m| format!("v{}", m.version)).unwrap_or_default();
 
     let heading = if version_str.is_empty() {
         name.clone()

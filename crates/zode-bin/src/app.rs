@@ -5,11 +5,11 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use zode::{LogEvent, Zode};
 
+use crate::components::tokens::{font_size, spacing};
 use crate::components::{
     auth_panel_frame, auth_screen_panel, colors, error_label, link_button, status_dot,
     text_input_password, title_bar_frame, title_bar_icon,
 };
-use crate::components::tokens::{font_size, spacing};
 use crate::profile::{self, ProfileMeta};
 use crate::settings::Settings;
 use crate::state::{AppPhase, AppState, DetailSelection, SettingsSection, Tab, MAX_LOG_ENTRIES};
@@ -306,9 +306,10 @@ impl ZodeApp {
     pub fn boot_zode(&mut self) {
         // Preserve the keypair from the running node so the identity
         // survives a restart triggered from settings.
-        let keypair = self.zode.as_ref().and_then(|z| {
-            grid_net::Keypair::from_protobuf_encoding(z.keypair_protobuf()).ok()
-        });
+        let keypair = self
+            .zode
+            .as_ref()
+            .and_then(|z| grid_net::Keypair::from_protobuf_encoding(z.keypair_protobuf()).ok());
 
         self.boot_zode_with_keypair(keypair);
     }
@@ -548,8 +549,11 @@ impl ZodeApp {
             }
         }
         if let Some(ref status) = state.status {
-            self.visualization
-                .reconcile(&status.zode_id, &status.connected_peers, &status.peer_ips);
+            self.visualization.reconcile(
+                &status.zode_id,
+                &status.connected_peers,
+                &status.peer_ips,
+            );
         }
     }
 
@@ -728,6 +732,23 @@ impl ZodeApp {
     }
 
     fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
+        if self.detail_selection.is_some() {
+            let detail_frame = egui::Frame::default()
+                .fill(colors::SURFACE)
+                .inner_margin(spacing::XL)
+                .stroke(egui::Stroke::new(1.0, colors::BORDER));
+            egui::SidePanel::right("detail_panel")
+                .default_width(340.0)
+                .frame(detail_frame)
+                .show(ctx, |ui| {
+                    crate::render_detail::render_detail(self, ui);
+                });
+        }
+
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.detail_selection = None;
+        }
+
         let central_frame = egui::Frame::default()
             .fill(colors::PANEL_BG)
             .inner_margin(spacing::MD);

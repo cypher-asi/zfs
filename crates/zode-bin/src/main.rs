@@ -8,6 +8,7 @@ mod identity;
 mod interlink;
 mod profile;
 mod render;
+mod render_detail;
 mod render_programs;
 mod render_services;
 mod render_storage;
