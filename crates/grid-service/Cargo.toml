@@ -21,3 +21,6 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 hmac = "0.12"
 base64 = "0.22"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
