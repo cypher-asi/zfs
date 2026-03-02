@@ -385,8 +385,10 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
         .unwrap_or(0);
 
     render_zode_status(ui, status, state, service_count);
-    render_storage_status(ui, status);
-    render_metrics_status(ui, &status.metrics);
+    ui.columns(2, |cols| {
+        render_storage_status(&mut cols[0], status);
+        render_metrics_status(&mut cols[1], &status.metrics);
+    });
     render_rpc_status(ui, status);
     let sections_h = ui.min_rect().bottom() - sections_top;
     ui.ctx()
