@@ -555,9 +555,30 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                 .auto_shrink([false; 2])
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
-                    for entry in &state.log_entries {
-                        let color = log_entry_color(entry);
-                        ui.label(egui::RichText::new(entry).monospace().color(color));
+                    if state.log_entries.is_empty() {
+                        ui.label(
+                            egui::RichText::new("No log entries yet.")
+                                .monospace()
+                                .color(colors::LOG_NORMAL),
+                        );
+                    } else {
+                        let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+                        let mut job = egui::text::LayoutJob::default();
+                        for (i, entry) in state.log_entries.iter().enumerate() {
+                            if i > 0 {
+                                job.append("\n", 0.0, egui::TextFormat {
+                                    font_id: font_id.clone(),
+                                    ..Default::default()
+                                });
+                            }
+                            let color = log_entry_color(entry);
+                            job.append(entry, 0.0, egui::TextFormat {
+                                font_id: font_id.clone(),
+                                color,
+                                ..Default::default()
+                            });
+                        }
+                        ui.label(job);
                     }
                     if should_scroll {
                         ui.scroll_to_cursor(Some(egui::Align::BOTTOM));

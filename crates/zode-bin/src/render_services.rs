@@ -71,28 +71,8 @@ fn service_card(
 
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(CARD_WIDTH, CARD_HEIGHT),
-        egui::Sense::click(),
+        egui::Sense::hover(),
     );
-
-    if resp.clicked() {
-        let zode = Arc::clone(zode);
-        let service_id = svc.id;
-        let is_running = svc.running;
-        rt.spawn(async move {
-            let result = if is_running {
-                zode.stop_service(&service_id).await
-            } else {
-                zode.start_service(&service_id).await
-            };
-            if let Err(e) = result {
-                tracing::error!(
-                    service_id = %service_id,
-                    error = %e,
-                    "failed to toggle service"
-                );
-            }
-        });
-    }
 
     let painter = ui.painter_at(rect);
 
@@ -122,8 +102,37 @@ fn service_card(
         egui::vec2(CHECKBOX_SIZE, CHECKBOX_SIZE),
     );
 
+    let cb_resp = ui.interact(
+        cb_rect,
+        egui::Id::new(("svc_cb", svc.id)),
+        egui::Sense::click(),
+    );
+
+    if cb_resp.clicked() {
+        let zode = Arc::clone(zode);
+        let service_id = svc.id;
+        let is_running = svc.running;
+        rt.spawn(async move {
+            let result = if is_running {
+                zode.stop_service(&service_id).await
+            } else {
+                zode.start_service(&service_id).await
+            };
+            if let Err(e) = result {
+                tracing::error!(
+                    service_id = %service_id,
+                    error = %e,
+                    "failed to toggle service"
+                );
+            }
+        });
+    }
+
+    let cb_hovered = cb_resp.hovered();
     let cb_border = if svc.running {
         colors::CONNECTED
+    } else if cb_hovered {
+        colors::TEXT_SECONDARY
     } else {
         colors::BORDER_SUBTLE
     };
@@ -155,6 +164,10 @@ fn service_card(
             [points[1], points[2]],
             egui::Stroke::new(2.0, colors::SURFACE_DARK),
         );
+    }
+
+    if cb_hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
     let name_rect = egui::Rect::from_min_max(
