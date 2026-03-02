@@ -140,7 +140,7 @@ impl Zode {
             program_proof_config,
         ));
 
-        let (topic_tx, topic_rx) = mpsc::channel(64);
+        let (topic_tx, topic_rx) = mpsc::channel(512);
         let (direct_tx, direct_rx) = mpsc::channel(64);
 
         let node_identity = {
