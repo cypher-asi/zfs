@@ -180,7 +180,7 @@ pub(crate) fn title_bar_frame() -> egui::Frame {
         .stroke(egui::Stroke::NONE)
 }
 
-/// Standard frame for the bottom status bar.
+/// Standard frame for the bottom status bar (top border only, drawn separately).
 pub(crate) fn status_bar_frame() -> egui::Frame {
     egui::Frame::default()
         .fill(colors::PANEL_BG)
@@ -188,5 +188,5 @@ pub(crate) fn status_bar_frame() -> egui::Frame {
             spacing::LG as i8,
             spacing::SM as i8,
         ))
-        .stroke(egui::Stroke::new(tokens::STROKE_DEFAULT, colors::BORDER))
+        .stroke(egui::Stroke::NONE)
 }

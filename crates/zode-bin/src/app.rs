@@ -815,7 +815,7 @@ impl ZodeApp {
     }
 
     fn render_status_bar(&self, ctx: &egui::Context, peer_id: Option<&str>) {
-        egui::TopBottomPanel::bottom("status_bar")
+        let resp = egui::TopBottomPanel::bottom("status_bar")
             .frame(status_bar_frame())
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -832,6 +832,15 @@ impl ZodeApp {
                     });
                 });
             });
+
+        let rect = resp.response.rect;
+        ctx.layer_painter(egui::LayerId::background()).line_segment(
+            [rect.left_top(), rect.right_top()],
+            egui::Stroke::new(
+                crate::components::tokens::STROKE_DEFAULT,
+                colors::BORDER,
+            ),
+        );
     }
 }
 
