@@ -50,9 +50,11 @@ pub(crate) fn render_launch_screen(app: &mut OrchestratorApp, ui: &mut egui::Ui)
             ];
 
             ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                 for preset in &presets {
-                    preset_card(ui, preset, &app.selected_preset);
-                    ui.add_space(spacing::MD);
+                    if preset_card(ui, preset, &app.selected_preset) {
+                        app.selected_preset = preset.clone();
+                    }
                 }
             });
 
@@ -82,7 +84,7 @@ pub(crate) fn render_launch_screen(app: &mut OrchestratorApp, ui: &mut egui::Ui)
     });
 }
 
-fn preset_card(ui: &mut egui::Ui, preset: &NetworkPreset, selected: &NetworkPreset) {
+fn preset_card(ui: &mut egui::Ui, preset: &NetworkPreset, selected: &NetworkPreset) -> bool {
     let is_selected = std::mem::discriminant(preset) == std::mem::discriminant(selected);
     let border_color = if is_selected {
         egui::Color32::WHITE
@@ -91,7 +93,7 @@ fn preset_card(ui: &mut egui::Ui, preset: &NetworkPreset, selected: &NetworkPres
     };
 
     let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::hover());
+        ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::click());
 
     let painter = ui.painter_at(rect);
 
@@ -151,6 +153,8 @@ fn preset_card(ui: &mut egui::Ui, preset: &NetworkPreset, selected: &NetworkPres
         egui::FontId::proportional(font_size::SMALL),
         colors::TEXT_SECONDARY,
     );
+
+    resp.clicked()
 }
 
 fn render_preset_selector(ui: &mut egui::Ui, selected: &mut NetworkPreset) {
@@ -182,23 +186,21 @@ fn render_custom_inputs(ui: &mut egui::Ui, preset: &mut NetworkPreset) {
         committee_size,
     } = preset
     {
-        egui::Grid::new("custom_grid")
-            .num_columns(2)
-            .spacing([spacing::LG, spacing::SM])
-            .show(ui, |ui| {
-                ui.label("Validators:");
-                ui.add(egui::DragValue::new(validators).range(2..=20));
-                ui.end_row();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = spacing::SM;
 
-                ui.label("Zones:");
-                let mut z_val = *zones as i32;
-                ui.add(egui::DragValue::new(&mut z_val).range(1..=16));
-                *zones = z_val.max(1) as u32;
-                ui.end_row();
+            ui.label("VALIDATORS");
+            ui.add(egui::DragValue::new(validators).range(2..=20));
 
-                ui.label("Committee size:");
-                ui.add(egui::DragValue::new(committee_size).range(1..=*validators));
-                ui.end_row();
-            });
+            ui.add_space(spacing::MD);
+            ui.label("ZONES");
+            let mut z_val = *zones as i32;
+            ui.add(egui::DragValue::new(&mut z_val).range(1..=16));
+            *zones = z_val.max(1) as u32;
+
+            ui.add_space(spacing::MD);
+            ui.label("COMMITTEE SIZE");
+            ui.add(egui::DragValue::new(committee_size).range(1..=*validators));
+        });
     }
 }
