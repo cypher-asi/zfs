@@ -8685,6 +8685,7 @@ dependencies = [
  "grid-crypto",
  "grid-net",
  "grid-programs-interlink",
+ "grid-programs-zephyr",
  "grid-programs-zid",
  "grid-proof-groth16",
  "grid-sdk",

@@ -15,6 +15,7 @@ zode = { path = "../zode" }
 grid-storage = { path = "../grid-storage" }
 grid-programs-zid = { path = "../grid-programs/zid" }
 grid-programs-interlink = { path = "../grid-programs/interlink" }
+grid-programs-zephyr = { path = "../grid-programs/zephyr" }
 grid-net = { path = "../grid-net" }
 grid-crypto = { path = "../grid-crypto" }
 grid-sdk = { path = "../grid-sdk" }

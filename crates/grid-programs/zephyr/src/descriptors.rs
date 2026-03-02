@@ -1,4 +1,4 @@
-use grid_core::{GridError, ProgramId, ProofSystem};
+use grid_core::{CborType, FieldDef, FieldSchema, GridError, ProgramId, ProofSystem};
 use serde::{Deserialize, Serialize};
 
 const MAX_INPUT_SIZE: usize = 64 * 1024;
@@ -65,6 +65,46 @@ impl ZephyrGlobalDescriptor {
         }
     }
 
+    /// Canonical field schema for global coordination messages (FinalityCertificate).
+    pub fn field_schema() -> FieldSchema {
+        FieldSchema {
+            program_name: "zephyr/global".into(),
+            version: 1,
+            fields: vec![
+                FieldDef {
+                    key: "zone_id".into(),
+                    value_type: CborType::UnsignedInt,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "epoch".into(),
+                    value_type: CborType::UnsignedInt,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "prev_zone_head".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "new_zone_head".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "batch_hash".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "signatures".into(),
+                    value_type: CborType::Array,
+                    optional: false,
+                },
+            ],
+        }
+    }
+
     pub fn program_id(&self) -> Result<ProgramId, GridError> {
         let canonical = self.encode_canonical()?;
         Ok(ProgramId::from_descriptor_bytes(&canonical))
@@ -112,6 +152,41 @@ impl ZephyrSpendDescriptor {
         }
     }
 
+    /// Canonical field schema for spend transactions.
+    pub fn field_schema() -> FieldSchema {
+        FieldSchema {
+            program_name: "zephyr/spend".into(),
+            version: 1,
+            fields: vec![
+                FieldDef {
+                    key: "input_commitment".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "nullifier".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "outputs".into(),
+                    value_type: CborType::Array,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "proof".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "public_signals".into(),
+                    value_type: CborType::Array,
+                    optional: false,
+                },
+            ],
+        }
+    }
+
     pub fn program_id(&self) -> Result<ProgramId, GridError> {
         let canonical = self.encode_canonical()?;
         Ok(ProgramId::from_descriptor_bytes(&canonical))
@@ -150,6 +225,31 @@ impl ZephyrValidatorDescriptor {
         Self {
             name: "zephyr/validators".to_owned(),
             version: 1,
+        }
+    }
+
+    /// Canonical field schema for validator registry entries.
+    pub fn field_schema() -> FieldSchema {
+        FieldSchema {
+            program_name: "zephyr/validators".into(),
+            version: 1,
+            fields: vec![
+                FieldDef {
+                    key: "validator_id".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "pubkey".into(),
+                    value_type: CborType::ByteString,
+                    optional: false,
+                },
+                FieldDef {
+                    key: "p2p_endpoint".into(),
+                    value_type: CborType::TextString,
+                    optional: false,
+                },
+            ],
         }
     }
 

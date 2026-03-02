@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use eframe::egui;
 use grid_core::{FieldSchema, ProgramId, ProofSystem};
 use grid_programs_interlink::InterlinkDescriptor;
+use grid_programs_zephyr::{
+    ZephyrGlobalDescriptor, ZephyrSpendDescriptor, ZephyrValidatorDescriptor,
+};
 use grid_programs_zid::ZidDescriptor;
 use grid_service::{ConfigFieldType, ServiceId};
 
@@ -122,6 +125,33 @@ fn build_program_meta() -> HashMap<ProgramId, ProgramMeta> {
         i2.proof_required,
         i2.proof_system,
         i2.program_id(),
+    );
+
+    let zg = ZephyrGlobalDescriptor::new();
+    insert(
+        1,
+        ZephyrGlobalDescriptor::field_schema(),
+        false,
+        None,
+        zg.program_id(),
+    );
+
+    let zs = ZephyrSpendDescriptor::new();
+    insert(
+        1,
+        ZephyrSpendDescriptor::field_schema(),
+        true,
+        Some(zs.proof_system),
+        zs.program_id(),
+    );
+
+    let zv = ZephyrValidatorDescriptor::new();
+    insert(
+        1,
+        ZephyrValidatorDescriptor::field_schema(),
+        false,
+        None,
+        zv.program_id(),
     );
 
     map
