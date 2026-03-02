@@ -609,7 +609,6 @@ impl ZodeApp {
         ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
         ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
         ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
-        ui.selectable_value(&mut self.tab, Tab::Info, "INFO");
         ui.selectable_value(&mut self.tab, Tab::Interlink, "INTERLINK");
     }
 
@@ -760,8 +759,7 @@ impl ZodeApp {
                     Tab::Peers => crate::render::render_peers(self, ui, state),
                     Tab::Log => crate::render::render_log(self, ui, state),
                     Tab::Interlink => crate::interlink::render_interlink(self, ui),
-                    Tab::Info => crate::render::render_info(self, ui, state),
-                    Tab::Settings => crate::render::render_settings(self, ui),
+                    Tab::Settings => crate::render::render_settings(self, ui, state),
                     Tab::Identity => crate::identity::render_identity(self, ui),
                 }
             });

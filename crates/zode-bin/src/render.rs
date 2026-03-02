@@ -14,7 +14,7 @@ use crate::state::{SettingsSection, StateSnapshot};
 // Settings
 // ---------------------------------------------------------------------------
 
-pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
+pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
     let running = app.zode.is_some();
     let mut do_boot = false;
     let mut do_stop = false;
@@ -125,6 +125,7 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
                 SettingsSection::Programs => render_programs(app, ui),
                 SettingsSection::Discovery => render_discovery_settings(app, ui),
                 SettingsSection::RpcServer => render_rpc_settings(app, ui),
+                SettingsSection::Info => render_info(ui, state),
             }
         });
 
@@ -583,52 +584,48 @@ fn log_entry_color(entry: &str) -> egui::Color32 {
 }
 
 // ---------------------------------------------------------------------------
-// Info
+// Info (settings sub-section)
 // ---------------------------------------------------------------------------
 
-pub(crate) fn render_info(_app: &ZodeApp, ui: &mut egui::Ui, state: &StateSnapshot) {
+fn render_info(ui: &mut egui::Ui, state: &StateSnapshot) {
     let Some(ref status) = state.status else {
         loading_state(ui);
         return;
     };
 
-    egui::ScrollArea::vertical()
-        .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            section(ui, "ZODE Info", |ui| {
-                info_grid(ui, "info_grid", |ui| {
-                    kv_row(ui, "ZODE ID", &status.zode_id);
-                    kv_row(ui, "DB Size", &format_bytes(status.metrics.db_size_bytes));
-                    kv_row(
-                        ui,
-                        "Sectors Stored",
-                        &format!("{}", status.metrics.sectors_stored_total),
-                    );
-                });
-            });
-
-            section(ui, "RPC", |ui| {
-                info_grid(ui, "info_rpc_grid", |ui| {
-                    if status.rpc_enabled {
-                        let addr = status.rpc_addr.as_deref().unwrap_or("...");
-                        let auth = if status.rpc_auth_required {
-                            "key"
-                        } else {
-                            "open"
-                        };
-                        kv_row(ui, "RPC", &format!("{addr} (auth: {auth})"));
-                    } else {
-                        kv_row(ui, "RPC", "Disabled");
-                    }
-                });
-            });
-
-            section(ui, "Subscribed Programs", |ui| {
-                for topic in &status.topics {
-                    ui.monospace(format!("  {topic}"));
-                }
-            });
-
-            muted_label(ui, &format!("zode-bin v{}", env!("CARGO_PKG_VERSION")));
+    section(ui, "ZODE Info", |ui| {
+        info_grid(ui, "info_grid", |ui| {
+            kv_row(ui, "ZODE ID", &status.zode_id);
+            kv_row(ui, "DB Size", &format_bytes(status.metrics.db_size_bytes));
+            kv_row(
+                ui,
+                "Sectors Stored",
+                &format!("{}", status.metrics.sectors_stored_total),
+            );
         });
+    });
+
+    section(ui, "RPC", |ui| {
+        info_grid(ui, "info_rpc_grid", |ui| {
+            if status.rpc_enabled {
+                let addr = status.rpc_addr.as_deref().unwrap_or("...");
+                let auth = if status.rpc_auth_required {
+                    "key"
+                } else {
+                    "open"
+                };
+                kv_row(ui, "RPC", &format!("{addr} (auth: {auth})"));
+            } else {
+                kv_row(ui, "RPC", "Disabled");
+            }
+        });
+    });
+
+    section(ui, "Subscribed Programs", |ui| {
+        for topic in &status.topics {
+            ui.monospace(format!("  {topic}"));
+        }
+    });
+
+    muted_label(ui, &format!("zode-bin v{}", env!("CARGO_PKG_VERSION")));
 }

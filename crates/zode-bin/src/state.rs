@@ -49,7 +49,6 @@ pub(crate) enum Tab {
     Peers,
     Log,
     Interlink,
-    Info,
     Settings,
     Identity,
 }
@@ -62,16 +61,18 @@ pub(crate) enum SettingsSection {
     Programs,
     Discovery,
     RpcServer,
+    Info,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 6] = [
+    pub const ALL: [SettingsSection; 7] = [
         Self::General,
         Self::Peers,
         Self::Relay,
         Self::Programs,
         Self::Discovery,
         Self::RpcServer,
+        Self::Info,
     ];
 
     pub fn label(self) -> &'static str {
@@ -82,6 +83,7 @@ impl SettingsSection {
             Self::Programs => "Programs",
             Self::Discovery => "Discovery",
             Self::RpcServer => "RPC Server",
+            Self::Info => "Info",
         }
     }
 }
