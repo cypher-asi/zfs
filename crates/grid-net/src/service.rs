@@ -10,8 +10,8 @@ use libp2p::{
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::behaviour::{GridBehaviour, GridBehaviourEvent};
 use crate::addr::extract_peer_id;
+use crate::behaviour::{GridBehaviour, GridBehaviourEvent};
 use crate::builder::{build_swarm, dial_bootstrap_peers, dial_relay_peers};
 use crate::config::{KademliaMode, NetworkConfig};
 use crate::error::NetworkError;
@@ -462,10 +462,8 @@ impl NetworkService {
                     // recently-disconnected peers survive into the peer cache
                     // and are re-dialed on next boot.
                     if !self.relay_peer_ids.contains(&peer_id) {
-                        self.dial_backoff.insert(
-                            peer_id,
-                            Instant::now() + self.dial_backoff_duration,
-                        );
+                        self.dial_backoff
+                            .insert(peer_id, Instant::now() + self.dial_backoff_duration);
                     }
                     self.try_reconnect_relay(&peer_id);
                 }
@@ -508,10 +506,8 @@ impl NetworkService {
                 if let Some(failed_peer) = peer_id {
                     let is_relay = self.relay_peer_ids.contains(&failed_peer);
                     if !is_relay {
-                        self.dial_backoff.insert(
-                            failed_peer,
-                            Instant::now() + self.dial_backoff_duration,
-                        );
+                        self.dial_backoff
+                            .insert(failed_peer, Instant::now() + self.dial_backoff_duration);
                     }
                     self.peer_addresses.remove(&failed_peer);
                     if self.kademlia_enabled && !is_relay {
@@ -732,9 +728,7 @@ impl NetworkService {
         }
 
         debug!(%peer_id, num_addrs = dial_addrs.len(), "auto-dialing discovered peer");
-        let opts = DialOpts::peer_id(*peer_id)
-            .addresses(dial_addrs)
-            .build();
+        let opts = DialOpts::peer_id(*peer_id).addresses(dial_addrs).build();
         match self.swarm.dial(opts) {
             Ok(()) => {
                 self.pending_discovery_dials += 1;

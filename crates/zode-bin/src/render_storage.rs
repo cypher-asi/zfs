@@ -5,11 +5,11 @@ use grid_core::ShapeProof;
 use grid_storage::SectorStore;
 
 use crate::app::ZodeApp;
+use crate::components::tokens::spacing;
 use crate::components::{
     colors, copy_button, error_label, field_label, hint_label, info_grid, kv_row, loading_state,
     muted_label, section,
 };
-use crate::components::tokens::spacing;
 use crate::helpers::format_bytes;
 use crate::state::StateSnapshot;
 

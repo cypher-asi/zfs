@@ -1,12 +1,12 @@
 use eframe::egui;
 
 use crate::app::ZodeApp;
+use crate::components::tokens::{font_size, spacing};
 use crate::components::{
     action_button, action_panel, colors, copy_button, editable_list, error_label, field_label,
     form_grid, hint_label, icon_button, info_grid, kv_row, kv_row_copyable, loading_state,
     muted_label, section, text_input,
 };
-use crate::components::tokens::{font_size, spacing};
 use crate::helpers::format_bytes;
 use crate::state::{SettingsSection, StateSnapshot};
 
@@ -80,10 +80,8 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
                     target_y,
                     0.15,
                 );
-                let indicator = egui::Rect::from_min_size(
-                    egui::pos2(panel_left, anim_y),
-                    egui::vec2(2.0, h),
-                );
+                let indicator =
+                    egui::Rect::from_min_size(egui::pos2(panel_left, anim_y), egui::vec2(2.0, h));
                 ui.painter()
                     .rect_filled(indicator, 0.0, egui::Color32::WHITE);
             }
@@ -95,7 +93,8 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
         egui::pos2(nav_rect.max.x - spacing::MD, nav_rect.max.y - spacing::MD),
     );
     let border_stroke = egui::Stroke::new(1.0, colors::BORDER);
-    ui.painter().rect_stroke(border_rect, 0.0, border_stroke, egui::StrokeKind::Inside);
+    ui.painter()
+        .rect_stroke(border_rect, 0.0, border_stroke, egui::StrokeKind::Inside);
 
     if let Some(ref err) = app.settings_error {
         egui::TopBottomPanel::bottom("settings_error_panel")
@@ -117,16 +116,14 @@ pub(crate) fn render_settings(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
 
     egui::ScrollArea::vertical()
         .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            match app.settings_section {
-                SettingsSection::General => render_settings_general(app, ui, running),
-                SettingsSection::Peers => render_peers_settings(app, ui),
-                SettingsSection::Relay => render_relay_peers(app, ui),
-                SettingsSection::Programs => render_programs(app, ui),
-                SettingsSection::Discovery => render_discovery_settings(app, ui),
-                SettingsSection::RpcServer => render_rpc_settings(app, ui),
-                SettingsSection::Info => render_info(ui, state),
-            }
+        .show(ui, |ui| match app.settings_section {
+            SettingsSection::General => render_settings_general(app, ui, running),
+            SettingsSection::Peers => render_peers_settings(app, ui),
+            SettingsSection::Relay => render_relay_peers(app, ui),
+            SettingsSection::Programs => render_programs(app, ui),
+            SettingsSection::Discovery => render_discovery_settings(app, ui),
+            SettingsSection::RpcServer => render_rpc_settings(app, ui),
+            SettingsSection::Info => render_info(ui, state),
         });
 
     if do_boot {
@@ -182,12 +179,12 @@ fn render_settings_general(app: &mut ZodeApp, ui: &mut egui::Ui, running: bool) 
         ui.add_space(spacing::MD);
 
         form_grid(ui, "settings_grid", |ui| {
-                field_label(ui, "Data Directory");
-                ui.add(text_input(&mut app.settings.data_dir, 400.0));
-                ui.end_row();
-                field_label(ui, "Listen Address");
-                ui.add(text_input(&mut app.settings.listen_addr, 400.0));
-                ui.end_row();
+            field_label(ui, "Data Directory");
+            ui.add(text_input(&mut app.settings.data_dir, 400.0));
+            ui.end_row();
+            field_label(ui, "Listen Address");
+            ui.add(text_input(&mut app.settings.listen_addr, 400.0));
+            ui.end_row();
         });
     });
 }
@@ -327,7 +324,6 @@ fn render_rpc_settings(app: &mut ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
@@ -358,8 +354,9 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
     };
 
     let sections_id = egui::Id::new("status_sections_h");
-    let prev_sections_h: f32 =
-        ui.ctx().data_mut(|d| d.get_temp(sections_id).unwrap_or(300.0));
+    let prev_sections_h: f32 = ui
+        .ctx()
+        .data_mut(|d| d.get_temp(sections_id).unwrap_or(300.0));
     let viz_h = (ui.available_height() - prev_sections_h - spacing::MD).max(100.0);
 
     egui::Frame::default()
@@ -566,17 +563,25 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                         let mut job = egui::text::LayoutJob::default();
                         for (i, entry) in state.log_entries.iter().enumerate() {
                             if i > 0 {
-                                job.append("\n", 0.0, egui::TextFormat {
-                                    font_id: font_id.clone(),
-                                    ..Default::default()
-                                });
+                                job.append(
+                                    "\n",
+                                    0.0,
+                                    egui::TextFormat {
+                                        font_id: font_id.clone(),
+                                        ..Default::default()
+                                    },
+                                );
                             }
                             let color = log_entry_color(entry);
-                            job.append(entry, 0.0, egui::TextFormat {
-                                font_id: font_id.clone(),
-                                color,
-                                ..Default::default()
-                            });
+                            job.append(
+                                entry,
+                                0.0,
+                                egui::TextFormat {
+                                    font_id: font_id.clone(),
+                                    color,
+                                    ..Default::default()
+                                },
+                            );
                         }
                         ui.label(job);
                     }

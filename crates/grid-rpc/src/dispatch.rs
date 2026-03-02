@@ -63,9 +63,11 @@ pub(crate) fn dispatch(handler: &dyn SectorDispatch, req: &JsonRpcRequest) -> Js
         "sector.batchAppend" => {
             dispatch_typed::<SectorBatchAppendRequest>(handler, req, SectorRequest::BatchAppend)
         }
-        "sector.batchLogLength" => {
-            dispatch_typed::<SectorBatchLogLengthRequest>(handler, req, SectorRequest::BatchLogLength)
-        }
+        "sector.batchLogLength" => dispatch_typed::<SectorBatchLogLengthRequest>(
+            handler,
+            req,
+            SectorRequest::BatchLogLength,
+        ),
         _ => error_response(
             req.id.clone(),
             METHOD_NOT_FOUND,

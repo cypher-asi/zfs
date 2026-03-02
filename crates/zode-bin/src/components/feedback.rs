@@ -58,5 +58,6 @@ pub(crate) fn status_dot(ui: &mut egui::Ui, connected: bool) {
         egui::vec2(dot_radius * 2.0 + 2.0, dot_radius * 2.0),
         egui::Sense::hover(),
     );
-    ui.painter().circle_filled(dot_rect.center(), dot_radius, color);
+    ui.painter()
+        .circle_filled(dot_rect.center(), dot_radius, color);
 }

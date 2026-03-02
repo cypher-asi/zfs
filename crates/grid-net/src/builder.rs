@@ -83,9 +83,7 @@ fn build_behaviour(
         identify::Config::new(GRID_IDENTIFY_PROTOCOL.to_string(), key.public())
             .with_push_listen_addr_updates(true),
     );
-    let ping = ping::Behaviour::new(
-        ping::Config::new().with_interval(Duration::from_secs(15)),
-    );
+    let ping = ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(15)));
     let connection_limits = connection_limits::Behaviour::new(
         connection_limits::ConnectionLimits::default()
             .with_max_established_incoming(Some(128))

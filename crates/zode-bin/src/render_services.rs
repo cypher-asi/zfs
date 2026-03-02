@@ -67,10 +67,8 @@ fn service_card(
 
     let border_color = colors::BORDER;
 
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(CARD_WIDTH, CARD_HEIGHT),
-        egui::Sense::click(),
-    );
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::click());
 
     let painter = ui.painter_at(rect);
 
@@ -138,7 +136,11 @@ fn service_card(
     painter.rect(
         cb_rect,
         0.0,
-        egui::Color32::BLACK,
+        if cb_hovered {
+            egui::Color32::from_gray(30)
+        } else {
+            egui::Color32::BLACK
+        },
         egui::Stroke::new(tokens::STROKE_DEFAULT, cb_border),
         egui::StrokeKind::Inside,
     );

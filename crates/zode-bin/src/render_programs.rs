@@ -73,7 +73,13 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
 
             if !entries.is_empty() {
                 let title = format!("{} v{}", svc.descriptor.name, svc.descriptor.version);
-                render_service_programs(ui, &title, svc.running, &entries, &mut app.detail_selection);
+                render_service_programs(
+                    ui,
+                    &title,
+                    svc.running,
+                    &entries,
+                    &mut app.detail_selection,
+                );
             }
         }
     }
@@ -97,7 +103,13 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
         .collect();
 
     if !standalone.is_empty() {
-        render_service_programs(ui, "Default Programs", true, &standalone, &mut app.detail_selection);
+        render_service_programs(
+            ui,
+            "Default Programs",
+            true,
+            &standalone,
+            &mut app.detail_selection,
+        );
     }
 
     if subscribed.is_empty() && services.as_ref().is_none_or(|s| s.is_empty()) {
@@ -166,10 +178,8 @@ fn program_card(
 ) {
     let border_color = colors::BORDER;
 
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(CARD_WIDTH, CARD_HEIGHT),
-        egui::Sense::click(),
-    );
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::click());
 
     let painter = ui.painter_at(rect);
 

@@ -115,11 +115,9 @@ impl ServiceContext {
         &self,
         token: &str,
     ) -> Result<T, ServiceError> {
-        let token_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
-            token,
-        )
-        .map_err(|e| ServiceError::EphemeralToken(format!("invalid base64: {e}")))?;
+        let token_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, token)
+                .map_err(|e| ServiceError::EphemeralToken(format!("invalid base64: {e}")))?;
 
         if token_bytes.len() < 32 {
             return Err(ServiceError::EphemeralToken("token too short".into()));

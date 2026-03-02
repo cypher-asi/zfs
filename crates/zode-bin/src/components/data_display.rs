@@ -29,7 +29,6 @@ pub(crate) fn kv_row_copyable(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.end_row();
 }
 
-
 /// Text input + ADD button + removable monospace items.
 pub(crate) fn editable_list(
     ui: &mut egui::Ui,

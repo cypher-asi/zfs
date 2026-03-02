@@ -128,7 +128,10 @@ impl Zode {
         Self::register_default_services(&mut service_registry);
         let service_programs = service_registry.required_programs();
         if !service_programs.is_empty() {
-            info!(count = service_programs.len(), "service-required programs added");
+            info!(
+                count = service_programs.len(),
+                "service-required programs added"
+            );
         }
 
         if let Err(e) = service_registry
@@ -313,11 +316,7 @@ impl Zode {
             HashMap::new()
         };
 
-        let topics = self
-            .topics
-            .read()
-            .map(|t| t.clone())
-            .unwrap_or_default();
+        let topics = self.topics.read().map(|t| t.clone()).unwrap_or_default();
 
         ZodeStatus {
             zode_id: format_zode_id(&self.zode_id),
@@ -368,10 +367,7 @@ impl Zode {
 
     /// Snapshot of currently subscribed topic strings (e.g. `"prog/{hex}"`).
     pub fn topics(&self) -> Vec<String> {
-        self.topics
-            .read()
-            .map(|t| t.clone())
-            .unwrap_or_default()
+        self.topics.read().map(|t| t.clone()).unwrap_or_default()
     }
 
     /// Queue a GossipSub publish.  The event loop will send it on the
@@ -390,8 +386,7 @@ impl Zode {
         peer_id: &str,
         request: grid_core::SectorRequest,
     ) -> Result<grid_core::SectorResponse, String> {
-        let peer = grid_net::parse_zode_id(peer_id)
-            .map_err(|e| format!("invalid peer ID: {e}"))?;
+        let peer = grid_net::parse_zode_id(peer_id).map_err(|e| format!("invalid peer ID: {e}"))?;
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.sector_request_tx
             .send((peer, request, tx))

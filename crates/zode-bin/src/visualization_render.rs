@@ -256,14 +256,14 @@ impl NetworkVisualization {
                 ui.set_width(overlay_w);
                 ui.horizontal(|ui| {
                     crate::components::overlay_frame().show(ui, |ui| {
-                            crate::components::section_heading(
-                                ui,
-                                &format!(
-                                    "The Grid  \u{2022}  {peer_count} {}",
-                                    if peer_count == 1 { "peer" } else { "peers" }
-                                ),
-                            );
-                        });
+                        crate::components::section_heading(
+                            ui,
+                            &format!(
+                                "The Grid  \u{2022}  {peer_count} {}",
+                                if peer_count == 1 { "peer" } else { "peers" }
+                            ),
+                        );
+                    });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         crate::components::overlay_frame()
@@ -396,7 +396,11 @@ fn paint_grid_dots(painter: &egui::Painter, g: &GridParams) {
         if x >= g.left {
             for &gy in &g.ys {
                 let t = g.fade(gy);
-                painter.circle_filled(egui::pos2(x, gy), g.dot_radius, faded_color(colors::VIZ_GRID_DOT, t));
+                painter.circle_filled(
+                    egui::pos2(x, gy),
+                    g.dot_radius,
+                    faded_color(colors::VIZ_GRID_DOT, t),
+                );
             }
         }
         x += g.spacing;

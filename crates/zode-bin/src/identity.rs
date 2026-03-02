@@ -7,12 +7,12 @@ use zid::{
 };
 
 use crate::app::ZodeApp;
+use crate::components::tokens::{font_size, spacing};
 use crate::components::{
     action_button, card_frame, colors, copy_button, danger_button, editable_list, error_label,
     field_label, form_grid, hint_label, info_grid, kv_row, kv_row_copyable, link_button, section,
     status_label, std_button, text_input_password, warn_label,
 };
-use crate::components::tokens::{font_size, spacing};
 use crate::helpers::shorten_id;
 use crate::profile;
 use crate::state::DerivedMachineKey;
@@ -263,12 +263,12 @@ fn render_machine_keys(app: &mut ZodeApp, ui: &mut egui::Ui) {
         } else {
             for mk in &app.identity_state.machine_keys {
                 card_frame().show(ui, |ui| {
-                        info_grid(ui, &format!("mk_{}", mk.did), |ui| {
-                            kv_row_copyable(ui, "DID", &mk.did);
-                            kv_row(ui, "Epoch", &mk.epoch.to_string());
-                            kv_row(ui, "Caps", &format!("{:?}", mk.capabilities));
-                        });
+                    info_grid(ui, &format!("mk_{}", mk.did), |ui| {
+                        kv_row_copyable(ui, "DID", &mk.did);
+                        kv_row(ui, "Epoch", &mk.epoch.to_string());
+                        kv_row(ui, "Caps", &format!("{:?}", mk.capabilities));
                     });
+                });
                 ui.add_space(spacing::SM);
             }
 
@@ -526,4 +526,3 @@ fn render_profile_panel(app: &mut ZodeApp, ui: &mut egui::Ui) {
         app.do_delete_profile(&profile_id);
     }
 }
-

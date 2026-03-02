@@ -116,7 +116,9 @@ async fn main() -> Result<()> {
                 reservation_duration: Duration::from_secs(60 * 60),
                 max_circuit_duration: Duration::from_secs(24 * 60 * 60),
                 max_circuit_bytes: 0,
-                max_reservations: config.max_reservations.unwrap_or(default_relay.max_reservations),
+                max_reservations: config
+                    .max_reservations
+                    .unwrap_or(default_relay.max_reservations),
                 max_circuits: config.max_circuits.unwrap_or(512),
                 max_circuits_per_peer: 16,
                 ..default_relay

@@ -101,7 +101,11 @@ pub fn has_transport(addr: &Multiaddr) -> bool {
     addr.iter().any(|p| {
         matches!(
             p,
-            Protocol::Ip4(_) | Protocol::Ip6(_) | Protocol::Dns(_) | Protocol::Dns4(_) | Protocol::Dns6(_)
+            Protocol::Ip4(_)
+                | Protocol::Ip6(_)
+                | Protocol::Dns(_)
+                | Protocol::Dns4(_)
+                | Protocol::Dns6(_)
         )
     })
 }

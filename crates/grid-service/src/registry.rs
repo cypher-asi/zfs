@@ -162,7 +162,9 @@ impl ServiceRegistry {
             active.remove(id);
         }
 
-        let _ = self.event_tx.send(ServiceEvent::Stopped { service_id: *id });
+        let _ = self
+            .event_tx
+            .send(ServiceEvent::Stopped { service_id: *id });
         info!(service_id = %id, "service stopped");
         Ok(())
     }
@@ -179,9 +181,7 @@ impl ServiceRegistry {
         }
 
         let sector_dispatch = self.sector_dispatch.as_ref().ok_or_else(|| {
-            ServiceError::NotInitialized(
-                "start_all must be called before start_service".into(),
-            )
+            ServiceError::NotInitialized("start_all must be called before start_service".into())
         })?;
 
         let service = self
@@ -203,7 +203,9 @@ impl ServiceRegistry {
             active.insert(*id);
         }
 
-        let _ = self.event_tx.send(ServiceEvent::Started { service_id: *id });
+        let _ = self
+            .event_tx
+            .send(ServiceEvent::Started { service_id: *id });
         info!(service_id = %id, "service started");
         self.contexts.insert(*id, ctx);
         Ok(())
@@ -230,12 +232,13 @@ impl ServiceRegistry {
             if let Some(ctx) = self.contexts.get(&id) {
                 let prefix = format!("/services/{}", id.to_hex());
                 let gate_state = (id, Arc::clone(&self.active_services));
-                let service_router = service
-                    .routes(ctx)
-                    .layer(axum::middleware::from_fn_with_state(
-                        gate_state,
-                        active_service_gate,
-                    ));
+                let service_router =
+                    service
+                        .routes(ctx)
+                        .layer(axum::middleware::from_fn_with_state(
+                            gate_state,
+                            active_service_gate,
+                        ));
                 app = app.nest(&prefix, service_router);
             }
         }
