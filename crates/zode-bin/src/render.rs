@@ -662,21 +662,6 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                 }
             }
 
-            {
-                let active = app.log_service_filter.as_deref() == Some("Core");
-                let (clicked, y, h) = filter_nav_item(ui, "Core", active, None);
-                if active {
-                    row_positions.push(("svc_active", y, h));
-                }
-                if clicked {
-                    app.log_service_filter = if active {
-                        None
-                    } else {
-                        Some("Core".to_string())
-                    };
-                }
-            }
-
             for svc in &active_services {
                 let active = app.log_service_filter.as_deref() == Some(svc.as_str());
                 let (clicked, y, h) = filter_nav_item(ui, svc, active, None);
@@ -732,11 +717,7 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                 }
             }
             if let Some(ref svc) = app.log_service_filter {
-                if svc == "Core" {
-                    if e.service.is_some() {
-                        return false;
-                    }
-                } else if e.service.as_deref() != Some(svc.as_str()) {
+                if e.service.as_deref() != Some(svc.as_str()) {
                     return false;
                 }
             }
