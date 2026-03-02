@@ -1,0 +1,34 @@
+[package]
+name = "zephyr-orchestrator-bin"
+version = "0.1.0"
+edition = "2021"
+description = "Zephyr Orchestrator — multi-node Zephyr testbed with live dashboard"
+
+[[bin]]
+name = "zephyr-orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+grid-core = { path = "../grid-core" }
+grid-service = { path = "../grid-service" }
+zode = { path = "../zode" }
+grid-storage = { path = "../grid-storage" }
+grid-programs-zephyr = { path = "../grid-programs/zephyr" }
+grid-services-zephyr = { path = "../grid-services/zephyr" }
+grid-net = { path = "../grid-net" }
+grid-crypto = { path = "../grid-crypto" }
+rand = "0.8"
+eframe = "0.33"
+egui_extras = { version = "0.33", features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+egui-phosphor = "0.11"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+hex = "0.4"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

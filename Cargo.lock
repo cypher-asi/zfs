@@ -8520,6 +8520,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "zephyr-orchestrator-bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui-phosphor",
+ "egui_extras",
+ "grid-core",
+ "grid-crypto",
+ "grid-net",
+ "grid-programs-zephyr",
+ "grid-service",
+ "grid-services-zephyr",
+ "grid-storage",
+ "hex",
+ "image",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.22",
+ "zode",
+]
+
+[[package]]
 name = "zerocopy"
 version = "0.8.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
