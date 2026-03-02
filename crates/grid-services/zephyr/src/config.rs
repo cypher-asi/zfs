@@ -42,7 +42,7 @@ pub struct ZephyrConfig {
 }
 
 fn default_total_zones() -> u32 {
-    256
+    4
 }
 fn default_committee_size() -> usize {
     5

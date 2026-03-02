@@ -60,7 +60,7 @@ impl ZephyrService {
             .program_id()
             .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
 
-        let owned_programs = vec![
+        let mut owned_programs = vec![
             OwnedProgram {
                 name: "zephyr/global".into(),
                 version: "1".into(),
@@ -77,6 +77,13 @@ impl ZephyrService {
                 program_id: validator_pid,
             },
         ];
+        for (i, pid) in zone_pids.iter().enumerate() {
+            owned_programs.push(OwnedProgram {
+                name: format!("zephyr/zone-{i}"),
+                version: "1".into(),
+                program_id: *pid,
+            });
+        }
 
         Ok(Self {
             descriptor: ServiceDescriptor {
