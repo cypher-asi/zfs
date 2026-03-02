@@ -28,6 +28,9 @@ pub enum ServiceError {
     #[error("shutdown failed: {0}")]
     Shutdown(String),
 
+    #[error("not initialized: {0}")]
+    NotInitialized(String),
+
     #[error("grid error: {0}")]
     Grid(#[from] grid_core::GridError),
 
