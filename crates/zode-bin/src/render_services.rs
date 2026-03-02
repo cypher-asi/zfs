@@ -65,7 +65,12 @@ fn service_card(
     let id_hex = svc.id.to_hex();
     let short_id = &id_hex[..8.min(id_hex.len())];
 
-    let border_color = colors::BORDER;
+    let is_selected = *detail_selection == Some(DetailSelection::Service(svc.id));
+    let border_color = if is_selected {
+        egui::Color32::WHITE
+    } else {
+        colors::BORDER
+    };
 
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::click());

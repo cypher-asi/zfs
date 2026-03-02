@@ -176,7 +176,12 @@ fn program_card(
     entry: &ProgramEntry,
     detail_selection: &mut Option<DetailSelection>,
 ) {
-    let border_color = colors::BORDER;
+    let is_selected = *detail_selection == Some(DetailSelection::Program(entry.program_id));
+    let border_color = if is_selected {
+        egui::Color32::WHITE
+    } else {
+        colors::BORDER
+    };
 
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(CARD_WIDTH, CARD_HEIGHT), egui::Sense::click());
