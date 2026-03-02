@@ -659,8 +659,6 @@ impl ZodeApp {
         {
             self.lock_session();
         }
-
-        status_dot(ui, self.zode.is_some());
     }
 
     /// Drag from any point in the title bar (including over buttons) to move

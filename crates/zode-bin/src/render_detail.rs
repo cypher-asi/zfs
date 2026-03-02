@@ -53,7 +53,7 @@ fn detail_field_copyable(ui: &mut egui::Ui, key: &str, value: &str) {
 
 fn detail_field_colored(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
     detail_label(ui, key);
-    ui.label(egui::RichText::new(value).color(color));
+    ui.label(egui::RichText::new(value).monospace().color(color));
     ui.add_space(spacing::MD);
 }
 
