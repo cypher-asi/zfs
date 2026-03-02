@@ -110,17 +110,26 @@ mod tests {
 
     #[test]
     fn error_code_storage_full() {
-        assert_eq!(GridError::StorageFull.error_code(), Some(ErrorCode::StorageFull));
+        assert_eq!(
+            GridError::StorageFull.error_code(),
+            Some(ErrorCode::StorageFull)
+        );
     }
 
     #[test]
     fn error_code_proof_invalid() {
-        assert_eq!(GridError::ProofInvalid.error_code(), Some(ErrorCode::ProofInvalid));
+        assert_eq!(
+            GridError::ProofInvalid.error_code(),
+            Some(ErrorCode::ProofInvalid)
+        );
     }
 
     #[test]
     fn error_code_policy_reject() {
-        assert_eq!(GridError::PolicyReject.error_code(), Some(ErrorCode::PolicyReject));
+        assert_eq!(
+            GridError::PolicyReject.error_code(),
+            Some(ErrorCode::PolicyReject)
+        );
     }
 
     #[test]
@@ -138,12 +147,15 @@ mod tests {
 
     #[test]
     fn error_code_program_mismatch() {
-        assert_eq!(GridError::ProgramMismatch.error_code(), Some(ErrorCode::ProgramMismatch));
+        assert_eq!(
+            GridError::ProgramMismatch.error_code(),
+            Some(ErrorCode::ProgramMismatch)
+        );
     }
 
     #[test]
     fn error_code_io_returns_none() {
-        let err = GridError::Io(std::io::Error::new(std::io::ErrorKind::Other, "oops"));
+        let err = GridError::Io(std::io::Error::other("oops"));
         assert_eq!(err.error_code(), None);
     }
 

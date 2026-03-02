@@ -798,12 +798,9 @@ impl ZodeApp {
                         egui::pos2(visible.right() - full_w, visible.top()),
                         visible.right_bottom(),
                     );
-                    ui.scope_builder(
-                        egui::UiBuilder::new().max_rect(content_rect),
-                        |ui| {
-                            crate::render_detail::render_detail(self, ui);
-                        },
-                    );
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(content_rect), |ui| {
+                        crate::render_detail::render_detail(self, ui);
+                    });
                 });
         }
 

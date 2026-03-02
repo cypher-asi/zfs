@@ -228,8 +228,14 @@ mod tests {
 
     #[test]
     fn max_elements_for_bucket_known_values() {
-        assert_eq!(max_elements_for_bucket(BUCKET_1K), 1024_usize.div_ceil(BYTES_PER_ELEMENT));
-        assert_eq!(max_elements_for_bucket(BUCKET_4K), 4096_usize.div_ceil(BYTES_PER_ELEMENT));
+        assert_eq!(
+            max_elements_for_bucket(BUCKET_1K),
+            1024_usize.div_ceil(BYTES_PER_ELEMENT)
+        );
+        assert_eq!(
+            max_elements_for_bucket(BUCKET_4K),
+            4096_usize.div_ceil(BYTES_PER_ELEMENT)
+        );
         assert_eq!(max_elements_for_bucket(BUCKET_1K), 35);
         assert_eq!(max_elements_for_bucket(BUCKET_4K), 137);
     }

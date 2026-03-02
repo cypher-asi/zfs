@@ -7,8 +7,8 @@ use ark_snark::SNARK;
 use rand::SeedableRng;
 
 use crate::circuit::{
-    bytes_to_field_elements, default_poseidon_config, max_elements_for_bucket,
-    ShapeEncryptCircuit, BUCKET_1K, BUCKET_4K,
+    bytes_to_field_elements, default_poseidon_config, max_elements_for_bucket, ShapeEncryptCircuit,
+    BUCKET_1K, BUCKET_4K,
 };
 use crate::error::Groth16Error;
 

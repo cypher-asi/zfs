@@ -425,9 +425,9 @@ fn parse_usize(cli: Option<usize>, env: Option<&String>, name: &str) -> Result<O
     } else {
         match env {
             Some(raw) => {
-                let parsed = raw
-                    .parse::<usize>()
-                    .map_err(|e| anyhow::anyhow!("{name}: invalid unsigned integer '{raw}': {e}"))?;
+                let parsed = raw.parse::<usize>().map_err(|e| {
+                    anyhow::anyhow!("{name}: invalid unsigned integer '{raw}': {e}")
+                })?;
                 Some(parsed)
             }
             None => None,
@@ -784,8 +784,8 @@ mod tests {
     #[test]
     fn parse_usize_env_above_max_is_rejected() {
         let raw = (MAX_CONFIG_VALUE + 42).to_string();
-        let err = parse_usize(None, Some(&raw), "ENV_VAR")
-            .expect_err("env value above max should fail");
+        let err =
+            parse_usize(None, Some(&raw), "ENV_VAR").expect_err("env value above max should fail");
         assert!(err.to_string().contains("exceeds maximum"));
     }
 
@@ -846,16 +846,10 @@ mod tests {
 
     #[test]
     fn normalize_circuit_without_dest_peer() {
-        let raw = format!(
-            "/ip4/1.2.3.4/tcp/4001/p2p/{}/p2p-circuit",
-            peer_id_a()
-        );
+        let raw = format!("/ip4/1.2.3.4/tcp/4001/p2p/{}/p2p-circuit", peer_id_a());
         let addr: Multiaddr = raw.parse().unwrap();
         let norm = normalize_multiaddr(&addr);
-        let expected = format!(
-            "/ip4/1.2.3.4/tcp/4001/p2p/{}/p2p-circuit",
-            peer_id_a()
-        );
+        let expected = format!("/ip4/1.2.3.4/tcp/4001/p2p/{}/p2p-circuit", peer_id_a());
         assert_eq!(norm.to_string(), expected);
     }
 

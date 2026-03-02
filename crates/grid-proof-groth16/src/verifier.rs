@@ -85,11 +85,12 @@ impl ProofVerifier for Groth16ShapeVerifier {
                 })?;
         let size_bucket = u32::from_le_bytes(bucket_bytes);
 
-        let pvk = self.verifying_keys.get(&size_bucket).ok_or_else(|| {
-            ProofError::VerifierNotFound {
-                proof_system: format!("groth16_bucket_{size_bucket}"),
-            }
-        })?;
+        let pvk =
+            self.verifying_keys
+                .get(&size_bucket)
+                .ok_or_else(|| ProofError::VerifierNotFound {
+                    proof_system: format!("groth16_bucket_{size_bucket}"),
+                })?;
 
         let groth16_proof =
             ark_groth16::Proof::<Bn254>::deserialize_compressed(proof).map_err(|e| {

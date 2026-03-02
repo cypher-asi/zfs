@@ -203,7 +203,9 @@ pub fn poseidon_decrypt_sector(
         });
     }
     // INVARIANT: sealed.len() >= NONCE_LEN + TAG_LEN validated above.
-    let nonce: [u8; 32] = sealed[..NONCE_LEN].try_into().expect("length checked above");
+    let nonce: [u8; 32] = sealed[..NONCE_LEN]
+        .try_into()
+        .expect("length checked above");
     poseidon_decrypt(sealed, key, &nonce, aad)
 }
 

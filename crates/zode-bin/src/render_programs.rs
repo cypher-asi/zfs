@@ -35,7 +35,7 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
         .collect();
 
     let registry = zode.service_registry();
-    let services = registry.try_lock().ok().map(|r| r.list_services());
+    let services = registry.try_read().ok().map(|r| r.list_services());
 
     let mut service_program_ids: HashSet<ProgramId> = HashSet::new();
 

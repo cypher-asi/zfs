@@ -12,6 +12,7 @@ use tracing::{error, info};
 use crate::context::{ServiceContext, ServiceEvent};
 use crate::descriptor::ServiceId;
 use crate::error::ServiceError;
+use crate::gossip::ServiceGossipHandler;
 use crate::service::Service;
 
 /// Manages the lifecycle of all active services on a Zode.
@@ -28,6 +29,7 @@ pub struct ServiceRegistry {
     ephemeral_key: [u8; 32],
     event_tx: broadcast::Sender<ServiceEvent>,
     shutdown: CancellationToken,
+    gossip_handlers: Vec<Arc<dyn ServiceGossipHandler>>,
 }
 
 impl Default for ServiceRegistry {
@@ -47,6 +49,7 @@ impl ServiceRegistry {
             ephemeral_key: [0u8; 32],
             event_tx,
             shutdown: CancellationToken::new(),
+            gossip_handlers: Vec::new(),
         }
     }
 
@@ -291,6 +294,17 @@ impl ServiceRegistry {
     pub fn event_tx(&self) -> &broadcast::Sender<ServiceEvent> {
         &self.event_tx
     }
+
+    /// Register a gossip handler that can intercept GossipSub messages
+    /// on topics it claims via [`ServiceGossipHandler::handles_topic`].
+    pub fn register_gossip_handler(&mut self, handler: Arc<dyn ServiceGossipHandler>) {
+        self.gossip_handlers.push(handler);
+    }
+
+    /// Find the first handler that claims this topic, if any.
+    pub fn gossip_handler_for(&self, topic: &str) -> Option<&Arc<dyn ServiceGossipHandler>> {
+        self.gossip_handlers.iter().find(|h| h.handles_topic(topic))
+    }
 }
 
 /// Snapshot info about a registered service.
@@ -339,6 +353,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use grid_core::{SectorRequest, SectorResponse};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct StubDispatch;
     impl SectorDispatch for StubDispatch {
@@ -470,5 +485,61 @@ mod tests {
 
         assert!(!reg.active_services().read().unwrap().contains(&id));
         assert!(reg.contexts.is_empty());
+    }
+
+    struct CountingGossipHandler {
+        topic_prefix: String,
+        call_count: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl ServiceGossipHandler for CountingGossipHandler {
+        fn handles_topic(&self, topic: &str) -> bool {
+            topic.starts_with(&self.topic_prefix)
+        }
+
+        async fn on_gossip(&self, _topic: &str, _data: &[u8], _sender: Option<String>) {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn gossip_handler_for_returns_matching_handler() {
+        let mut reg = ServiceRegistry::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        reg.register_gossip_handler(Arc::new(CountingGossipHandler {
+            topic_prefix: "consensus/".into(),
+            call_count: Arc::clone(&counter),
+        }));
+
+        assert!(reg.gossip_handler_for("consensus/epoch-1").is_some());
+    }
+
+    #[test]
+    fn gossip_handler_for_returns_none_on_unhandled_topic() {
+        let mut reg = ServiceRegistry::new();
+        reg.register_gossip_handler(Arc::new(CountingGossipHandler {
+            topic_prefix: "consensus/".into(),
+            call_count: Arc::new(AtomicUsize::new(0)),
+        }));
+
+        assert!(reg.gossip_handler_for("prog/abc123").is_none());
+    }
+
+    #[tokio::test]
+    async fn gossip_handler_receives_messages() {
+        let mut reg = ServiceRegistry::new();
+        let counter = Arc::new(AtomicUsize::new(0));
+        reg.register_gossip_handler(Arc::new(CountingGossipHandler {
+            topic_prefix: "my-svc/".into(),
+            call_count: Arc::clone(&counter),
+        }));
+
+        let handler = reg.gossip_handler_for("my-svc/topic").unwrap();
+        handler
+            .on_gossip("my-svc/topic", b"payload", Some("peer1".into()))
+            .await;
+
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 }

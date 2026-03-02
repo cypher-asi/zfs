@@ -31,7 +31,9 @@ mod tests {
         let topic = program_topic(&id);
         let hex_part = topic.strip_prefix("prog/").unwrap();
         assert_eq!(hex_part.len(), 64);
-        assert!(hex_part.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(hex_part
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
     }
 
     #[test]

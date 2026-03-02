@@ -64,9 +64,9 @@ impl ZodeApp {
         let program_id = match InterlinkDescriptor::v2().program_id() {
             Ok(pid) => pid,
             Err(e) => {
-                self.interlink_state = Some(InterlinkState::error_only(
-                    &format!("Interlink descriptor invalid: {e}"),
-                ));
+                self.interlink_state = Some(InterlinkState::error_only(&format!(
+                    "Interlink descriptor invalid: {e}"
+                )));
                 return;
             }
         };

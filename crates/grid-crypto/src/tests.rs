@@ -332,14 +332,20 @@ fn pad_unpad_round_trip() {
 #[test]
 fn pad_unpad_empty_data() {
     let padded = pad_to_bucket(b"");
-    assert_eq!(padded.len(), 256, "empty content should pad to smallest bucket");
+    assert_eq!(
+        padded.len(),
+        256,
+        "empty content should pad to smallest bucket"
+    );
     let recovered = unpad_from_bucket(&padded).expect("unpad empty");
     assert!(recovered.is_empty());
 }
 
 #[test]
 fn padded_size_is_bucket_aligned() {
-    let bucket_sizes: &[usize] = &[256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144];
+    let bucket_sizes: &[usize] = &[
+        256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144,
+    ];
     for &size in bucket_sizes {
         if size < 4 {
             continue;
@@ -347,7 +353,11 @@ fn padded_size_is_bucket_aligned() {
         let content_len = size - 4; // exactly fills the bucket (4-byte header + content)
         let content = vec![0xABu8; content_len];
         let padded = pad_to_bucket(&content);
-        assert_eq!(padded.len(), size, "content of len {content_len} should fit exactly in bucket {size}");
+        assert_eq!(
+            padded.len(),
+            size,
+            "content of len {content_len} should fit exactly in bucket {size}"
+        );
         let recovered = unpad_from_bucket(&padded).expect("unpad");
         assert_eq!(recovered, content);
     }
@@ -412,6 +422,9 @@ fn various_sizes_round_trip() {
         let content = vec![(size & 0xFF) as u8; size];
         let padded = pad_to_bucket(&content);
         let recovered = unpad_from_bucket(&padded).expect("unpad");
-        assert_eq!(recovered, content, "round-trip failed for content size {size}");
+        assert_eq!(
+            recovered, content,
+            "round-trip failed for content size {size}"
+        );
     }
 }

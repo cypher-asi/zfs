@@ -28,7 +28,10 @@ pub(crate) struct VaultFile {
     pub ciphertext: Vec<u8>,
 }
 
-fn derive_key(password: &[u8], salt: &[u8; ARGON2_SALT_LEN]) -> Result<[u8; XCHACHA_KEY_LEN], VaultError> {
+fn derive_key(
+    password: &[u8],
+    salt: &[u8; ARGON2_SALT_LEN],
+) -> Result<[u8; XCHACHA_KEY_LEN], VaultError> {
     let argon2 = Argon2::default();
     let mut key = [0u8; XCHACHA_KEY_LEN];
     argon2

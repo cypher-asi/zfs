@@ -23,7 +23,7 @@ pub(crate) fn render_services(app: &mut ZodeApp, ui: &mut egui::Ui) {
 
     section(ui, "DEFAULT SERVICES", |ui| {
         let registry = zode.service_registry();
-        let Ok(registry) = registry.try_lock() else {
+        let Ok(registry) = registry.try_read() else {
             muted_label(ui, "Loading services…");
             return;
         };
@@ -46,7 +46,14 @@ pub(crate) fn render_services(app: &mut ZodeApp, ui: &mut egui::Ui) {
         for row in services.chunks(cols) {
             ui.horizontal(|ui| {
                 for svc in row {
-                    service_card(ui, svc, &app.rt, &zode, &mut app.detail_selection, &mut app.detail_closing);
+                    service_card(
+                        ui,
+                        svc,
+                        &app.rt,
+                        &zode,
+                        &mut app.detail_selection,
+                        &mut app.detail_closing,
+                    );
                     ui.add_space(spacing::MD);
                 }
             });

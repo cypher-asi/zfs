@@ -62,7 +62,10 @@ impl RpcServer {
         let app = app
             .layer(axum::extract::DefaultBodyLimit::max(5 * 1024 * 1024))
             .layer(CorsLayer::permissive())
-            .layer(TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)));
+            .layer(TimeoutLayer::with_status_code(
+                StatusCode::GATEWAY_TIMEOUT,
+                Duration::from_secs(30),
+            ));
 
         let listener = tokio::net::TcpListener::bind(config.bind_addr)
             .await

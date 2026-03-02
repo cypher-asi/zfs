@@ -207,8 +207,9 @@ pub(crate) struct InterlinkState {
     pub sector_id: Option<SectorId>,
     pub prover: Option<Box<grid_proof_groth16::Groth16ShapeProver>>,
     /// Receives the prover once background loading completes.
-    pub prover_rx:
-        Option<tokio::sync::mpsc::Receiver<Result<Box<grid_proof_groth16::Groth16ShapeProver>, String>>>,
+    pub prover_rx: Option<
+        tokio::sync::mpsc::Receiver<Result<Box<grid_proof_groth16::Groth16ShapeProver>, String>>,
+    >,
     /// Earliest log index that has been loaded into `messages`.
     /// When > 0 there is older history available to lazy-load.
     pub earliest_loaded_index: u64,

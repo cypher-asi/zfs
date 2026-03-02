@@ -8,7 +8,9 @@ use ark_groth16::Groth16;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 
-use grid_core::{CiphertextHash, FieldSchema, ProgramId, ProofSystem, SchemaHash, SectorId, ShapeProof};
+use grid_core::{
+    CiphertextHash, FieldSchema, ProgramId, ProofSystem, SchemaHash, SectorId, ShapeProof,
+};
 use grid_crypto::SectorKey;
 
 use crate::circuit::{

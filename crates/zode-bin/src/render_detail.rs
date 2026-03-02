@@ -199,7 +199,7 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
     };
 
     let registry = zode.service_registry();
-    let Ok(registry) = registry.try_lock() else {
+    let Ok(registry) = registry.try_read() else {
         ui.label("Loading…");
         return;
     };
@@ -339,7 +339,7 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     let subscribed = status.topics.iter().any(|t| t == &format!("prog/{id_hex}"));
 
     let registry = zode.service_registry();
-    let relation = if let Ok(reg) = registry.try_lock() {
+    let relation = if let Ok(reg) = registry.try_read() {
         let services = reg.list_services();
         drop(reg);
         determine_relation(program_id, &services)

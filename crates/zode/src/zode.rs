@@ -52,7 +52,7 @@ pub struct Zode {
     event_loop_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
     rpc_server: Mutex<Option<RpcServer>>,
     rpc_config: RpcConfig,
-    service_registry: Mutex<ServiceRegistry>,
+    service_registry: Arc<tokio::sync::RwLock<ServiceRegistry>>,
 }
 
 impl Zode {
@@ -181,8 +181,10 @@ impl Zode {
         };
 
         let network = Arc::new(Mutex::new(network));
+        let service_registry_arc = Arc::new(tokio::sync::RwLock::new(service_registry));
         let event_loop_handle = Self::spawn_event_loop(
             sector_handler,
+            Arc::clone(&service_registry_arc),
             Arc::clone(&network),
             event_tx.clone(),
             Arc::clone(&metrics),
@@ -212,7 +214,7 @@ impl Zode {
             event_loop_handle: Mutex::new(Some(event_loop_handle)),
             rpc_server: Mutex::new(rpc_server),
             rpc_config: config.rpc.clone(),
-            service_registry: Mutex::new(service_registry),
+            service_registry: service_registry_arc,
         })
     }
 
@@ -269,6 +271,7 @@ impl Zode {
     #[allow(clippy::too_many_arguments)]
     fn spawn_event_loop<S: SectorStore + Send + Sync + 'static>(
         sector_handler: Arc<SectorRequestHandler<S>>,
+        service_registry: Arc<tokio::sync::RwLock<ServiceRegistry>>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,
@@ -282,6 +285,7 @@ impl Zode {
         tokio::spawn(async move {
             Self::event_loop(
                 sector_handler,
+                service_registry,
                 network,
                 event_tx,
                 metrics,
@@ -329,11 +333,7 @@ impl Zode {
             )
         };
 
-        let peer_ips = self
-            .peer_ips
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let peer_ips = self.peer_ips.read().map(|g| g.clone()).unwrap_or_default();
 
         let topics = self.topics.read().map(|t| t.clone()).unwrap_or_default();
 
@@ -436,7 +436,7 @@ impl Zode {
         &self,
         id: &grid_service::ServiceId,
     ) -> Result<(), crate::error::ZodeError> {
-        let mut registry = self.service_registry.lock().await;
+        let mut registry = self.service_registry.write().await;
         registry
             .stop_service(id)
             .await
@@ -455,7 +455,7 @@ impl Zode {
         &self,
         id: &grid_service::ServiceId,
     ) -> Result<(), crate::error::ZodeError> {
-        let mut registry = self.service_registry.lock().await;
+        let mut registry = self.service_registry.write().await;
         registry
             .start_service(id)
             .await
@@ -509,14 +509,14 @@ impl Zode {
     }
 
     /// Access the service registry.
-    pub fn service_registry(&self) -> &Mutex<ServiceRegistry> {
+    pub fn service_registry(&self) -> &Arc<tokio::sync::RwLock<ServiceRegistry>> {
         &self.service_registry
     }
 
     /// Gracefully shut down the Zode and wait for the event loop to exit.
     pub async fn shutdown(&self) {
         let _ = self.event_tx.send(LogEvent::ShuttingDown);
-        if let Err(e) = self.service_registry.lock().await.stop_all().await {
+        if let Err(e) = self.service_registry.write().await.stop_all().await {
             warn!(error = %e, "error stopping services");
         }
         if let Some(rpc) = self.rpc_server.lock().await.take() {
@@ -537,6 +537,7 @@ impl Zode {
     #[allow(clippy::too_many_arguments)]
     async fn event_loop<S: SectorStore + Send + Sync + 'static>(
         sector_handler: Arc<SectorRequestHandler<S>>,
+        service_registry: Arc<tokio::sync::RwLock<ServiceRegistry>>,
         network: Arc<Mutex<NetworkService>>,
         event_tx: broadcast::Sender<LogEvent>,
         metrics: Arc<ZodeMetrics>,
@@ -628,21 +629,26 @@ impl Zode {
                 other => other,
             };
 
-            Self::dispatch_event(
-                event,
-                &sector_handler,
-                &network,
-                &event_tx,
-                &metrics,
-                &connected_peers,
-            )
-            .await;
+            {
+                let registry = service_registry.read().await;
+                Self::dispatch_event(
+                    event,
+                    &sector_handler,
+                    &registry,
+                    &network,
+                    &event_tx,
+                    &metrics,
+                    &connected_peers,
+                )
+                .await;
+            }
         }
     }
 
     async fn dispatch_event<S: SectorStore + Send + Sync + 'static>(
         event: NetworkEvent,
         sector_handler: &Arc<SectorRequestHandler<S>>,
+        service_registry: &ServiceRegistry,
         network: &Arc<Mutex<NetworkService>>,
         event_tx: &broadcast::Sender<LogEvent>,
         metrics: &Arc<ZodeMetrics>,
@@ -684,11 +690,13 @@ impl Zode {
                 let sender = source.map(|id| format_zode_id(&id));
                 crate::gossip::handle_gossip_message(
                     sector_handler,
+                    service_registry,
                     event_tx,
                     &topic,
                     &data,
                     sender,
-                );
+                )
+                .await;
             }
             NetworkEvent::PeerDiscovered {
                 zode_id, addresses, ..
@@ -769,12 +777,11 @@ impl Zode {
     ) {
         debug!(%peer, "incoming sector request");
         let handler = Arc::clone(sector_handler);
-        let result =
-            tokio::task::spawn_blocking(move || {
-                let response = handler.handle_sector_request(&request);
-                (request, response)
-            })
-            .await;
+        let result = tokio::task::spawn_blocking(move || {
+            let response = handler.handle_sector_request(&request);
+            (request, response)
+        })
+        .await;
         match result {
             Ok((req, response)) => {
                 emit_sector_log(event_tx, &req, &response);

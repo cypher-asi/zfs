@@ -157,7 +157,10 @@ mod tests {
         let desc = svc.descriptor();
         assert_eq!(desc.name, "IDENTITY");
         assert_eq!(desc.version, "1.0.0");
-        assert!(!desc.required_programs.is_empty(), "should require at least one program");
+        assert!(
+            !desc.required_programs.is_empty(),
+            "should require at least one program"
+        );
     }
 
     #[test]

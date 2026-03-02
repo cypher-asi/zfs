@@ -33,9 +33,7 @@ fn validate_profile_id(id: &str) -> Result<(), ProfileError> {
         || id.contains("..")
         || id.contains('\0')
     {
-        return Err(ProfileError::Io(format!(
-            "invalid profile id: {id:?}"
-        )));
+        return Err(ProfileError::Io(format!("invalid profile id: {id:?}")));
     }
     Ok(())
 }

@@ -4,8 +4,8 @@ use crate::app::ZodeApp;
 use crate::components::tokens::{font_size, spacing};
 use crate::components::{
     action_button, action_panel, colors, copy_button, editable_list, error_label, field_label,
-    form_grid, hint_label, icon_button, info_grid, kv_row, kv_stacked_copyable,
-    loading_state, muted_label, section, text_input,
+    form_grid, hint_label, icon_button, info_grid, kv_row, kv_stacked_copyable, loading_state,
+    muted_label, section, text_input,
 };
 use crate::helpers::format_bytes;
 use crate::state::{SettingsSection, StateSnapshot};
@@ -376,7 +376,7 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
     let service_count = app
         .zode
         .as_ref()
-        .and_then(|z| z.service_registry().try_lock().ok())
+        .and_then(|z| z.service_registry().try_read().ok())
         .map(|reg| {
             let count = reg.list_services().len();
             drop(reg);
