@@ -6,7 +6,7 @@ use grid_programs_zephyr::{Nullifier, SpendTransaction, ZoneId};
 ///
 /// Invariants:
 /// - At most one spend per nullifier (prevents double-spend at mempool level)
-/// - Spends are drained in FIFO order by the leader for batch proposals
+/// - Spends are drained in FIFO order by the leader for block proposals
 /// - Maximum capacity enforced to bound memory usage
 pub struct Mempool {
     zone_id: ZoneId,

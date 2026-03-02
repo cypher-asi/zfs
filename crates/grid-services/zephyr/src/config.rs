@@ -26,9 +26,9 @@ pub struct ZephyrConfig {
     /// Quorum threshold for certificate assembly: `ceil(2k/3)`.
     #[serde(default = "default_quorum_threshold")]
     pub quorum_threshold: usize,
-    /// Maximum spends per batch.
-    #[serde(default = "default_max_batch_size")]
-    pub max_batch_size: usize,
+    /// Maximum spends per block.
+    #[serde(default = "default_max_block_size")]
+    pub max_block_size: usize,
     /// Genesis randomness seed (R_0).
     #[serde(default, with = "hex_bytes")]
     pub initial_randomness: [u8; 32],
@@ -56,7 +56,7 @@ fn default_round_interval_ms() -> u64 {
 fn default_quorum_threshold() -> usize {
     4
 }
-fn default_max_batch_size() -> usize {
+fn default_max_block_size() -> usize {
     64
 }
 
@@ -68,7 +68,7 @@ impl Default for ZephyrConfig {
             epoch_duration_ms: default_epoch_duration_ms(),
             round_interval_ms: default_round_interval_ms(),
             quorum_threshold: default_quorum_threshold(),
-            max_batch_size: default_max_batch_size(),
+            max_block_size: default_max_block_size(),
             initial_randomness: [0u8; 32],
             validators: vec![],
             self_validate: false,

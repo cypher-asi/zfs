@@ -1,15 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::{
-    BatchProposal, BatchVote, EpochId, FinalityCertificate, Nullifier, SpendTransaction,
-};
+use crate::types::{Block, BlockVote, EpochId, FinalityCertificate, Nullifier, SpendTransaction};
 
 /// Messages gossiped on zone topics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZephyrZoneMessage {
     SubmitSpend(SpendTransaction),
-    Proposal(BatchProposal),
-    Vote(BatchVote),
+    Proposal(Block),
+    Vote(BlockVote),
     Reject(SpendReject),
 }
 

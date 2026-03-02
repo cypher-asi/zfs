@@ -11,7 +11,7 @@ pub use messages::{
     EpochAnnouncement, RejectReason, SpendReject, ZephyrGlobalMessage, ZephyrZoneMessage,
 };
 pub use types::{
-    BatchProposal, BatchVote, CertSignature, EpochId, FinalityCertificate, NoteCommitment,
+    Block, BlockHeader, BlockVote, CertSignature, EpochId, FinalityCertificate, NoteCommitment,
     NoteOutput, Nullifier, SpendTransaction, ValidatorInfo, ZoneId,
 };
 

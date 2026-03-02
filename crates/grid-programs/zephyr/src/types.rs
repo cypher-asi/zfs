@@ -52,47 +52,57 @@ pub struct ValidatorInfo {
     pub p2p_endpoint: String,
 }
 
-/// A batch proposal from a committee leader.
+/// Header of a finalized block in a zone chain.
+///
+/// `block_hash = SHA-256(canonical(BlockHeader))` — since `parent_hash` is in
+/// the header, the hash inherently chains blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BatchProposal {
+pub struct BlockHeader {
     pub zone_id: ZoneId,
     pub epoch: EpochId,
+    pub height: u64,
     #[serde(with = "serde_bytes")]
-    pub prev_zone_head: [u8; 32],
-    pub nullifiers: Vec<Nullifier>,
-    pub spends: Vec<SpendTransaction>,
+    pub parent_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub batch_hash: [u8; 32],
+    pub transactions_root: [u8; 32],
+    pub timestamp_ms: u64,
     #[serde(with = "serde_bytes")]
     pub proposer_id: [u8; 32],
+}
+
+/// A block proposed by a committee leader.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Block {
+    pub header: BlockHeader,
+    pub transactions: Vec<SpendTransaction>,
+    #[serde(with = "serde_bytes")]
+    pub block_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
     pub proposer_sig: Vec<u8>,
 }
 
-/// A vote on a batch proposal.
+/// A vote on a block proposal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BatchVote {
+pub struct BlockVote {
     pub zone_id: ZoneId,
     pub epoch: EpochId,
     #[serde(with = "serde_bytes")]
-    pub batch_hash: [u8; 32],
+    pub block_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
     pub voter_id: [u8; 32],
     #[serde(with = "serde_bytes")]
     pub signature: Vec<u8>,
 }
 
-/// A finality certificate for a batch.
+/// A finality certificate for a block. The certified `block_hash` is the new zone head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinalityCertificate {
     pub zone_id: ZoneId,
     pub epoch: EpochId,
     #[serde(with = "serde_bytes")]
-    pub prev_zone_head: [u8; 32],
+    pub parent_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
-    pub new_zone_head: [u8; 32],
-    #[serde(with = "serde_bytes")]
-    pub batch_hash: [u8; 32],
+    pub block_hash: [u8; 32],
     pub signatures: Vec<CertSignature>,
 }
 

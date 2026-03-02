@@ -428,7 +428,14 @@ async fn consensus_loop(
         let prev_head = zone_head_store.get_or_genesis(zone_id);
         consensus_engines.insert(
             zone_id,
-            ZoneConsensus::new(zone_id, 0, committee, my_validator_id, prev_head, config.clone()),
+            ZoneConsensus::new(
+                zone_id,
+                0,
+                committee,
+                my_validator_id,
+                prev_head,
+                config.clone(),
+            ),
         );
     }
 
@@ -481,7 +488,7 @@ async fn consensus_loop(
                     let Some(mp) = mempools.get_mut(&zone_id) else {
                         continue;
                     };
-                    let spends = mp.drain(config.max_batch_size);
+                    let spends = mp.drain(config.max_block_size);
                     let vid = my_validator_id;
                     if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
                         publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx).await;
@@ -559,9 +566,9 @@ async fn consensus_loop(
                             }
                         } else {
                             // Certificate for a zone we don't handle — still track the head
-                            zone_head_store.set(cz, cert.new_zone_head);
+                            zone_head_store.set(cz, cert.block_hash);
                             if let Ok(mut rt) = runtime.write() {
-                                rt.zone_heads.insert(cz, cert.new_zone_head);
+                                rt.zone_heads.insert(cz, cert.block_hash);
                                 rt.certificates_produced += 1;
                             }
                         }
@@ -581,10 +588,10 @@ fn apply_certificate_locally(
     _mempools: &HashMap<u32, Mempool>,
     runtime: &Arc<std::sync::RwLock<ZephyrRuntime>>,
 ) {
-    zone_head_store.set(cert.zone_id, cert.new_zone_head);
+    zone_head_store.set(cert.zone_id, cert.block_hash);
     let spend_count = cert.signatures.len() as u64;
     if let Ok(mut rt) = runtime.write() {
-        rt.zone_heads.insert(cert.zone_id, cert.new_zone_head);
+        rt.zone_heads.insert(cert.zone_id, cert.block_hash);
         rt.certificates_produced += 1;
         rt.spends_processed += spend_count;
     }

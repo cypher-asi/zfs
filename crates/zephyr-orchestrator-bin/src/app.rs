@@ -6,9 +6,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 
 use crate::components::tokens::{colors, font_size, spacing};
-use crate::components::{
-    danger_button, status_bar_frame, title_bar_frame, title_bar_icon,
-};
+use crate::components::{danger_button, status_bar_frame, title_bar_frame, title_bar_icon};
 use crate::node_manager::{self, ManagedNode};
 use crate::render_dashboard;
 use crate::render_launch;
@@ -223,12 +221,7 @@ impl eframe::App for OrchestratorApp {
 }
 
 impl OrchestratorApp {
-    fn render_title_bar(
-        &mut self,
-        ctx: &egui::Context,
-        maximized: bool,
-        on_resize_edge: bool,
-    ) {
+    fn render_title_bar(&mut self, ctx: &egui::Context, maximized: bool, on_resize_edge: bool) {
         egui::TopBottomPanel::top("title_bar")
             .frame(title_bar_frame())
             .show(ctx, |ui| {
@@ -238,11 +231,8 @@ impl OrchestratorApp {
                     egui::Id::new("title_bar"),
                     egui::Sense::click_and_drag(),
                 );
-                if !on_resize_edge
-                    && title_resp.drag_started_by(egui::PointerButton::Primary)
-                {
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                if !on_resize_edge && title_resp.drag_started_by(egui::PointerButton::Primary) {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                 }
                 if title_resp.double_clicked() {
                     ui.ctx()
@@ -251,8 +241,7 @@ impl OrchestratorApp {
 
                 ui.visuals_mut().widgets.active = ui.visuals().widgets.hovered;
                 ui.visuals_mut().selection.bg_fill = egui::Color32::TRANSPARENT;
-                ui.visuals_mut().selection.stroke =
-                    egui::Stroke::new(1.0, egui::Color32::WHITE);
+                ui.visuals_mut().selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
                 ui.visuals_mut().widgets.active.fg_stroke =
                     egui::Stroke::new(1.0, egui::Color32::WHITE);
 
@@ -275,59 +264,41 @@ impl OrchestratorApp {
                         }
                     }
 
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked()
-                            {
-                                if self.phase == AppPhase::Running {
-                                    self.do_shutdown();
-                                }
-                                ui.ctx()
-                                    .send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-
-                            let max_icon = if maximized {
-                                egui_phosphor::regular::CORNERS_IN
-                            } else {
-                                egui_phosphor::regular::CORNERS_OUT
-                            };
-                            if title_bar_icon(ui, max_icon, false).clicked() {
-                                ui.ctx().send_viewport_cmd(
-                                    egui::ViewportCommand::Maximized(!maximized),
-                                );
-                            }
-
-                            if title_bar_icon(
-                                ui,
-                                egui_phosphor::regular::MINUS,
-                                false,
-                            )
-                            .clicked()
-                            {
-                                ui.ctx().send_viewport_cmd(
-                                    egui::ViewportCommand::Minimized(true),
-                                );
-                            }
-
-                            ui.add_space(spacing::SM);
-
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if title_bar_icon(ui, egui_phosphor::regular::X, false).clicked() {
                             if self.phase == AppPhase::Running {
-                                if danger_button(ui, "Shutdown") {
-                                    self.do_shutdown();
-                                }
-                                ui.add_space(spacing::MD);
+                                self.do_shutdown();
                             }
-                        },
-                    );
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+
+                        let max_icon = if maximized {
+                            egui_phosphor::regular::CORNERS_IN
+                        } else {
+                            egui_phosphor::regular::CORNERS_OUT
+                        };
+                        if title_bar_icon(ui, max_icon, false).clicked() {
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                        }
+
+                        if title_bar_icon(ui, egui_phosphor::regular::MINUS, false).clicked() {
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        }
+
+                        ui.add_space(spacing::SM);
+
+                        if self.phase == AppPhase::Running {
+                            if danger_button(ui, "Shutdown") {
+                                self.do_shutdown();
+                            }
+                            ui.add_space(spacing::MD);
+                        }
+                    });
                 });
 
-                Self::handle_title_bar_drag(
-                    ui,
-                    &title_resp,
-                    title_bar_rect,
-                    on_resize_edge,
-                );
+                Self::handle_title_bar_drag(ui, &title_resp, title_bar_rect, on_resize_edge);
             });
     }
 
@@ -361,12 +332,8 @@ impl OrchestratorApp {
         let cursor = match dir {
             ResizeDirection::North | ResizeDirection::South => egui::CursorIcon::ResizeVertical,
             ResizeDirection::East | ResizeDirection::West => egui::CursorIcon::ResizeHorizontal,
-            ResizeDirection::NorthWest | ResizeDirection::SouthEast => {
-                egui::CursorIcon::ResizeNwSe
-            }
-            ResizeDirection::NorthEast | ResizeDirection::SouthWest => {
-                egui::CursorIcon::ResizeNeSw
-            }
+            ResizeDirection::NorthWest | ResizeDirection::SouthEast => egui::CursorIcon::ResizeNwSe,
+            ResizeDirection::NorthEast | ResizeDirection::SouthWest => egui::CursorIcon::ResizeNeSw,
         };
         ctx.set_cursor_icon(cursor);
 
@@ -394,8 +361,7 @@ impl OrchestratorApp {
         );
         if let Some((press_origin, current)) = drag {
             if title_bar_rect.contains(press_origin) && press_origin.distance(current) > 4.0 {
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
         }
     }

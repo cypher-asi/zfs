@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_INPUT_SIZE: usize = 64 * 1024;
 
-/// Per-zone gossip and nullifier/batch storage.
+/// Per-zone gossip and nullifier/block storage.
 ///
 /// Each `zone_id` produces a distinct `ProgramId`, giving each zone its own
 /// isolated GossipSub topic and sector namespace.
@@ -82,18 +82,18 @@ impl ZephyrGlobalDescriptor {
                     optional: false,
                 },
                 FieldDef {
-                    key: "prev_zone_head".into(),
+                    key: "parent_hash".into(),
                     value_type: CborType::ByteString,
                     optional: false,
                 },
                 FieldDef {
-                    key: "new_zone_head".into(),
+                    key: "block_hash".into(),
                     value_type: CborType::ByteString,
                     optional: false,
                 },
                 FieldDef {
-                    key: "batch_hash".into(),
-                    value_type: CborType::ByteString,
+                    key: "height".into(),
+                    value_type: CborType::UnsignedInt,
                     optional: false,
                 },
                 FieldDef {

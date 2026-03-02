@@ -49,10 +49,9 @@ pub(crate) fn spawn_traffic_generator(
             }
 
             let tx = make_random_spend(&mut seq);
-            let zone_id = grid_services_zephyr::routing::zone_for_nullifier(
-                &tx.nullifier,
-                total_zones,
-            ) as usize;
+            let zone_id =
+                grid_services_zephyr::routing::zone_for_nullifier(&tx.nullifier, total_zones)
+                    as usize;
 
             let msg = ZephyrZoneMessage::SubmitSpend(tx);
             let data = match grid_core::encode_canonical(&msg) {

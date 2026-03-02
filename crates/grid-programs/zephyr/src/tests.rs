@@ -98,20 +98,24 @@ fn spend_transaction_cbor_round_trip() {
 }
 
 #[test]
-fn batch_proposal_cbor_round_trip() {
-    let proposal = BatchProposal {
-        zone_id: 42,
-        epoch: 1,
-        prev_zone_head: [0; 32],
-        nullifiers: vec![Nullifier([1; 32])],
-        spends: vec![],
-        batch_hash: [2; 32],
-        proposer_id: [3; 32],
+fn block_cbor_round_trip() {
+    let block = Block {
+        header: BlockHeader {
+            zone_id: 42,
+            epoch: 1,
+            height: 0,
+            parent_hash: [0; 32],
+            transactions_root: [0xAA; 32],
+            timestamp_ms: 1_700_000_000_000,
+            proposer_id: [3; 32],
+        },
+        transactions: vec![],
+        block_hash: [2; 32],
         proposer_sig: vec![4, 5],
     };
-    let bytes = grid_core::encode_canonical(&proposal).unwrap();
-    let decoded: BatchProposal = grid_core::decode_canonical(&bytes).unwrap();
-    assert_eq!(proposal, decoded);
+    let bytes = grid_core::encode_canonical(&block).unwrap();
+    let decoded: Block = grid_core::decode_canonical(&bytes).unwrap();
+    assert_eq!(block, decoded);
 }
 
 #[test]
@@ -119,9 +123,8 @@ fn finality_certificate_cbor_round_trip() {
     let cert = FinalityCertificate {
         zone_id: 10,
         epoch: 5,
-        prev_zone_head: [0xAA; 32],
-        new_zone_head: [0xBB; 32],
-        batch_hash: [0xCC; 32],
+        parent_hash: [0xAA; 32],
+        block_hash: [0xCC; 32],
         signatures: vec![CertSignature {
             validator_id: [0xDD; 32],
             signature: vec![0xEE, 0xFF],

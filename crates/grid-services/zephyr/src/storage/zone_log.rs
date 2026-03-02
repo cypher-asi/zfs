@@ -1,9 +1,9 @@
 use grid_programs_zephyr::{FinalityCertificate, ZoneId};
 use grid_service::{ProgramStore, ServiceError};
 
-/// Append-only log of finalized batches for a zone.
+/// Append-only log of finalized blocks for a zone.
 ///
-/// Maps directly to a sector log — one entry per certified batch.
+/// Maps directly to a sector log — one entry per certified block.
 /// The latest entry represents the current zone head.
 pub struct ZoneLog {
     zone_id: ZoneId,
@@ -16,21 +16,21 @@ impl ZoneLog {
     }
 
     /// Append a finalized certificate to the zone log.
-    pub fn append_batch(&self, cert: &FinalityCertificate) -> Result<(), ServiceError> {
+    pub fn append_block(&self, cert: &FinalityCertificate) -> Result<(), ServiceError> {
         let key = format!("zone_log/{}", self.zone_id);
         let encoded =
             grid_core::encode_canonical(cert).map_err(|e| ServiceError::Storage(e.to_string()))?;
         self.store.put(key.as_bytes(), encoded)
     }
 
-    /// Get the latest zone head hash, or `None` if no batches have been finalized.
+    /// Get the latest zone head hash, or `None` if no blocks have been finalized.
     pub fn head(&self) -> Result<Option<[u8; 32]>, ServiceError> {
         let key = format!("zone_log/{}", self.zone_id);
         match self.store.get(key.as_bytes())? {
             Some(bytes) => {
                 let cert: FinalityCertificate = grid_core::decode_canonical(&bytes)
                     .map_err(|e| ServiceError::Storage(e.to_string()))?;
-                Ok(Some(cert.new_zone_head))
+                Ok(Some(cert.block_hash))
             }
             None => Ok(None),
         }
@@ -49,7 +49,7 @@ impl ZoneLog {
         Ok(certs)
     }
 
-    /// Get the number of finalized batches.
+    /// Get the number of finalized blocks.
     pub fn len(&self) -> Result<u64, ServiceError> {
         let key = format!("zone_log/{}", self.zone_id);
         self.store.len(key.as_bytes())

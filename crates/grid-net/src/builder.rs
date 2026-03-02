@@ -139,9 +139,7 @@ pub(crate) fn dial_bootstrap_peers(
                 debug!(%peer_addr, "skipping self-dial");
                 continue;
             }
-            if kademlia_enabled
-                && crate::addr::is_dialable(&normalized, allow_private_addresses)
-            {
+            if kademlia_enabled && crate::addr::is_dialable(&normalized, allow_private_addresses) {
                 swarm
                     .behaviour_mut()
                     .kademlia

@@ -33,7 +33,7 @@ fn test_config(total_zones: u32) -> ZephyrConfig {
         total_zones,
         committee_size: 3,
         quorum_threshold: 2,
-        max_batch_size: 64,
+        max_block_size: 64,
         ..ZephyrConfig::default()
     }
 }
@@ -119,11 +119,11 @@ fn criterion_2_parallel_finality() {
         config.clone(),
     );
 
-    let proposal_a = match consensus_a.propose(vec![spend_a], identity_sign).unwrap() {
+    let block_a = match consensus_a.propose(vec![spend_a], identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
-    let proposal_b = match consensus_b.propose(vec![spend_b], identity_sign).unwrap() {
+    let block_b = match consensus_b.propose(vec![spend_b], identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
@@ -132,12 +132,12 @@ fn criterion_2_parallel_finality() {
     let mut cert_b = None;
 
     for voter in &committee_a[..2] {
-        let vote = BatchVote {
+        let vote = BlockVote {
             zone_id: zone_a,
             epoch: 0,
-            batch_hash: proposal_a.batch_hash,
+            block_hash: block_a.block_hash,
             voter_id: voter.validator_id,
-            signature: proposal_a.batch_hash.to_vec(),
+            signature: block_a.block_hash.to_vec(),
         };
         if let Some(ConsensusAction::BroadcastCertificate(c)) = consensus_a.receive_vote(vote) {
             cert_a = Some(c);
@@ -145,12 +145,12 @@ fn criterion_2_parallel_finality() {
     }
 
     for voter in &committee_b[..2] {
-        let vote = BatchVote {
+        let vote = BlockVote {
             zone_id: zone_b,
             epoch: 0,
-            batch_hash: proposal_b.batch_hash,
+            block_hash: block_b.block_hash,
             voter_id: voter.validator_id,
-            signature: proposal_b.batch_hash.to_vec(),
+            signature: block_b.block_hash.to_vec(),
         };
         if let Some(ConsensusAction::BroadcastCertificate(c)) = consensus_b.receive_vote(vote) {
             cert_b = Some(c);
@@ -162,14 +162,14 @@ fn criterion_2_parallel_finality() {
     assert_eq!(cert_a.zone_id, zone_a);
     assert_eq!(cert_b.zone_id, zone_b);
     assert_ne!(
-        cert_a.batch_hash, cert_b.batch_hash,
+        cert_a.block_hash, cert_b.block_hash,
         "different zones should produce different certificates"
     );
 }
 
 // ---------------------------------------------------------------------------
 // 3. Double-spend rejection — same nullifier submitted twice, only one
-//    makes it into a batch proposal.
+//    makes it into a block proposal.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -208,20 +208,20 @@ fn criterion_3_double_spend_rejection() {
         config.clone(),
     );
 
-    let proposal = match consensus.propose(spends, identity_sign).unwrap() {
+    let block = match consensus.propose(spends, identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
 
     assert_eq!(
-        proposal.nullifiers.len(),
+        block.transactions.len(),
         1,
-        "batch must contain exactly one spend"
+        "block must contain exactly one spend"
     );
 }
 
 // ---------------------------------------------------------------------------
-// 4. Rotation continuity — epoch transition preserves prev_zone_head chain.
+// 4. Rotation continuity — epoch transition preserves parent_hash chain.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -252,7 +252,7 @@ fn criterion_4_rotation_continuity() {
         config.clone(),
     );
 
-    let proposal = match consensus_e0
+    let block_e0 = match consensus_e0
         .propose(vec![dummy_spend(0x01)], identity_sign)
         .unwrap()
     {
@@ -261,15 +261,15 @@ fn criterion_4_rotation_continuity() {
     };
 
     for voter in &committee_e0[..2] {
-        let vote = BatchVote {
+        let vote = BlockVote {
             zone_id: test_zone,
             epoch: 0,
-            batch_hash: proposal.batch_hash,
+            block_hash: block_e0.block_hash,
             voter_id: voter.validator_id,
-            signature: proposal.batch_hash.to_vec(),
+            signature: block_e0.block_hash.to_vec(),
         };
         if let Some(ConsensusAction::BroadcastCertificate(cert)) = consensus_e0.receive_vote(vote) {
-            zone_heads.set(test_zone, cert.new_zone_head);
+            zone_heads.set(test_zone, cert.block_hash);
         }
     }
 
@@ -289,7 +289,7 @@ fn criterion_4_rotation_continuity() {
         config.clone(),
     );
 
-    let proposal_e1 = match consensus_e1
+    let block_e1 = match consensus_e1
         .propose(vec![dummy_spend(0x02)], identity_sign)
         .unwrap()
     {
@@ -298,8 +298,8 @@ fn criterion_4_rotation_continuity() {
     };
 
     assert_eq!(
-        proposal_e1.prev_zone_head, head_after_e0,
-        "epoch 1 proposal must reference epoch 0's zone head"
+        block_e1.header.parent_hash, head_after_e0,
+        "epoch 1 block must reference epoch 0's zone head"
     );
 
     let voter_e1 = ZoneConsensus::new(
@@ -310,16 +310,16 @@ fn criterion_4_rotation_continuity() {
         head_after_e0,
         config,
     );
-    let vote_action = voter_e1.vote_on_proposal(&proposal_e1, identity_sign);
+    let vote_action = voter_e1.vote_on_proposal(&block_e1, identity_sign);
     assert!(
         vote_action.is_some(),
-        "validator with correct prev_head should accept the proposal"
+        "validator with correct parent_hash should accept the proposal"
     );
 }
 
 // ---------------------------------------------------------------------------
 // 5. Invalid-proof containment — spend with invalid proof is dropped and
-//    never appears in any batch proposal.
+//    never appears in any block proposal.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -356,19 +356,19 @@ fn criterion_5_invalid_proof_containment() {
     let spends = mempool.drain(64);
     let consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
 
-    let proposal = match consensus.propose(spends, identity_sign).unwrap() {
+    let block = match consensus.propose(spends, identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
 
-    assert_eq!(proposal.spends.len(), 1);
+    assert_eq!(block.transactions.len(), 1);
     assert!(
-        !proposal.spends[0].proof.is_empty(),
-        "all spends in proposal must have valid proofs"
+        !block.transactions[0].proof.is_empty(),
+        "all spends in block must have valid proofs"
     );
     assert_eq!(
-        proposal.spends[0].nullifier,
+        block.transactions[0].nullifier,
         Nullifier([0x10; 32]),
-        "only the valid spend should be in the batch"
+        "only the valid spend should be in the block"
     );
 }

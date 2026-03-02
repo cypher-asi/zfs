@@ -5,7 +5,7 @@ use grid_programs_zephyr::ZoneId;
 /// Tracks the current head hash for each zone.
 ///
 /// Provides fast in-memory access to zone heads for consensus
-/// validation (checking `prev_zone_head` in proposals).
+/// validation (checking `parent_hash` in block proposals).
 pub struct ZoneHead {
     heads: HashMap<ZoneId, [u8; 32]>,
 }
@@ -21,7 +21,7 @@ impl ZoneHead {
         self.heads.get(&zone_id)
     }
 
-    /// Returns the zone head or a zero hash if no batches have been finalized.
+    /// Returns the zone head or a zero hash if no blocks have been finalized.
     pub fn get_or_genesis(&self, zone_id: ZoneId) -> [u8; 32] {
         self.heads.get(&zone_id).copied().unwrap_or([0u8; 32])
     }

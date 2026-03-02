@@ -60,7 +60,7 @@ pub(crate) fn launch_network(
         epoch_duration_ms: 120_000,
         round_interval_ms: 500,
         quorum_threshold: ((2 * committee_size) / 3) + 1,
-        max_batch_size: 64,
+        max_block_size: 64,
         initial_randomness: [0u8; 32],
         validators: validators.clone(),
         self_validate: false,
@@ -231,11 +231,19 @@ pub(crate) fn spawn_status_pollers(
                         ns.last_update = std::time::Instant::now();
 
                         if let Some(zephyr) = metrics.get("ZEPHYR") {
-                            if let Some(zones) = zephyr.get("assigned_zones").and_then(|v| v.as_array()) {
-                                ns.assigned_zones = zones.iter().filter_map(|z| z.as_u64().map(|n| n as u32)).collect();
+                            if let Some(zones) =
+                                zephyr.get("assigned_zones").and_then(|v| v.as_array())
+                            {
+                                ns.assigned_zones = zones
+                                    .iter()
+                                    .filter_map(|z| z.as_u64().map(|n| n as u32))
+                                    .collect();
                             }
-                            if let Some(mp) = zephyr.get("mempool_sizes").and_then(|v| v.as_object()) {
-                                ns.mempool_sizes = mp.iter()
+                            if let Some(mp) =
+                                zephyr.get("mempool_sizes").and_then(|v| v.as_object())
+                            {
+                                ns.mempool_sizes = mp
+                                    .iter()
                                     .filter_map(|(k, v)| {
                                         let zone_id = k.parse::<u32>().ok()?;
                                         let size = v.as_u64()? as usize;
@@ -250,21 +258,33 @@ pub(crate) fn spawn_status_pollers(
                     // (all nodes should converge on the same values)
                     if node_id == 0 {
                         if let Some(zephyr) = metrics.get("ZEPHYR") {
-                            if let Some(epoch) = zephyr.get("current_epoch").and_then(|v| v.as_u64()) {
+                            if let Some(epoch) =
+                                zephyr.get("current_epoch").and_then(|v| v.as_u64())
+                            {
                                 state.network.current_epoch = epoch;
                             }
-                            if let Some(pct) = zephyr.get("epoch_progress_pct").and_then(|v| v.as_f64()) {
+                            if let Some(pct) =
+                                zephyr.get("epoch_progress_pct").and_then(|v| v.as_f64())
+                            {
                                 state.network.epoch_progress_pct = pct as f32;
                             }
-                            if let Some(certs) = zephyr.get("certificates_produced").and_then(|v| v.as_u64()) {
+                            if let Some(certs) =
+                                zephyr.get("certificates_produced").and_then(|v| v.as_u64())
+                            {
                                 state.network.certificates_produced = certs;
                             }
-                            if let Some(spends) = zephyr.get("spends_processed").and_then(|v| v.as_u64()) {
+                            if let Some(spends) =
+                                zephyr.get("spends_processed").and_then(|v| v.as_u64())
+                            {
                                 state.network.spends_processed = spends;
                             }
-                            if let Some(heads) = zephyr.get("zone_heads").and_then(|v| v.as_object()) {
+                            if let Some(heads) =
+                                zephyr.get("zone_heads").and_then(|v| v.as_object())
+                            {
                                 for (k, v) in heads {
-                                    if let (Ok(zone_id), Some(hex_str)) = (k.parse::<u32>(), v.as_str()) {
+                                    if let (Ok(zone_id), Some(hex_str)) =
+                                        (k.parse::<u32>(), v.as_str())
+                                    {
                                         if let Ok(bytes) = hex::decode(hex_str) {
                                             let mut head = [0u8; 32];
                                             let len = bytes.len().min(32);
