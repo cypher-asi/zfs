@@ -43,7 +43,7 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
 
 pub(crate) fn section_heading(ui: &mut egui::Ui, title: &str) {
     ui.label(
-        egui::RichText::new(title.to_uppercase())
+        egui::RichText::new(title)
             .strong()
             .size(font_size::HEADING)
             .color(colors::TEXT_HEADING),

@@ -1074,7 +1074,7 @@ FOOTER_TEMPLATE = (
     'box-sizing:border-box;">'
     '<div style="width:calc(100% - 124px);margin:0 auto;display:flex;align-items:center;">'
     '<span style="flex:1;text-align:left;">'
-    f"Version {VERSION} :: March 2026"
+    "v0.x.0 :: 06-2026 :: Draft"
     "</span>"
     '<span style="flex:0 0 auto;text-align:center;">'
     "THE GRID"
