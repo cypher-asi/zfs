@@ -30,7 +30,7 @@ fn detail_label(ui: &mut egui::Ui, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
             .size(font_size::SMALL)
-            .color(colors::TEXT_HEADING),
+            .color(egui::Color32::WHITE),
     );
 }
 
@@ -244,10 +244,10 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
 
     if !svc.descriptor.required_programs.is_empty() {
         ui.label(
-            egui::RichText::new("Required Programs")
+            egui::RichText::new("REQUIRED PROGRAMS")
                 .strong()
                 .size(font_size::BODY)
-                .color(colors::TEXT_HEADING),
+                .color(egui::Color32::WHITE),
         );
         ui.add_space(spacing::SM);
         for pid in &svc.descriptor.required_programs {
@@ -270,10 +270,10 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
 
     if !svc.descriptor.owned_programs.is_empty() {
         ui.label(
-            egui::RichText::new("Owned Programs")
+            egui::RichText::new("OWNED PROGRAMS")
                 .strong()
                 .size(font_size::BODY)
-                .color(colors::TEXT_HEADING),
+                .color(egui::Color32::WHITE),
         );
         ui.add_space(spacing::SM);
         for desc in &svc.descriptor.owned_programs {
@@ -287,10 +287,10 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
 
     if !svc.routes.is_empty() {
         ui.label(
-            egui::RichText::new("Routes")
+            egui::RichText::new("ROUTES")
                 .strong()
                 .size(font_size::BODY)
-                .color(colors::TEXT_HEADING),
+                .color(egui::Color32::WHITE),
         );
         ui.add_space(spacing::SM);
 
@@ -391,10 +391,10 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
         ui.add_space(spacing::LG);
 
         ui.label(
-            egui::RichText::new("Field Schema")
+            egui::RichText::new("FIELD SCHEMA")
                 .strong()
                 .size(font_size::BODY)
-                .color(colors::TEXT_HEADING),
+                .color(egui::Color32::WHITE),
         );
         ui.add_space(spacing::SM);
 
