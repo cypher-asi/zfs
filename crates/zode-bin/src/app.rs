@@ -738,12 +738,12 @@ impl ZodeApp {
                 .inner_margin(egui::Margin {
                     left: spacing::XL as i8,
                     right: spacing::MD as i8,
-                    top: spacing::XL as i8,
+                    top: spacing::MD as i8,
                     bottom: spacing::MD as i8,
                 })
                 .stroke(egui::Stroke::new(1.0, colors::BORDER));
             egui::SidePanel::right("detail_panel")
-                .exact_width(168.0)
+                .exact_width(202.0)
                 .resizable(false)
                 .frame(detail_frame)
                 .show(ctx, |ui| {
