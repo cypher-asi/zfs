@@ -14,7 +14,7 @@ pub(crate) fn render_services(app: &ZodeApp, ui: &mut egui::Ui) {
         return;
     };
 
-    section(ui, "Services", |ui| {
+    section(ui, "Factory Services", |ui| {
         let registry = zode.service_registry();
         let Ok(registry) = registry.try_lock() else {
             muted_label(ui, "Loading services…");
