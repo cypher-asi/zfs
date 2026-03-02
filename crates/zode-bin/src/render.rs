@@ -559,69 +559,283 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
     let should_scroll = app.log_scroll_to_bottom;
     app.log_scroll_to_bottom = false;
 
-    section(
-        ui,
-        &format!("Live Log ({})", state.log_entries.len()),
-        |ui| {
+    let total = state.log_entries.len();
+
+    let mut unique_services: Vec<String> = Vec::new();
+    for entry in &state.log_entries {
+        if let Some(ref svc) = entry.service {
+            if !unique_services.contains(svc) {
+                unique_services.push(svc.clone());
+            }
+        }
+    }
+
+    let nav_resp = egui::SidePanel::left("log_filter_nav")
+        .exact_width(168.0)
+        .resizable(false)
+        .show_separator_line(false)
+        .frame(
+            egui::Frame::default()
+                .fill(colors::PANEL_BG)
+                .inner_margin(egui::Margin {
+                    left: 0,
+                    right: spacing::MD as i8,
+                    top: spacing::LG as i8,
+                    bottom: spacing::LG as i8,
+                })
+                .outer_margin(egui::Margin {
+                    left: 0,
+                    right: spacing::MD as i8,
+                    top: 0,
+                    bottom: spacing::MD as i8,
+                }),
+        )
+        .show_inside(ui, |ui| {
             ui.set_min_height(ui.available_height());
-            egui::ScrollArea::vertical()
-                .auto_shrink([false; 2])
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    if state.log_entries.is_empty() {
-                        ui.label(
-                            egui::RichText::new("No log entries yet.")
-                                .monospace()
-                                .color(colors::LOG_NORMAL),
-                        );
+            ui.set_width(ui.available_width());
+
+            let panel_left = ui.cursor().min.x;
+            let mut row_positions: Vec<(&'static str, f32, f32)> = Vec::new();
+
+            // TYPE group header
+            ui.label(
+                egui::RichText::new("TYPE")
+                    .strong()
+                    .size(font_size::SMALL)
+                    .color(colors::TEXT_SECONDARY),
+            );
+            ui.add_space(spacing::XS);
+
+            {
+                let active = app.log_level_filter.is_none();
+                let (clicked, y, h) = filter_nav_item(ui, "ALL", active, None);
+                let key = "type_all";
+                row_positions.push((key, y, h));
+                if clicked {
+                    app.log_level_filter = None;
+                }
+            }
+
+            for level in zode::LogLevel::ALL {
+                let active = app.log_level_filter == Some(level);
+                let color = log_level_color(level);
+                let (clicked, y, h) =
+                    filter_nav_item(ui, level.label(), active, Some(color));
+                let _ = (y, h);
+                if active {
+                    row_positions.push(("type_active", y, h));
+                }
+                if clicked {
+                    app.log_level_filter = if active { None } else { Some(level) };
+                }
+            }
+
+            ui.add_space(spacing::LG);
+
+            // SERVICE group header
+            ui.label(
+                egui::RichText::new("SERVICE")
+                    .strong()
+                    .size(font_size::SMALL)
+                    .color(colors::TEXT_SECONDARY),
+            );
+            ui.add_space(spacing::XS);
+
+            {
+                let active = app.log_service_filter.is_none();
+                let (clicked, y, h) = filter_nav_item(ui, "ALL", active, None);
+                if active {
+                    row_positions.push(("svc_active", y, h));
+                }
+                if clicked {
+                    app.log_service_filter = None;
+                }
+            }
+
+            {
+                let active = app.log_service_filter.as_deref() == Some("Core");
+                let (clicked, y, h) = filter_nav_item(ui, "Core", active, None);
+                if active {
+                    row_positions.push(("svc_active", y, h));
+                }
+                if clicked {
+                    app.log_service_filter = if active {
+                        None
                     } else {
-                        let font_id = egui::TextStyle::Monospace.resolve(ui.style());
-                        let mut job = egui::text::LayoutJob::default();
-                        for (i, entry) in state.log_entries.iter().enumerate() {
-                            if i > 0 {
-                                job.append(
-                                    "\n",
-                                    0.0,
-                                    egui::TextFormat {
-                                        font_id: font_id.clone(),
-                                        ..Default::default()
-                                    },
-                                );
-                            }
-                            let color = log_entry_color(entry);
+                        Some("Core".to_string())
+                    };
+                }
+            }
+
+            for svc in &unique_services {
+                let active = app.log_service_filter.as_deref() == Some(svc.as_str());
+                let (clicked, y, h) = filter_nav_item(ui, svc, active, None);
+                if active {
+                    row_positions.push(("svc_active", y, h));
+                }
+                if clicked {
+                    app.log_service_filter = if active {
+                        None
+                    } else {
+                        Some(svc.clone())
+                    };
+                }
+            }
+
+            // Animated indicator bar for level filter
+            let indicator_target = if app.log_level_filter.is_none() {
+                row_positions.iter().find(|(k, _, _)| *k == "type_all")
+            } else {
+                row_positions.iter().find(|(k, _, _)| *k == "type_active")
+            };
+            if let Some(&(_, target_y, h)) = indicator_target {
+                let anim_y = ui.ctx().animate_value_with_time(
+                    egui::Id::new("log_type_indicator_y"),
+                    target_y,
+                    0.15,
+                );
+                let indicator =
+                    egui::Rect::from_min_size(egui::pos2(panel_left, anim_y), egui::vec2(2.0, h));
+                ui.painter()
+                    .rect_filled(indicator, 0.0, egui::Color32::WHITE);
+            }
+        });
+
+    let nav_rect = nav_resp.response.rect;
+    let border_rect = egui::Rect::from_min_max(
+        nav_rect.min,
+        egui::pos2(nav_rect.max.x - spacing::MD, nav_rect.max.y - spacing::MD),
+    );
+    let border_stroke = egui::Stroke::new(1.0, colors::BORDER);
+    ui.painter()
+        .rect_stroke(border_rect, 0.0, border_stroke, egui::StrokeKind::Inside);
+
+    // Filter entries
+    let filtered: Vec<&crate::state::LogEntry> = state
+        .log_entries
+        .iter()
+        .filter(|e| {
+            if let Some(ref level) = app.log_level_filter {
+                if e.level != *level {
+                    return false;
+                }
+            }
+            if let Some(ref svc) = app.log_service_filter {
+                if svc == "Core" {
+                    if e.service.is_some() {
+                        return false;
+                    }
+                } else if e.service.as_deref() != Some(svc.as_str()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    let filtered_count = filtered.len();
+
+    let title = if filtered_count == total {
+        format!("Live Log ({total})")
+    } else {
+        format!("Live Log ({filtered_count} / {total})")
+    };
+
+    section(ui, &title, |ui| {
+        ui.set_min_height(ui.available_height());
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                if filtered.is_empty() {
+                    ui.label(
+                        egui::RichText::new("No log entries yet.")
+                            .monospace()
+                            .color(colors::LOG_NORMAL),
+                    );
+                } else {
+                    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+                    let mut job = egui::text::LayoutJob::default();
+                    for (i, entry) in filtered.iter().enumerate() {
+                        if i > 0 {
                             job.append(
-                                entry,
+                                "\n",
                                 0.0,
                                 egui::TextFormat {
                                     font_id: font_id.clone(),
-                                    color,
                                     ..Default::default()
                                 },
                             );
                         }
-                        ui.label(job);
+                        let color = log_level_color(entry.level);
+                        job.append(
+                            &entry.line,
+                            0.0,
+                            egui::TextFormat {
+                                font_id: font_id.clone(),
+                                color,
+                                ..Default::default()
+                            },
+                        );
                     }
-                    if should_scroll {
-                        ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                    }
-                });
-        },
-    );
+                    ui.label(job);
+                }
+                if should_scroll {
+                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                }
+            });
+    });
 }
 
-fn log_entry_color(entry: &str) -> egui::Color32 {
-    use zode::LogLevel;
-    match LogLevel::from_log_line(entry) {
-        LogLevel::Reject => colors::LOG_REJECT,
-        LogLevel::Gossip => colors::LOG_GOSSIP,
-        LogLevel::Discovery => colors::LOG_DISCOVERY,
-        LogLevel::PeerConnect => colors::CONNECTED,
-        LogLevel::PeerDisconnect => colors::LOG_PEER_DISCONNECT,
-        LogLevel::Relay => colors::LOG_RELAY,
-        LogLevel::DialError => colors::LOG_DIAL_ERROR,
-        LogLevel::Rpc => colors::LOG_RPC,
-        LogLevel::Shutdown => colors::LOG_SHUTDOWN,
-        LogLevel::Normal => colors::LOG_NORMAL,
+fn filter_nav_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    active: bool,
+    color_dot: Option<egui::Color32>,
+) -> (bool, f32, f32) {
+    let row_height = ui.spacing().interact_size.y;
+    let row_width = ui.available_width();
+    let (row_id, row_rect) = ui.allocate_space(egui::vec2(row_width, row_height));
+    let response = ui.interact(row_rect, row_id, egui::Sense::click());
+
+    let text_color = if active || response.hovered() {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::from_gray(180)
+    };
+
+    let mut text_x = row_rect.min.x + spacing::LG;
+
+    if let Some(dot_color) = color_dot {
+        let dot_center = egui::pos2(text_x + 4.0, row_rect.center().y);
+        ui.painter().circle_filled(dot_center, 3.5, dot_color);
+        text_x += 14.0;
+    }
+
+    let text_pos = egui::pos2(text_x, row_rect.center().y);
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(font_size::BODY),
+        text_color,
+    );
+
+    (response.clicked(), row_rect.min.y, row_height)
+}
+
+fn log_level_color(level: zode::LogLevel) -> egui::Color32 {
+    match level {
+        zode::LogLevel::Reject => colors::LOG_REJECT,
+        zode::LogLevel::Gossip => colors::LOG_GOSSIP,
+        zode::LogLevel::Discovery => colors::LOG_DISCOVERY,
+        zode::LogLevel::PeerConnect => colors::CONNECTED,
+        zode::LogLevel::PeerDisconnect => colors::LOG_PEER_DISCONNECT,
+        zode::LogLevel::Relay => colors::LOG_RELAY,
+        zode::LogLevel::DialError => colors::LOG_DIAL_ERROR,
+        zode::LogLevel::Rpc => colors::LOG_RPC,
+        zode::LogLevel::Shutdown => colors::LOG_SHUTDOWN,
+        zode::LogLevel::Normal => colors::LOG_NORMAL,
     }
 }
 
