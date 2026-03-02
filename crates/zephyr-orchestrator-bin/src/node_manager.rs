@@ -196,6 +196,10 @@ async fn capture_listen_addr(zode: &Arc<Zode>) -> Option<String> {
 }
 
 /// Spawn a polling task for each node that updates shared state.
+///
+/// In addition to the basic `ZodeStatus`, this reads Zephyr service metrics
+/// (zone_heads, current_epoch, certificates, spends, mempool_sizes, etc.)
+/// and aggregates them into `NetworkSnapshot` and `NodeState`.
 pub(crate) fn spawn_status_pollers(
     nodes: &[ManagedNode],
     shared: Arc<Mutex<AppState>>,
@@ -211,12 +215,64 @@ pub(crate) fn spawn_status_pollers(
                 loop {
                     tokio::time::sleep(Duration::from_millis(250)).await;
                     let status = zode.status();
+
+                    let registry = zode.service_registry().read().await;
+                    let metrics = registry.service_metrics();
+                    drop(registry);
+
                     let mut state = shared.lock().await;
                     if let Some(ns) = state.nodes.get_mut(node_id) {
                         ns.zode_id = status.zode_id.clone();
                         ns.status = Some(status);
                         ns.last_update = std::time::Instant::now();
+
+                        if let Some(zephyr) = metrics.get("ZEPHYR") {
+                            if let Some(zones) = zephyr.get("assigned_zones").and_then(|v| v.as_array()) {
+                                ns.assigned_zones = zones.iter().filter_map(|z| z.as_u64().map(|n| n as u32)).collect();
+                            }
+                            if let Some(mp) = zephyr.get("mempool_sizes").and_then(|v| v.as_object()) {
+                                ns.mempool_sizes = mp.iter()
+                                    .filter_map(|(k, v)| {
+                                        let zone_id = k.parse::<u32>().ok()?;
+                                        let size = v.as_u64()? as usize;
+                                        Some((zone_id, size))
+                                    })
+                                    .collect();
+                            }
+                        }
                     }
+
+                    // Aggregate network-level metrics from the first responding node
+                    // (all nodes should converge on the same values)
+                    if node_id == 0 {
+                        if let Some(zephyr) = metrics.get("ZEPHYR") {
+                            if let Some(epoch) = zephyr.get("current_epoch").and_then(|v| v.as_u64()) {
+                                state.network.current_epoch = epoch;
+                            }
+                            if let Some(pct) = zephyr.get("epoch_progress_pct").and_then(|v| v.as_f64()) {
+                                state.network.epoch_progress_pct = pct as f32;
+                            }
+                            if let Some(certs) = zephyr.get("certificates_produced").and_then(|v| v.as_u64()) {
+                                state.network.certificates_produced = certs;
+                            }
+                            if let Some(spends) = zephyr.get("spends_processed").and_then(|v| v.as_u64()) {
+                                state.network.spends_processed = spends;
+                            }
+                            if let Some(heads) = zephyr.get("zone_heads").and_then(|v| v.as_object()) {
+                                for (k, v) in heads {
+                                    if let (Ok(zone_id), Some(hex_str)) = (k.parse::<u32>(), v.as_str()) {
+                                        if let Ok(bytes) = hex::decode(hex_str) {
+                                            let mut head = [0u8; 32];
+                                            let len = bytes.len().min(32);
+                                            head[..len].copy_from_slice(&bytes[..len]);
+                                            state.network.zone_heads.insert(zone_id, head);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let total_peers: usize = state
                         .nodes
                         .iter()
