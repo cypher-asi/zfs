@@ -598,11 +598,15 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             let mut row_positions: Vec<(&'static str, f32, f32)> = Vec::new();
 
             // TYPE group header
-            ui.label(
-                egui::RichText::new("TYPE")
-                    .strong()
-                    .size(font_size::SMALL)
-                    .color(colors::TEXT_SECONDARY),
+            ui.add_space(spacing::XS);
+            let header_h = ui.text_style_height(&egui::TextStyle::Body);
+            let (_, header_rect) = ui.allocate_space(egui::vec2(ui.available_width(), header_h));
+            ui.painter().text(
+                egui::pos2(header_rect.min.x + spacing::LG, header_rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                "TYPE",
+                egui::FontId::proportional(font_size::SMALL),
+                colors::TEXT_SECONDARY,
             );
             ui.add_space(spacing::XS);
 
@@ -633,11 +637,13 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             ui.add_space(spacing::LG);
 
             // SERVICE group header
-            ui.label(
-                egui::RichText::new("SERVICE")
-                    .strong()
-                    .size(font_size::SMALL)
-                    .color(colors::TEXT_SECONDARY),
+            let (_, svc_header_rect) = ui.allocate_space(egui::vec2(ui.available_width(), header_h));
+            ui.painter().text(
+                egui::pos2(svc_header_rect.min.x + spacing::LG, svc_header_rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                "SERVICE",
+                egui::FontId::proportional(font_size::SMALL),
+                colors::TEXT_SECONDARY,
             );
             ui.add_space(spacing::XS);
 
