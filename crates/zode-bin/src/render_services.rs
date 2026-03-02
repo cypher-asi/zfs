@@ -1,18 +1,24 @@
+use std::sync::Arc;
+
 use eframe::egui;
+use tokio::runtime::Runtime;
+use zode::Zode;
 
 use crate::app::ZodeApp;
-use crate::components::{colors, loading_state, muted_label, section};
 use crate::components::tokens::{self, font_size, spacing};
+use crate::components::{colors, loading_state, muted_label, section};
 
 const CARD_WIDTH: f32 = 260.0;
 const CARD_HEIGHT: f32 = 100.0;
 const CHECKBOX_SIZE: f32 = 18.0;
 
-pub(crate) fn render_services(app: &ZodeApp, ui: &mut egui::Ui) {
+pub(crate) fn render_services(app: &mut ZodeApp, ui: &mut egui::Ui) {
     let Some(ref zode) = app.zode else {
         loading_state(ui);
         return;
     };
+
+    let zode = Arc::clone(zode);
 
     section(ui, "Factory Services", |ui| {
         let registry = zode.service_registry();
@@ -22,6 +28,8 @@ pub(crate) fn render_services(app: &ZodeApp, ui: &mut egui::Ui) {
         };
 
         let services = registry.list_services();
+        drop(registry);
+
         if services.is_empty() {
             muted_label(ui, "No services registered.");
             ui.add_space(spacing::SM);
@@ -37,7 +45,7 @@ pub(crate) fn render_services(app: &ZodeApp, ui: &mut egui::Ui) {
         for row in services.chunks(cols) {
             ui.horizontal(|ui| {
                 for svc in row {
-                    service_card(ui, svc);
+                    service_card(ui, svc, &app.rt, &zode);
                     ui.add_space(spacing::MD);
                 }
             });
@@ -46,20 +54,46 @@ pub(crate) fn render_services(app: &ZodeApp, ui: &mut egui::Ui) {
     });
 }
 
-fn service_card(ui: &mut egui::Ui, svc: &grid_service::ServiceInfo) {
+fn service_card(
+    ui: &mut egui::Ui,
+    svc: &grid_service::ServiceInfo,
+    rt: &Runtime,
+    zode: &Arc<Zode>,
+) {
     let id_hex = svc.id.to_hex();
     let short_id = &id_hex[..8.min(id_hex.len())];
 
     let border_color = if svc.running {
         colors::CONNECTED
     } else {
-        colors::BORDER
+        colors::ERROR
     };
 
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(CARD_WIDTH, CARD_HEIGHT),
         egui::Sense::click(),
     );
+
+    if resp.clicked() {
+        let zode = Arc::clone(zode);
+        let service_id = svc.id;
+        let is_running = svc.running;
+        rt.spawn(async move {
+            let mut registry = zode.service_registry().lock().await;
+            let result = if is_running {
+                registry.stop_service(&service_id).await
+            } else {
+                registry.start_service(&service_id).await
+            };
+            if let Err(e) = result {
+                tracing::error!(
+                    service_id = %service_id,
+                    error = %e,
+                    "failed to toggle service"
+                );
+            }
+        });
+    }
 
     let painter = ui.painter_at(rect);
 
@@ -96,7 +130,7 @@ fn service_card(ui: &mut egui::Ui, svc: &grid_service::ServiceInfo) {
     };
     painter.rect(
         cb_rect,
-        2.0,
+        0.0,
         if svc.running {
             colors::CONNECTED
         } else {
@@ -155,11 +189,11 @@ fn service_card(ui: &mut egui::Ui, svc: &grid_service::ServiceInfo) {
         colors::TEXT_SECONDARY,
     );
 
-    let status_text = if svc.running { "RUNNING" } else { "STOPPED" };
+    let status_text = if svc.running { "RUNNING" } else { "INACTIVE" };
     let status_color = if svc.running {
         colors::CONNECTED
     } else {
-        colors::TEXT_MUTED
+        colors::ERROR
     };
     painter.text(
         egui::pos2(inner.right(), inner.bottom() - 14.0),

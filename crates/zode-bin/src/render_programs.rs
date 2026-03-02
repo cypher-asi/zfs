@@ -100,7 +100,7 @@ pub(crate) fn render_programs(app: &ZodeApp, ui: &mut egui::Ui, state: &StateSna
         render_service_programs(ui, "Default Programs", true, &standalone);
     }
 
-    if subscribed.is_empty() && services.as_ref().map_or(true, |s| s.is_empty()) {
+    if subscribed.is_empty() && services.as_ref().is_none_or(|s| s.is_empty()) {
         section(ui, "Programs", |ui| {
             muted_label(ui, "No programs subscribed.");
             ui.add_space(spacing::SM);
