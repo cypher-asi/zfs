@@ -6670,7 +6670,9 @@ dependencies = [
  "bitflags 2.11.0",
  "bytes",
  "http",
+ "http-body",
  "pin-project-lite",
+ "tokio",
  "tower-layer",
  "tower-service",
 ]

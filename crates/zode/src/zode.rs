@@ -418,8 +418,11 @@ impl Zode {
             .send((peer, request, tx))
             .await
             .map_err(|_| "sector request channel closed".to_string())?;
-        rx.await
-            .map_err(|_| "sector response channel dropped".to_string())?
+        match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(_)) => Err("sector response channel dropped".to_string()),
+            Err(_) => Err("sector request timed out after 30s".to_string()),
+        }
     }
 
     /// Access the network service (for advanced operations).

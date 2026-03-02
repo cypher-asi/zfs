@@ -70,7 +70,7 @@ fn build_behaviour(
             StreamProtocol::new(GRID_SECTOR_PROTOCOL),
             request_response::ProtocolSupport::Full,
         )],
-        request_response::Config::default(),
+        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
     );
     let peer_id = key.public().to_peer_id();
     // INVARIANT: GRID_KAD_PROTOCOL is a well-formed static protocol string.

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -8,6 +9,7 @@ use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
 use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
 use tracing::info;
 
 use crate::config::RpcConfig;
@@ -59,7 +61,8 @@ impl RpcServer {
 
         let app = app
             .layer(axum::extract::DefaultBodyLimit::max(5 * 1024 * 1024))
-            .layer(CorsLayer::permissive());
+            .layer(CorsLayer::permissive())
+            .layer(TimeoutLayer::with_status_code(StatusCode::GATEWAY_TIMEOUT, Duration::from_secs(30)));
 
         let listener = tokio::net::TcpListener::bind(config.bind_addr)
             .await
