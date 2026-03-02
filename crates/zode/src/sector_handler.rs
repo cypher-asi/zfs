@@ -383,7 +383,7 @@ impl<S: SectorStore> SectorRequestHandler<S> {
         let actual_ct_hash = grid_crypto::poseidon_ciphertext_hash(entry)
             .map_err(|_| GossipRejectReason::CiphertextMalformed)?;
 
-        if actual_ct_hash.as_slice() != shape_proof.ciphertext_hash.as_slice() {
+        if actual_ct_hash.as_slice() != &*shape_proof.ciphertext_hash {
             return Err(GossipRejectReason::CiphertextHashMismatch);
         }
 

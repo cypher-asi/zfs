@@ -89,7 +89,7 @@ fn wrap_unwrap_round_trip() {
     )
     .expect("wrap");
 
-    assert_eq!(entry.wrapped_key.len(), 24 + 32 + 16); // nonce + key + tag
+    assert_eq!(entry.wrapped_key.0.len(), 24 + 32 + 16); // nonce + key + tag
 
     let recovered = unwrap_sector_key(
         &entry,

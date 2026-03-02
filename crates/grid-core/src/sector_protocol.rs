@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{ErrorCode, ProgramId, ProofSystem, SectorId};
@@ -7,6 +9,48 @@ pub const MAX_BATCH_ENTRIES: usize = 64;
 
 /// Maximum total payload bytes in a single batch request (4 MB).
 pub const MAX_BATCH_PAYLOAD_BYTES: usize = 4 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// Newtype wrappers for ShapeProof hash fields
+// ---------------------------------------------------------------------------
+
+macro_rules! define_hash_newtype {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(#[serde(with = "serde_bytes")] pub Vec<u8>);
+
+        impl Deref for $name {
+            type Target = [u8];
+            fn deref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] {
+                &self.0
+            }
+        }
+
+        impl From<Vec<u8>> for $name {
+            fn from(v: Vec<u8>) -> Self {
+                Self(v)
+            }
+        }
+    };
+}
+
+define_hash_newtype!(
+    /// `Poseidon(ciphertext)` — 32-byte binding anchor for shape proofs.
+    CiphertextHash
+);
+
+define_hash_newtype!(
+    /// `SHA-256(canonical_cbor(schema))` — 32-byte schema identifier.
+    SchemaHash
+);
 
 // ---------------------------------------------------------------------------
 // Shape proof — binds ZK proof to stored ciphertext
@@ -20,14 +64,12 @@ pub struct ShapeProof {
     pub proof_system: ProofSystem,
     /// `Poseidon(ciphertext)` — 32 bytes. The binding anchor: the Zode
     /// independently hashes the received ciphertext and checks equality.
-    #[serde(with = "serde_bytes")]
-    pub ciphertext_hash: Vec<u8>,
+    pub ciphertext_hash: CiphertextHash,
     /// Groth16 proof bytes (128 bytes on BN254).
     #[serde(with = "serde_bytes")]
     pub proof_bytes: Vec<u8>,
     /// `FieldSchema::schema_hash()` — 32 bytes.
-    #[serde(with = "serde_bytes")]
-    pub schema_hash: Vec<u8>,
+    pub schema_hash: SchemaHash,
     /// Which circuit size bucket was used (1024, 4096, …).
     pub size_bucket: u32,
 }
@@ -209,9 +251,9 @@ mod tests {
     fn sample_shape_proof() -> ShapeProof {
         ShapeProof {
             proof_system: ProofSystem::Groth16,
-            ciphertext_hash: vec![0xAA; 32],
+            ciphertext_hash: CiphertextHash(vec![0xAA; 32]),
             proof_bytes: vec![0xBB; 128],
-            schema_hash: vec![0xCC; 32],
+            schema_hash: SchemaHash(vec![0xCC; 32]),
             size_bucket: 4096,
         }
     }

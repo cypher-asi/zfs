@@ -17,7 +17,10 @@ pub use poseidon::{
     poseidon_encrypt_sector, poseidon_hash,
 };
 pub use sector_key::SectorKey;
-pub use wrap::{unwrap_sector_key, wrap_sector_key, KeyEnvelopeEntry};
+pub use wrap::{
+    unwrap_sector_key, wrap_sector_key, KeyEnvelopeEntry, MlkemCiphertext, SenderX25519Public,
+    WrappedKey,
+};
 
 #[cfg(test)]
 mod tests;

@@ -8,7 +8,7 @@ use ark_groth16::Groth16;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 
-use grid_core::{FieldSchema, ProgramId, ProofSystem, SectorId, ShapeProof};
+use grid_core::{CiphertextHash, FieldSchema, ProgramId, ProofSystem, SchemaHash, SectorId, ShapeProof};
 use grid_crypto::SectorKey;
 
 use crate::circuit::{
@@ -157,9 +157,9 @@ impl Groth16ShapeProver {
 
         let shape_proof = ShapeProof {
             proof_system: ProofSystem::Groth16,
-            ciphertext_hash: ciphertext_hash.to_vec(),
+            ciphertext_hash: CiphertextHash(ciphertext_hash.to_vec()),
             proof_bytes,
-            schema_hash: schema_hash.to_vec(),
+            schema_hash: SchemaHash(schema_hash.to_vec()),
             size_bucket: bucket,
         };
 
