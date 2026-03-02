@@ -32,6 +32,7 @@ pub struct ServiceRegistry {
     gossip_handlers: Vec<Arc<dyn ServiceGossipHandler>>,
     publish_tx: Option<mpsc::Sender<(String, Vec<u8>)>>,
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
+    direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
 }
 
 impl Default for ServiceRegistry {
@@ -54,6 +55,7 @@ impl ServiceRegistry {
             gossip_handlers: Vec::new(),
             publish_tx: None,
             topic_tx: None,
+            direct_tx: None,
         }
     }
 
@@ -65,9 +67,11 @@ impl ServiceRegistry {
         &mut self,
         publish_tx: mpsc::Sender<(String, Vec<u8>)>,
         topic_tx: mpsc::Sender<TopicCommand>,
+        direct_tx: mpsc::Sender<(String, String, Vec<u8>)>,
     ) {
         self.publish_tx = Some(publish_tx);
         self.topic_tx = Some(topic_tx);
+        self.direct_tx = Some(direct_tx);
     }
 
     /// Register a service. Does NOT start it yet.
@@ -114,6 +118,9 @@ impl ServiceRegistry {
             );
             if let (Some(ptx), Some(ttx)) = (&self.publish_tx, &self.topic_tx) {
                 ctx.set_channels(ptx.clone(), ttx.clone());
+            }
+            if let Some(dtx) = &self.direct_tx {
+                ctx.set_direct_channel(dtx.clone());
             }
 
             if let Err(e) = service.on_start(&ctx).await {
@@ -221,6 +228,9 @@ impl ServiceRegistry {
         );
         if let (Some(ptx), Some(ttx)) = (&self.publish_tx, &self.topic_tx) {
             ctx.set_channels(ptx.clone(), ttx.clone());
+        }
+        if let Some(dtx) = &self.direct_tx {
+            ctx.set_direct_channel(dtx.clone());
         }
 
         service.on_start(&ctx).await?;

@@ -52,6 +52,7 @@ pub struct ServiceContext {
     pub shutdown: CancellationToken,
     publish_tx: Option<mpsc::Sender<(String, Vec<u8>)>>,
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
+    direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
 }
 
 impl ServiceContext {
@@ -70,6 +71,7 @@ impl ServiceContext {
             shutdown,
             publish_tx: None,
             topic_tx: None,
+            direct_tx: None,
         }
     }
 
@@ -84,6 +86,11 @@ impl ServiceContext {
     ) {
         self.publish_tx = Some(publish_tx);
         self.topic_tx = Some(topic_tx);
+    }
+
+    /// Set the direct-message outbound channel.
+    pub fn set_direct_channel(&mut self, direct_tx: mpsc::Sender<(String, String, Vec<u8>)>) {
+        self.direct_tx = Some(direct_tx);
     }
 
     /// Publish a message to a GossipSub topic.
@@ -116,6 +123,23 @@ impl ServiceContext {
             .ok_or_else(|| ServiceError::NotInitialized("topic channel not set".into()))?;
         tx.try_send(TopicCommand::Unsubscribe(topic.to_owned()))
             .map_err(|e| ServiceError::Other(format!("topic channel: {e}")))
+    }
+
+    /// Send a direct (point-to-point) message to another Zode.
+    ///
+    /// `target` is the `ZodeId` string of the destination peer.
+    pub fn send_direct(
+        &self,
+        target: &str,
+        topic: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), ServiceError> {
+        let tx = self
+            .direct_tx
+            .as_ref()
+            .ok_or_else(|| ServiceError::NotInitialized("direct channel not set".into()))?;
+        tx.try_send((target.to_owned(), topic.to_owned(), payload))
+            .map_err(|e| ServiceError::Other(format!("direct channel: {e}")))
     }
 
     /// Get a [`ProgramStore`] for key-value operations on a specific program.
@@ -499,5 +523,29 @@ mod tests {
             TopicCommand::Unsubscribe(t) => assert_eq!(t, "old-topic"),
             other => panic!("expected Unsubscribe, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn send_direct_without_channel_returns_not_initialized() {
+        let ctx = make_context();
+        let err = ctx
+            .send_direct("Zxpeer1", "topic", b"hi".to_vec())
+            .unwrap_err();
+        assert!(matches!(err, ServiceError::NotInitialized(_)));
+    }
+
+    #[test]
+    fn send_direct_queues_message_on_channel() {
+        let mut ctx = make_context();
+        let (dtx, mut drx) = mpsc::channel(8);
+        ctx.set_direct_channel(dtx);
+
+        ctx.send_direct("Zxpeer1", "my-topic", b"hello".to_vec())
+            .unwrap();
+
+        let (target, topic, payload) = drx.try_recv().unwrap();
+        assert_eq!(target, "Zxpeer1");
+        assert_eq!(topic, "my-topic");
+        assert_eq!(payload, b"hello");
     }
 }

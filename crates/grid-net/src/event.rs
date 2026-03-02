@@ -1,4 +1,4 @@
-use grid_core::{SectorRequest, SectorResponse};
+use grid_core::{DirectMessage, DirectMessageAck, SectorRequest, SectorResponse};
 use libp2p::request_response::{OutboundRequestId, ResponseChannel};
 use libp2p::Multiaddr;
 
@@ -63,4 +63,25 @@ pub enum NetworkEvent {
 
     /// Kademlia DHT bootstrap started successfully.
     KademliaBootstrapped,
+
+    /// An incoming direct message from a peer.
+    IncomingDirectMessage {
+        peer: ZodeId,
+        message: DirectMessage,
+        channel: ResponseChannel<DirectMessageAck>,
+    },
+
+    /// Response for an outbound direct message.
+    DirectMessageResult {
+        peer: ZodeId,
+        request_id: OutboundRequestId,
+        response: DirectMessageAck,
+    },
+
+    /// An outbound direct message failed.
+    DirectMessageFailure {
+        peer: ZodeId,
+        request_id: OutboundRequestId,
+        error: String,
+    },
 }

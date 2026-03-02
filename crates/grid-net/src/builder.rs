@@ -13,6 +13,7 @@ use crate::behaviour::GridBehaviour;
 use crate::error::NetworkError;
 
 const GRID_SECTOR_PROTOCOL: &str = "/grid/sector/1.0.0";
+const GRID_DIRECT_PROTOCOL: &str = "/grid/direct/1.0.0";
 const GRID_KAD_PROTOCOL: &str = "/grid/kad/1.0.0";
 const GRID_IDENTIFY_PROTOCOL: &str = "/grid/id/1.0.0";
 
@@ -72,6 +73,13 @@ fn build_behaviour(
         )],
         request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
     );
+    let direct_rr = request_response::cbor::Behaviour::new(
+        [(
+            StreamProtocol::new(GRID_DIRECT_PROTOCOL),
+            request_response::ProtocolSupport::Full,
+        )],
+        request_response::Config::default().with_request_timeout(Duration::from_secs(30)),
+    );
     let peer_id = key.public().to_peer_id();
     // INVARIANT: GRID_KAD_PROTOCOL is a well-formed static protocol string.
     let mut kad_config = kad::Config::new(
@@ -97,6 +105,7 @@ fn build_behaviour(
         connection_limits,
         gossipsub,
         sector_rr,
+        direct_rr,
         kademlia,
         relay,
         identify,

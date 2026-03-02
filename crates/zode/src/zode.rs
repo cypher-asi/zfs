@@ -139,9 +139,10 @@ impl Zode {
         ));
 
         let (topic_tx, topic_rx) = mpsc::channel(64);
+        let (direct_tx, direct_rx) = mpsc::channel(64);
 
         let mut service_registry = ServiceRegistry::new();
-        service_registry.set_channels(publish_tx.clone(), topic_tx);
+        service_registry.set_channels(publish_tx.clone(), topic_tx, direct_tx);
         Self::register_default_services(&mut service_registry);
         let service_programs = service_registry.required_programs();
         if !service_programs.is_empty() {
@@ -197,6 +198,7 @@ impl Zode {
             shutdown_rx,
             publish_rx,
             topic_rx,
+            direct_rx,
             sector_request_rx,
         );
 
@@ -285,6 +287,7 @@ impl Zode {
         shutdown_rx: mpsc::Receiver<()>,
         publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         topic_rx: mpsc::Receiver<grid_service::TopicCommand>,
+        direct_rx: mpsc::Receiver<(String, String, Vec<u8>)>,
         sector_request_rx: mpsc::Receiver<SectorRequestSubmission>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
@@ -300,6 +303,7 @@ impl Zode {
                 shutdown_rx,
                 publish_rx,
                 topic_rx,
+                direct_rx,
                 sector_request_rx,
             )
             .await;
@@ -553,6 +557,7 @@ impl Zode {
         mut shutdown_rx: mpsc::Receiver<()>,
         mut publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         mut topic_rx: mpsc::Receiver<grid_service::TopicCommand>,
+        mut direct_rx: mpsc::Receiver<(String, String, Vec<u8>)>,
         mut sector_request_rx: mpsc::Receiver<SectorRequestSubmission>,
     ) {
         let mut pending_sector_requests: HashMap<
@@ -620,6 +625,18 @@ impl Zode {
                                 } else {
                                     info!(%topic, "dynamic unsubscribe");
                                 }
+                            }
+                        }
+                        continue;
+                    }
+                    Some((target, topic, payload)) = direct_rx.recv() => {
+                        match grid_net::parse_zode_id(&target) {
+                            Ok(peer_id) => {
+                                let msg = grid_core::DirectMessage { topic, payload };
+                                net.send_direct(&peer_id, msg);
+                            }
+                            Err(e) => {
+                                warn!(error = %e, %target, "invalid peer id for direct message");
                             }
                         }
                         continue;
@@ -756,8 +773,28 @@ impl Zode {
             NetworkEvent::KademliaBootstrapped => {
                 let _ = event_tx.send(LogEvent::KademliaReady);
             }
+            NetworkEvent::IncomingDirectMessage {
+                peer,
+                message,
+                channel,
+            } => {
+                let sender = Some(format_zode_id(&peer));
+                if let Some(handler) = service_registry.gossip_handler_for(&message.topic) {
+                    handler
+                        .on_gossip(&message.topic, &message.payload, sender)
+                        .await;
+                }
+                let mut net = network.lock().await;
+                if let Err(e) =
+                    net.send_direct_ack(channel, grid_core::DirectMessageAck { ok: true })
+                {
+                    warn!(error = %e, "failed to send direct message ack");
+                }
+            }
             NetworkEvent::SectorRequestResult { .. }
-            | NetworkEvent::SectorOutboundFailure { .. } => {}
+            | NetworkEvent::SectorOutboundFailure { .. }
+            | NetworkEvent::DirectMessageResult { .. }
+            | NetworkEvent::DirectMessageFailure { .. } => {}
         }
     }
 

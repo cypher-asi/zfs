@@ -2,6 +2,7 @@
 
 mod cbor;
 mod cid;
+mod direct_message;
 mod error;
 mod field_schema;
 mod program_descriptor;
@@ -13,6 +14,7 @@ mod util;
 
 pub use cbor::{decode_canonical, encode_canonical};
 pub use cid::Cid;
+pub use direct_message::{DirectMessage, DirectMessageAck};
 pub use error::{ErrorCode, GridError, SectorStoreError};
 pub use field_schema::{CborType, FieldDef, FieldSchema, ProofSystem};
 pub use program_descriptor::ProgramDescriptor;

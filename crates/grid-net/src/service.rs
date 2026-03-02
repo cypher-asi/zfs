@@ -279,6 +279,31 @@ impl NetworkService {
             .map_err(|_| NetworkError::ResponseFailed)
     }
 
+    /// Send a direct message to a specific peer.
+    pub fn send_direct(
+        &mut self,
+        peer: &PeerId,
+        message: grid_core::DirectMessage,
+    ) -> request_response::OutboundRequestId {
+        self.swarm
+            .behaviour_mut()
+            .direct_rr
+            .send_request(peer, message)
+    }
+
+    /// Send an acknowledgement for an incoming direct message.
+    pub fn send_direct_ack(
+        &mut self,
+        channel: request_response::ResponseChannel<grid_core::DirectMessageAck>,
+        ack: grid_core::DirectMessageAck,
+    ) -> Result<(), NetworkError> {
+        self.swarm
+            .behaviour_mut()
+            .direct_rr
+            .send_response(channel, ack)
+            .map_err(|_| NetworkError::ResponseFailed)
+    }
+
     /// Returns the list of currently connected peer IDs.
     pub fn connected_peers(&self) -> Vec<PeerId> {
         self.swarm.connected_peers().copied().collect()
@@ -775,6 +800,12 @@ impl NetworkService {
                 }
                 Self::map_sector_rr_event(ev)
             }
+            GridBehaviourEvent::DirectRr(ev) => {
+                if let request_response::Event::Message { peer, .. } = &ev {
+                    self.peer_last_activity.insert(*peer, now);
+                }
+                Self::map_direct_rr_event(ev)
+            }
             GridBehaviourEvent::Kademlia(ev) => self.map_kademlia_event(ev),
             GridBehaviourEvent::Relay(ev) => self.map_relay_event(ev),
             GridBehaviourEvent::Identify(ev) => {
@@ -931,6 +962,41 @@ impl NetworkService {
                 error,
                 ..
             } => Some(NetworkEvent::SectorOutboundFailure {
+                peer,
+                request_id,
+                error: error.to_string(),
+            }),
+            _ => None,
+        }
+    }
+
+    fn map_direct_rr_event(
+        event: request_response::Event<grid_core::DirectMessage, grid_core::DirectMessageAck>,
+    ) -> Option<NetworkEvent> {
+        match event {
+            request_response::Event::Message { peer, message, .. } => match message {
+                request_response::Message::Request {
+                    request, channel, ..
+                } => Some(NetworkEvent::IncomingDirectMessage {
+                    peer,
+                    message: request,
+                    channel,
+                }),
+                request_response::Message::Response {
+                    request_id,
+                    response,
+                } => Some(NetworkEvent::DirectMessageResult {
+                    peer,
+                    request_id,
+                    response,
+                }),
+            },
+            request_response::Event::OutboundFailure {
+                peer,
+                request_id,
+                error,
+                ..
+            } => Some(NetworkEvent::DirectMessageFailure {
                 peer,
                 request_id,
                 error: error.to_string(),
