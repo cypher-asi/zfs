@@ -33,6 +33,22 @@ pub(crate) fn kv_row_copyable(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.end_row();
 }
 
+/// Stacked field: label on top, wrapping monospace value + copy button below.
+/// Not grid-based, so the value gets the full available width to wrap within.
+pub(crate) fn kv_stacked_copyable(ui: &mut egui::Ui, key: &str, value: &str) {
+    ui.horizontal(|ui| {
+        field_label(ui, key);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            copy_button(ui, value);
+        });
+    });
+    ui.add(
+        egui::Label::new(egui::RichText::new(value).monospace())
+            .wrap_mode(egui::TextWrapMode::Wrap),
+    );
+    ui.add_space(spacing::SM);
+}
+
 /// Text input + ADD button + removable monospace items.
 pub(crate) fn editable_list(
     ui: &mut egui::Ui,

@@ -4,8 +4,8 @@ use crate::app::ZodeApp;
 use crate::components::tokens::{font_size, spacing};
 use crate::components::{
     action_button, action_panel, colors, copy_button, editable_list, error_label, field_label,
-    form_grid, hint_label, icon_button, info_grid, kv_row, kv_row_copyable, loading_state,
-    muted_label, section, text_input,
+    form_grid, hint_label, icon_button, info_grid, kv_row, kv_stacked_copyable,
+    loading_state, muted_label, section, text_input,
 };
 use crate::helpers::format_bytes;
 use crate::state::{SettingsSection, StateSnapshot};
@@ -404,24 +404,17 @@ fn render_zode_status(ui: &mut egui::Ui, status: &zode::ZodeStatus, state: &Stat
         .map(|listen| format!("{listen}/p2p/{}", status.zode_id));
 
     section(ui, "ZODE", |ui| {
-        info_grid(ui, "status_grid", |ui| {
-            kv_row_copyable(ui, "ZODE ID", &status.zode_id);
+        kv_stacked_copyable(ui, "ZODE ID", &status.zode_id);
 
+        if let Some(ref addr) = full_addr {
+            kv_stacked_copyable(ui, "Address", addr);
+        } else {
             field_label(ui, "Address");
-            ui.horizontal(|ui| {
-                if let Some(ref addr) = full_addr {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(addr.as_str()).monospace())
-                            .truncate()
-                            .wrap_mode(egui::TextWrapMode::Truncate),
-                    );
-                    copy_button(ui, addr);
-                } else {
-                    muted_label(ui, "resolving...");
-                }
-            });
-            ui.end_row();
+            muted_label(ui, "resolving...");
+            ui.add_space(spacing::SM);
+        }
 
+        info_grid(ui, "status_grid", |ui| {
             kv_row(
                 ui,
                 if status.peer_count == 1 {
