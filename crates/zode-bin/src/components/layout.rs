@@ -34,8 +34,12 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
         egui::pos2(max.left() + 1.0, resp.rect.top()),
         egui::pos2(max.right() - 1.0, resp.rect.bottom()),
     );
-    ui.painter()
-        .rect_stroke(border_rect, 0.0, tokens::border_stroke(), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        border_rect,
+        0.0,
+        tokens::border_stroke(),
+        egui::StrokeKind::Inside,
+    );
 
     ui.set_clip_rect(prev_clip);
     ui.add_space(spacing::MD);
@@ -112,11 +116,7 @@ pub(crate) fn overlay_frame() -> egui::Frame {
 }
 
 /// Standardized 2-column form grid with `[12.0, 8.0]` spacing.
-pub(crate) fn form_grid(
-    ui: &mut egui::Ui,
-    id: &str,
-    add_rows: impl FnOnce(&mut egui::Ui),
-) {
+pub(crate) fn form_grid(ui: &mut egui::Ui, id: &str, add_rows: impl FnOnce(&mut egui::Ui)) {
     egui::Grid::new(id)
         .num_columns(2)
         .spacing([spacing::LG, spacing::MD])
@@ -136,10 +136,7 @@ pub(crate) fn auth_screen_panel(
 ) {
     let panel = ui.max_rect();
     let col_w = 380.0_f32.min(panel.width());
-    let col = egui::Rect::from_center_size(
-        panel.center(),
-        egui::vec2(col_w, panel.height()),
-    );
+    let col = egui::Rect::from_center_size(panel.center(), egui::vec2(col_w, panel.height()));
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(col), |ui| {
         ui.vertical_centered(|ui| {
@@ -181,4 +178,15 @@ pub(crate) fn title_bar_frame() -> egui::Frame {
             spacing::MD as i8,
         ))
         .stroke(egui::Stroke::NONE)
+}
+
+/// Standard frame for the bottom status bar.
+pub(crate) fn status_bar_frame() -> egui::Frame {
+    egui::Frame::default()
+        .fill(colors::PANEL_BG)
+        .inner_margin(egui::Margin::symmetric(
+            spacing::LG as i8,
+            spacing::SM as i8,
+        ))
+        .stroke(egui::Stroke::new(tokens::STROKE_DEFAULT, colors::BORDER))
 }

@@ -7,8 +7,8 @@ use zode::{LogEvent, Zode};
 
 use crate::components::tokens::{font_size, spacing};
 use crate::components::{
-    auth_panel_frame, auth_screen_panel, colors, error_label, link_button, status_dot,
-    text_input_password, title_bar_frame, title_bar_icon,
+    auth_panel_frame, auth_screen_panel, colors, error_label, link_button, status_bar_frame,
+    status_dot, text_input_password, title_bar_frame, title_bar_icon,
 };
 use crate::profile::{self, ProfileMeta};
 use crate::settings::Settings;
@@ -734,11 +734,17 @@ impl ZodeApp {
     fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
         if self.detail_selection.is_some() {
             let detail_frame = egui::Frame::default()
-                .fill(colors::SURFACE)
-                .inner_margin(spacing::XL)
+                .fill(colors::PANEL_BG)
+                .inner_margin(egui::Margin {
+                    left: spacing::XL as i8,
+                    right: spacing::MD as i8,
+                    top: spacing::XL as i8,
+                    bottom: spacing::MD as i8,
+                })
                 .stroke(egui::Stroke::new(1.0, colors::BORDER));
             egui::SidePanel::right("detail_panel")
-                .default_width(340.0)
+                .exact_width(168.0)
+                .resizable(false)
                 .frame(detail_frame)
                 .show(ctx, |ui| {
                     crate::render_detail::render_detail(self, ui);
@@ -807,6 +813,29 @@ impl ZodeApp {
             );
         }
     }
+
+    fn render_status_bar(&self, ctx: &egui::Context, peer_id: Option<&str>) {
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(status_bar_frame())
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let id_text = peer_id.unwrap_or("--");
+                    ui.label(
+                        egui::RichText::new(id_text)
+                            .monospace()
+                            .size(font_size::SMALL)
+                            .color(colors::TEXT_SECONDARY),
+                    );
+
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            status_dot(ui, self.zode.is_some());
+                        },
+                    );
+                });
+            });
+    }
 }
 
 impl eframe::App for ZodeApp {
@@ -821,6 +850,7 @@ impl eframe::App for ZodeApp {
         match self.phase.clone() {
             AppPhase::Setup => {
                 self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
+                self.render_status_bar(ctx, None);
                 self.render_setup_screen(ctx);
                 Self::render_window_border(ctx, maximized);
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -828,6 +858,7 @@ impl eframe::App for ZodeApp {
             }
             AppPhase::ProfileSelect => {
                 self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
+                self.render_status_bar(ctx, None);
                 self.render_profile_select(ctx);
                 Self::render_window_border(ctx, maximized);
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -835,6 +866,12 @@ impl eframe::App for ZodeApp {
             }
             AppPhase::Unlock { profile_id } => {
                 self.render_pre_auth_title_bar(ctx, maximized, on_resize_edge);
+                let peer_id = self
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == profile_id)
+                    .map(|p| p.peer_id.as_str());
+                self.render_status_bar(ctx, peer_id);
                 self.render_unlock_screen(ctx, &profile_id);
                 Self::render_window_border(ctx, maximized);
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -850,6 +887,8 @@ impl eframe::App for ZodeApp {
         self.sync_visualization(&state);
 
         self.render_title_bar(ctx, maximized, on_resize_edge);
+        let peer_id = state.status.as_ref().map(|s| s.zode_id.as_str());
+        self.render_status_bar(ctx, peer_id);
         self.render_central_panel(ctx, &state);
         Self::render_window_border(ctx, maximized);
 

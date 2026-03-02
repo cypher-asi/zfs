@@ -16,8 +16,10 @@ pub(crate) use buttons::{
 pub(crate) use data_display::{editable_list, info_grid, kv_row, kv_row_copyable};
 pub(crate) use feedback::{failed_icon, loading_state, status_dot, verified_icon};
 pub(crate) use inputs::{text_input, text_input_password};
-pub(crate) use labels::{error_label, field_label, hint_label, muted_label, status_label, warn_label};
+pub(crate) use labels::{
+    error_label, field_label, hint_label, muted_label, status_label, warn_label,
+};
 pub(crate) use layout::{
     action_panel, auth_panel_frame, auth_screen_panel, card_frame, centered_row, form_grid,
-    overlay_frame, section, section_heading, title_bar_frame,
+    overlay_frame, section, section_heading, status_bar_frame, title_bar_frame,
 };
