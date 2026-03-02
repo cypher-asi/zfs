@@ -228,7 +228,7 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
         ui.add_space(spacing::SM);
         ui.label(
             egui::RichText::new(&svc.descriptor.summary)
-                .size(font_size::BODY)
+                .size(font_size::ACTION)
                 .color(colors::TEXT_SECONDARY),
         );
     }

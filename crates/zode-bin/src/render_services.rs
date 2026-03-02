@@ -207,7 +207,7 @@ fn service_card(
         );
         let galley = painter.layout(
             svc.descriptor.summary.clone(),
-            egui::FontId::proportional(font_size::SMALL),
+            egui::FontId::proportional(font_size::BODY),
             colors::TEXT_SECONDARY,
             summary_rect.width(),
         );
