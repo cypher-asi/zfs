@@ -99,8 +99,7 @@ impl ZodeApp {
             );
         }
 
-        let (prover_tx, prover_rx) =
-            tokio::sync::mpsc::channel::<Box<Groth16ShapeProver>>(1);
+        let (prover_tx, prover_rx) = tokio::sync::mpsc::channel::<Box<Groth16ShapeProver>>(1);
         std::thread::spawn(move || {
             let prover = load_or_generate_prover(&data_dir);
             let _ = prover_tx.blocking_send(prover);
@@ -189,7 +188,10 @@ impl ZodeApp {
                             info!(count, total_stored, "interlink catch-up: fetched entries");
                             let _ = refresh_tx.try_send(());
                         } else {
-                            info!(total_stored, "interlink catch-up: up to date with best peer");
+                            info!(
+                                total_stored,
+                                "interlink catch-up: up to date with best peer"
+                            );
                         }
                         if total_stored > 0 {
                             break;
@@ -358,8 +360,14 @@ fn load_older_messages(
         return (Vec::new(), 0);
     }
     let start = before_index.saturating_sub(HISTORY_PAGE_SIZE as u64);
-    let (msgs, _seen) =
-        read_and_decrypt_range(storage, sector_key, program_id, sector_id, start, before_index);
+    let (msgs, _seen) = read_and_decrypt_range(
+        storage,
+        sector_key,
+        program_id,
+        sector_id,
+        start,
+        before_index,
+    );
     (msgs, start)
 }
 
@@ -533,12 +541,27 @@ fn decrypt_one(
         grid_sdk::sector_decrypt_poseidon(ciphertext, sector_key, program_id, sector_id)
             .map_err(|e| format!("Decrypt: {e}"))?;
     let msg = ZMessage::decode_canonical(&plaintext).map_err(|e| format!("Decode: {e}"))?;
-    let sig_status = match msg.verify_signature(|signable, sig_bytes| {
-        zid::verify_did_ed25519(&msg.sender_did, signable, sig_bytes).is_ok()
-    }) {
-        Ok(true) => SignatureStatus::Verified,
-        Ok(false) => SignatureStatus::None,
-        Err(_) => SignatureStatus::Failed,
+    let sig_status = if msg.signature.is_empty() {
+        SignatureStatus::None
+    } else {
+        match msg.verify_signature(|signable, sig_bytes| {
+            match zid::verify_did_ed25519(&msg.sender_did, signable, sig_bytes) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(
+                        sender = %msg.sender_did,
+                        error = %e,
+                        sig_len = msg.signature.len(),
+                        "signature verification failed"
+                    );
+                    false
+                }
+            }
+        }) {
+            Ok(true) => SignatureStatus::Verified,
+            Ok(false) => SignatureStatus::Failed,
+            Err(_) => SignatureStatus::Failed,
+        }
     };
     Ok(DisplayMessage {
         sender: msg.sender_did,
@@ -776,8 +799,7 @@ fn do_load_history(app: &mut ZodeApp) {
     il.history_rx = Some(hist_rx);
 
     std::thread::spawn(move || {
-        let (msgs, new_earliest) =
-            load_older_messages(&storage, &key, &pid, &sid, before);
+        let (msgs, new_earliest) = load_older_messages(&storage, &key, &pid, &sid, before);
         let _ = hist_tx.blocking_send(InterlinkUpdate {
             new_messages: msgs,
             error: None,
@@ -804,9 +826,7 @@ fn render_single_message(ui: &mut egui::Ui, msg: &DisplayMessage) {
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.label(egui::RichText::new(format!("[{time}]")).monospace().weak());
-                ui.label(
-                    egui::RichText::new(format!("{name}:")).monospace().strong(),
-                );
+                ui.label(egui::RichText::new(format!("{name}:")).monospace().strong());
                 ui.label(&msg.content);
             },
         );
