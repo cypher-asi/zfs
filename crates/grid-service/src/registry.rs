@@ -242,9 +242,10 @@ impl ServiceRegistry {
         app
     }
 
-    /// List all registered service descriptors.
+    /// List all registered service descriptors, sorted by name.
     pub fn list_services(&self) -> Vec<ServiceInfo> {
-        self.services
+        let mut list: Vec<ServiceInfo> = self
+            .services
             .iter()
             .map(|(&id, svc)| {
                 let running = self.contexts.contains_key(&id);
@@ -254,7 +255,9 @@ impl ServiceRegistry {
                     running,
                 }
             })
-            .collect()
+            .collect();
+        list.sort_by(|a, b| a.descriptor.name.cmp(&b.descriptor.name));
+        list
     }
 
     /// Collect the union of all registered services' required + owned programs.
