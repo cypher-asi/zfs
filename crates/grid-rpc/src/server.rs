@@ -32,10 +32,12 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    /// Start the RPC server with the given config and sector dispatch handler.
+    /// Start the RPC server with the given config, sector dispatch handler, and
+    /// an optional service router to merge into the HTTP server.
     pub async fn start(
         config: &RpcConfig,
         handler: Arc<dyn SectorDispatch>,
+        service_router: Option<Router>,
     ) -> Result<Self, RpcError> {
         let requests_total = Arc::new(AtomicU64::new(0));
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
@@ -47,9 +49,15 @@ impl RpcServer {
             requests_total: Arc::clone(&requests_total),
         };
 
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/rpc", post(rpc_handler))
-            .with_state(state)
+            .with_state(state);
+
+        if let Some(svc_router) = service_router {
+            app = app.merge(svc_router);
+        }
+
+        let app = app
             .layer(axum::extract::DefaultBodyLimit::max(5 * 1024 * 1024))
             .layer(CorsLayer::permissive());
 
@@ -114,7 +122,7 @@ async fn rpc_handler(
 
         let authorized = match auth_header {
             Some(value) if value.starts_with("Bearer ") => {
-                constant_time_eq(value[7..].as_bytes(), expected_key.as_bytes())
+                constant_time_eq(&value.as_bytes()[7..], expected_key.as_bytes())
             }
             _ => false,
         };

@@ -281,6 +281,7 @@ impl Settings {
             sector_filter: Default::default(),
             network,
             rpc,
+            services: Default::default(),
         })
     }
 

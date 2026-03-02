@@ -139,7 +139,7 @@ impl NetworkService {
             .relay
             .relay_peers
             .iter()
-            .map(|a| crate::addr::strip_all_p2p(a))
+            .map(crate::addr::strip_all_p2p)
             .filter(crate::addr::has_transport)
             .collect();
 

@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 grid-core = { path = "../grid-core" }
+grid-service = { path = "../grid-service" }
 zode = { path = "../zode" }
 grid-storage = { path = "../grid-storage" }
 grid-programs-zid = { path = "../grid-programs/zid" }

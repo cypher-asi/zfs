@@ -6,7 +6,7 @@ use crate::components::{
     form_grid, hint_label, icon_button, info_grid, kv_row, kv_row_copyable, loading_state,
     muted_label, section, text_input,
 };
-use crate::components::tokens::{font_size, spacing};
+use crate::components::tokens::{self, font_size, spacing};
 use crate::helpers::format_bytes;
 use crate::state::{SettingsSection, StateSnapshot};
 
@@ -342,17 +342,26 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
     }
 
     let Some(ref status) = state.status else {
-        egui::Frame::default()
+        let max = ui.max_rect();
+        let resp = egui::Frame::default()
             .fill(colors::SURFACE)
             .corner_radius(0.0)
             .inner_margin(0.0)
-            .outer_margin(egui::Margin::symmetric(1, 0))
-            .stroke(egui::Stroke::new(1.0, colors::BORDER))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_min_height(ui.available_height());
                 app.visualization.render(ui);
             });
+        let border_rect = egui::Rect::from_min_max(
+            egui::pos2(max.left(), resp.response.rect.top()),
+            egui::pos2(max.right(), resp.response.rect.bottom()),
+        );
+        ui.painter().rect_stroke(
+            border_rect,
+            0.0,
+            tokens::border_stroke(),
+            egui::StrokeKind::Inside,
+        );
         return;
     };
 
@@ -361,17 +370,26 @@ pub(crate) fn render_status(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateS
         ui.ctx().data_mut(|d| d.get_temp(sections_id).unwrap_or(300.0));
     let viz_h = (ui.available_height() - prev_sections_h - spacing::MD).max(100.0);
 
-    egui::Frame::default()
+    let max = ui.max_rect();
+    let viz_resp = egui::Frame::default()
         .fill(colors::SURFACE)
         .corner_radius(0.0)
         .inner_margin(0.0)
-        .outer_margin(egui::Margin::symmetric(1, 0))
-        .stroke(egui::Stroke::new(1.0, colors::BORDER))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.set_height(viz_h);
             app.visualization.render(ui);
         });
+    let border_rect = egui::Rect::from_min_max(
+        egui::pos2(max.left(), viz_resp.response.rect.top()),
+        egui::pos2(max.right(), viz_resp.response.rect.bottom()),
+    );
+    ui.painter().rect_stroke(
+        border_rect,
+        0.0,
+        tokens::border_stroke(),
+        egui::StrokeKind::Inside,
+    );
 
     ui.add_space(spacing::MD);
     let sections_top = ui.cursor().top();

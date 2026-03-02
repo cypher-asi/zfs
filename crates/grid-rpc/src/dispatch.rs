@@ -52,21 +52,19 @@ pub(crate) fn dispatch(handler: &dyn SectorDispatch, req: &JsonRpcRequest) -> Js
 
     match req.method.as_str() {
         "sector.append" => {
-            dispatch_typed::<SectorAppendRequest>(handler, req, |r| SectorRequest::Append(r))
+            dispatch_typed::<SectorAppendRequest>(handler, req, SectorRequest::Append)
         }
         "sector.readLog" => {
-            dispatch_typed::<SectorReadLogRequest>(handler, req, |r| SectorRequest::ReadLog(r))
+            dispatch_typed::<SectorReadLogRequest>(handler, req, SectorRequest::ReadLog)
         }
         "sector.logLength" => {
-            dispatch_typed::<SectorLogLengthRequest>(handler, req, |r| SectorRequest::LogLength(r))
+            dispatch_typed::<SectorLogLengthRequest>(handler, req, SectorRequest::LogLength)
         }
-        "sector.batchAppend" => dispatch_typed::<SectorBatchAppendRequest>(handler, req, |r| {
-            SectorRequest::BatchAppend(r)
-        }),
+        "sector.batchAppend" => {
+            dispatch_typed::<SectorBatchAppendRequest>(handler, req, SectorRequest::BatchAppend)
+        }
         "sector.batchLogLength" => {
-            dispatch_typed::<SectorBatchLogLengthRequest>(handler, req, |r| {
-                SectorRequest::BatchLogLength(r)
-            })
+            dispatch_typed::<SectorBatchLogLengthRequest>(handler, req, SectorRequest::BatchLogLength)
         }
         _ => error_response(
             req.id.clone(),

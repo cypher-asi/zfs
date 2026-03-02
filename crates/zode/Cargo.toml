@@ -8,10 +8,13 @@ description = "ZODE — ties together storage, network, proof, and programs"
 grid-core = { path = "../grid-core" }
 grid-crypto = { path = "../grid-crypto" }
 grid-rpc = { path = "../grid-rpc" }
+grid-service = { path = "../grid-service" }
 grid-storage = { path = "../grid-storage" }
 grid-net = { path = "../grid-net" }
 grid-programs-zid = { path = "../grid-programs/zid" }
 grid-programs-interlink = { path = "../grid-programs/interlink" }
+grid-services-identity = { path = "../grid-services/identity" }
+grid-services-interlink = { path = "../grid-services/interlink" }
 grid-proof = { path = "../grid-proof" }
 grid-proof-groth16 = { path = "../grid-proof-groth16" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }

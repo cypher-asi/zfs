@@ -8,8 +8,7 @@ use crate::metrics::MetricsSnapshot;
 /// multicodec prefix shared by all libp2p PeerIds).
 fn short_zode_id(id: &str) -> String {
     const PREFIX: &str = "Zx12D3KooW";
-    if id.starts_with(PREFIX) {
-        let unique = &id[PREFIX.len()..];
+    if let Some(unique) = id.strip_prefix(PREFIX) {
         let n = 6.min(unique.len());
         format!("Zx..{}", &unique[unique.len() - n..])
     } else if id.len() > 10 {

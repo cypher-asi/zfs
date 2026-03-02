@@ -6,6 +6,7 @@ use grid_net::{format_zode_id, NetworkEvent, NetworkService, OutboundRequestId, 
 use grid_programs_interlink::InterlinkDescriptor;
 use grid_proof::{NoopVerifier, ProofVerifierRegistry};
 use grid_proof_groth16::Groth16ShapeVerifier;
+use grid_service::ServiceRegistry;
 use grid_storage::{RocksStorage, SectorStore};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
@@ -46,6 +47,7 @@ pub struct Zode {
     event_loop_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
     rpc_server: Mutex<Option<RpcServer>>,
     rpc_config: RpcConfig,
+    service_registry: Mutex<ServiceRegistry>,
 }
 
 impl Zode {
@@ -122,8 +124,30 @@ impl Zode {
             program_proof_config,
         ));
 
+        let mut service_registry = ServiceRegistry::new();
+        Self::register_default_services(&mut service_registry);
+        let service_programs = service_registry.required_programs();
+        if !service_programs.is_empty() {
+            info!(count = service_programs.len(), "service-required programs added");
+        }
+
+        if let Err(e) = service_registry
+            .start_all(Arc::clone(&sector_handler) as _)
+            .await
+        {
+            warn!(error = %e, "failed to start services");
+        }
+
+        let service_router = service_registry.merged_router();
+
         let rpc_server = if config.rpc.enabled {
-            match RpcServer::start(&config.rpc, Arc::clone(&sector_handler) as _).await {
+            match RpcServer::start(
+                &config.rpc,
+                Arc::clone(&sector_handler) as _,
+                Some(service_router),
+            )
+            .await
+            {
                 Ok(rpc) => {
                     let _ = event_tx.send(LogEvent::RpcStarted {
                         bind_addr: rpc.bind_addr().to_string(),
@@ -167,7 +191,28 @@ impl Zode {
             event_loop_handle: Mutex::new(Some(event_loop_handle)),
             rpc_server: Mutex::new(rpc_server),
             rpc_config: config.rpc.clone(),
+            service_registry: Mutex::new(service_registry),
         })
+    }
+
+    fn register_default_services(registry: &mut ServiceRegistry) {
+        match grid_services_identity::IdentityService::new() {
+            Ok(svc) => {
+                if let Err(e) = registry.register(Arc::new(svc)) {
+                    warn!(error = %e, "failed to register identity service");
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to create identity service"),
+        }
+
+        match grid_services_interlink::InterlinkService::new() {
+            Ok(svc) => {
+                if let Err(e) = registry.register(Arc::new(svc)) {
+                    warn!(error = %e, "failed to register interlink service");
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to create interlink service"),
+        }
     }
 
     async fn start_network(
@@ -352,9 +397,17 @@ impl Zode {
         &self.network
     }
 
+    /// Access the service registry.
+    pub fn service_registry(&self) -> &Mutex<ServiceRegistry> {
+        &self.service_registry
+    }
+
     /// Gracefully shut down the Zode and wait for the event loop to exit.
     pub async fn shutdown(&self) {
         let _ = self.event_tx.send(LogEvent::ShuttingDown);
+        if let Err(e) = self.service_registry.lock().await.stop_all().await {
+            warn!(error = %e, "error stopping services");
+        }
         if let Some(rpc) = self.rpc_server.lock().await.take() {
             rpc.shutdown().await;
         }

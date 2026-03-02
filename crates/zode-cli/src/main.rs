@@ -189,6 +189,7 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
         sector_filter: Default::default(),
         network,
         rpc,
+        services: Default::default(),
     })
 }
 

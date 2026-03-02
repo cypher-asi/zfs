@@ -1,0 +1,56 @@
+package grid:service@1.0.0;
+
+interface types {
+    record service-descriptor {
+        name: string,
+        version: string,
+        required-programs: list<list<u8>>,
+        owned-programs: list<program-descriptor>,
+    }
+    record program-descriptor {
+        name: string,
+        version: string,
+    }
+    record http-request {
+        method: string,
+        path: string,
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+    record http-response {
+        status: u16,
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+}
+
+/// Host-provided: key-value storage over Grid Programs
+interface store {
+    get: func(program-id: list<u8>, key: list<u8>) -> result<option<list<u8>>, string>;
+    put: func(program-id: list<u8>, key: list<u8>, value: list<u8>) -> result<_, string>;
+    list-entries: func(program-id: list<u8>, key: list<u8>) -> result<list<list<u8>>, string>;
+    list-from: func(program-id: list<u8>, key: list<u8>, from: u64) -> result<list<list<u8>>, string>;
+    entry-count: func(program-id: list<u8>, key: list<u8>) -> result<u64, string>;
+}
+
+/// Host-provided: signed ephemeral tokens (replace server-side session state)
+interface ephemeral {
+    create-token: func(payload: list<u8>, ttl-secs: u64) -> result<string, string>;
+    verify-token: func(token: string) -> result<list<u8>, string>;
+}
+
+/// Guest-exported: the service implementation
+interface service {
+    use types.{service-descriptor, http-request, http-response};
+    get-descriptor: func() -> service-descriptor;
+    handle-request: func(req: http-request) -> http-response;
+    on-start: func() -> result<_, string>;
+    on-stop: func() -> result<_, string>;
+}
+
+/// The world a WASM service component lives in
+world grid-service {
+    import store;
+    import ephemeral;
+    export service;
+}

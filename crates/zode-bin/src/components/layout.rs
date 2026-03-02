@@ -6,18 +6,10 @@ use super::tokens::{self, colors, font_size, spacing};
 pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     let max = ui.max_rect();
 
-    let prev_clip = ui.clip_rect();
-    ui.set_clip_rect(prev_clip.intersect(egui::Rect::from_x_y_ranges(
-        max.left()..=max.right(),
-        prev_clip.top()..=prev_clip.bottom(),
-    )));
-
     let mut prepared = egui::Frame::default()
         .fill(colors::SURFACE)
         .corner_radius(0.0)
         .inner_margin(spacing::XL)
-        .outer_margin(egui::Margin::symmetric(1, 0))
-        .stroke(tokens::border_stroke())
         .begin(ui);
 
     {
@@ -31,13 +23,12 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(
     let resp = prepared.end(ui);
 
     let border_rect = egui::Rect::from_min_max(
-        egui::pos2(max.left() + 1.0, resp.rect.top()),
-        egui::pos2(max.right() - 1.0, resp.rect.bottom()),
+        egui::pos2(max.left(), resp.rect.top()),
+        egui::pos2(max.right(), resp.rect.bottom()),
     );
     ui.painter()
         .rect_stroke(border_rect, 0.0, tokens::border_stroke(), egui::StrokeKind::Inside);
 
-    ui.set_clip_rect(prev_clip);
     ui.add_space(spacing::MD);
 }
 

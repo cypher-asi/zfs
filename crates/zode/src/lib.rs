@@ -29,7 +29,10 @@ mod types;
 mod zode;
 
 pub use config::default_program_ids;
-pub use config::{DefaultProgramsConfig, SectorFilter, SectorLimitsConfig, ZodeConfig};
+pub use config::{
+    DefaultProgramsConfig, DefaultServicesConfig, SectorFilter, SectorLimitsConfig,
+    ServiceRegistryConfig, ZodeConfig,
+};
 pub use error::ZodeError;
 pub use grid_rpc::RpcConfig;
 pub use metrics::{MetricsSnapshot, ZodeMetrics};

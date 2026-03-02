@@ -128,8 +128,8 @@ impl ConstraintSynthesizer<Fr> for ShapeEncryptCircuit {
 
 /// Build a Poseidon config matching the one in `grid-crypto`.
 pub fn default_poseidon_config() -> PoseidonConfig<Fr> {
-    let full_rounds = 8;
-    let partial_rounds = 57;
+    let full_rounds: usize = 8;
+    let partial_rounds: usize = 57;
     let alpha = 5;
     let rate = 2;
     let capacity = 1;
@@ -153,8 +153,8 @@ pub fn default_poseidon_config() -> PoseidonConfig<Fr> {
         .collect();
 
     PoseidonConfig {
-        full_rounds: full_rounds as usize,
-        partial_rounds: partial_rounds as usize,
+        full_rounds,
+        partial_rounds,
         alpha: alpha as u64,
         ark: round_constants.chunks(width).map(|c| c.to_vec()).collect(),
         mds,
@@ -168,7 +168,7 @@ pub fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
     if data.is_empty() {
         return vec![Fr::from(0u64)];
     }
-    let mut elems = Vec::with_capacity((data.len() + BYTES_PER_ELEMENT - 1) / BYTES_PER_ELEMENT);
+    let mut elems = Vec::with_capacity(data.len().div_ceil(BYTES_PER_ELEMENT));
     for chunk in data.chunks(BYTES_PER_ELEMENT) {
         let mut repr = [0u8; 32];
         repr[0] = chunk.len() as u8;
@@ -180,5 +180,5 @@ pub fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
 
 /// Max field elements for a given bucket size.
 pub fn max_elements_for_bucket(bucket: u32) -> usize {
-    ((bucket as usize) + BYTES_PER_ELEMENT - 1) / BYTES_PER_ELEMENT
+    (bucket as usize).div_ceil(BYTES_PER_ELEMENT)
 }

@@ -1,0 +1,16 @@
+[package]
+name = "grid-services-identity"
+version = "0.2.0"
+edition = "2021"
+description = "Identity Service — wraps the ZID Program with an HTTP API"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+grid-core = { path = "../../grid-core" }
+grid-service = { path = "../../grid-service" }
+grid-programs-zid = { path = "../../grid-programs/zid" }
+async-trait = "0.1"
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"

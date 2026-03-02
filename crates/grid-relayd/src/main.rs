@@ -111,19 +111,16 @@ async fn main() -> Result<()> {
             let mut kademlia = kad::Behaviour::with_config(peer_id, store, kad_config);
             kademlia.set_mode(Some(kad::Mode::Server));
 
-            let mut relay_config = relay::Config::default();
-            relay_config.reservation_duration = Duration::from_secs(60 * 60);
-            relay_config.max_circuit_duration = Duration::from_secs(24 * 60 * 60);
-            relay_config.max_circuit_bytes = 0;
-            if let Some(max_res) = config.max_reservations {
-                relay_config.max_reservations = max_res;
-            }
-            if let Some(max_circ) = config.max_circuits {
-                relay_config.max_circuits = max_circ;
-            } else {
-                relay_config.max_circuits = 512;
-            }
-            relay_config.max_circuits_per_peer = 16;
+            let default_relay = relay::Config::default();
+            let relay_config = relay::Config {
+                reservation_duration: Duration::from_secs(60 * 60),
+                max_circuit_duration: Duration::from_secs(24 * 60 * 60),
+                max_circuit_bytes: 0,
+                max_reservations: config.max_reservations.unwrap_or(default_relay.max_reservations),
+                max_circuits: config.max_circuits.unwrap_or(512),
+                max_circuits_per_peer: 16,
+                ..default_relay
+            };
 
             info!(
                 max_reservations = relay_config.max_reservations,

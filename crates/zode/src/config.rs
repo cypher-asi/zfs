@@ -6,6 +6,7 @@ use grid_net::NetworkConfig;
 use grid_programs_interlink::InterlinkDescriptor;
 use grid_programs_zid::ZidDescriptor;
 use grid_rpc::RpcConfig;
+use grid_service::ServiceId;
 use grid_storage::StorageConfig;
 
 /// Toggle default programs (ZID, Interlink) on or off.
@@ -60,6 +61,24 @@ pub enum SectorFilter {
     AllowList(HashSet<SectorId>),
 }
 
+/// Configuration for the service registry.
+#[derive(Debug, Clone, Default)]
+pub struct ServiceRegistryConfig {
+    /// Explicitly enabled service IDs.
+    pub enabled_services: HashSet<ServiceId>,
+    /// Toggle built-in default services.
+    pub default_services: DefaultServicesConfig,
+}
+
+/// Toggle default built-in services on or off.
+#[derive(Debug, Clone, Default)]
+pub struct DefaultServicesConfig {
+    /// Enable the Identity service. Default: `false` (not yet implemented).
+    pub identity: bool,
+    /// Enable the Interlink service. Default: `false` (not yet implemented).
+    pub interlink: bool,
+}
+
 /// Full Zode configuration.
 #[derive(Debug, Clone)]
 pub struct ZodeConfig {
@@ -77,6 +96,8 @@ pub struct ZodeConfig {
     pub network: NetworkConfig,
     /// JSON-RPC HTTP server configuration.
     pub rpc: RpcConfig,
+    /// Service registry configuration.
+    pub services: ServiceRegistryConfig,
 }
 
 impl ZodeConfig {
@@ -132,6 +153,7 @@ impl Default for ZodeConfig {
             sector_filter: SectorFilter::default(),
             network: NetworkConfig::default(),
             rpc: RpcConfig::default(),
+            services: ServiceRegistryConfig::default(),
         }
     }
 }

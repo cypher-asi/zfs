@@ -44,6 +44,7 @@ pub(crate) struct StateSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tab {
     Status,
+    Services,
     Storage,
     Peers,
     Log,

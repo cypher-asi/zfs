@@ -129,6 +129,7 @@ impl ZodeApp {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_interlink_updater(
         rt: &tokio::runtime::Runtime,
         zode: &Arc<zode::Zode>,

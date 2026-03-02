@@ -60,7 +60,7 @@ impl ZodeApp {
 
         let settings = Settings::default();
 
-        let app = Self {
+        Self {
             rt,
             settings,
             zode: None,
@@ -87,9 +87,7 @@ impl ZodeApp {
             active_profile_id: None,
             session_password: None,
             settings_section: SettingsSection::General,
-        };
-
-        app
+        }
     }
 
     /// Returns the path where settings should be persisted for the current
@@ -607,6 +605,7 @@ impl ZodeApp {
         );
         ui.add_space(spacing::SM);
         ui.selectable_value(&mut self.tab, Tab::Status, "ZODE");
+        ui.selectable_value(&mut self.tab, Tab::Services, "SERVICES");
         ui.selectable_value(&mut self.tab, Tab::Storage, "STORAGE");
         ui.selectable_value(&mut self.tab, Tab::Peers, "PEERS");
         ui.selectable_value(&mut self.tab, Tab::Log, "LOG");
@@ -647,13 +646,12 @@ impl ZodeApp {
             self.tab = Tab::Identity;
         }
 
-        if !self.profiles.is_empty() {
-            if title_bar_icon(ui, egui_phosphor::regular::LOCK, false)
+        if !self.profiles.is_empty()
+            && title_bar_icon(ui, egui_phosphor::regular::LOCK, false)
                 .on_hover_text("Lock")
                 .clicked()
-            {
-                self.lock_session();
-            }
+        {
+            self.lock_session();
         }
 
         status_dot(ui, self.zode.is_some());
@@ -757,6 +755,7 @@ impl ZodeApp {
 
                 match self.tab {
                     Tab::Status => crate::render::render_status(self, ui, state),
+                    Tab::Services => crate::render_services::render_services(self, ui),
                     Tab::Storage => crate::render_storage::render_storage(self, ui, state),
                     Tab::Peers => crate::render::render_peers(self, ui, state),
                     Tab::Log => crate::render::render_log(self, ui, state),

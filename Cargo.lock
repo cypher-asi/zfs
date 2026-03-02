@@ -2792,6 +2792,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "grid-service"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64",
+ "grid-core",
+ "grid-rpc",
+ "hex",
+ "hmac",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "grid-services-identity"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "grid-core",
+ "grid-programs-zid",
+ "grid-service",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "grid-services-interlink"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "grid-core",
+ "grid-programs-interlink",
+ "grid-service",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "grid-storage"
 version = "0.2.0"
 dependencies = [
@@ -6561,6 +6610,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
@@ -8538,6 +8588,9 @@ dependencies = [
  "grid-proof",
  "grid-proof-groth16",
  "grid-rpc",
+ "grid-service",
+ "grid-services-identity",
+ "grid-services-interlink",
  "grid-storage",
  "serde",
  "serde_bytes",
@@ -8566,6 +8619,7 @@ dependencies = [
  "grid-programs-zid",
  "grid-proof-groth16",
  "grid-sdk",
+ "grid-service",
  "grid-storage",
  "hex",
  "hkdf",

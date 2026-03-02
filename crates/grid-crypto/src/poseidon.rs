@@ -216,7 +216,7 @@ fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
     if data.is_empty() {
         return vec![Fr::from(0u64)];
     }
-    let mut elems = Vec::with_capacity((data.len() + BYTES_PER_ELEMENT - 1) / BYTES_PER_ELEMENT);
+    let mut elems = Vec::with_capacity(data.len().div_ceil(BYTES_PER_ELEMENT));
     for chunk in data.chunks(BYTES_PER_ELEMENT) {
         let mut repr = [0u8; 32];
         repr[0] = chunk.len() as u8;
@@ -235,7 +235,7 @@ fn field_elements_to_original_bytes(elems: &[Fr]) -> Vec<u8> {
         if len == 0 && out.is_empty() && elems.len() == 1 {
             return Vec::new();
         }
-        if len > 0 && 1 + len <= repr.len() {
+        if len > 0 && len < repr.len() {
             out.extend_from_slice(&repr[1..1 + len]);
         }
     }
@@ -256,7 +256,7 @@ fn field_elements_to_bytes(elems: &[Fr]) -> Vec<u8> {
 
 /// Deserialize field elements from bytes (32 bytes each).
 fn bytes_to_field_elements_exact(data: &[u8]) -> Result<Vec<Fr>, CryptoError> {
-    if data.len() % 32 != 0 {
+    if !data.len().is_multiple_of(32) {
         return Err(CryptoError::PaddingError(format!(
             "ciphertext body length {} is not a multiple of 32",
             data.len()
@@ -281,8 +281,8 @@ fn field_element_to_bytes_32(e: &Fr) -> [u8; 32] {
 // ---------------------------------------------------------------------------
 
 static POSEIDON_CONFIG: LazyLock<PoseidonConfig<Fr>> = LazyLock::new(|| {
-    let full_rounds = 8;
-    let partial_rounds = 57;
+    let full_rounds: usize = 8;
+    let partial_rounds: usize = 57;
     let alpha = 5;
     let rate = RATE;
     let capacity = 1;
@@ -306,8 +306,8 @@ static POSEIDON_CONFIG: LazyLock<PoseidonConfig<Fr>> = LazyLock::new(|| {
         .collect();
 
     PoseidonConfig {
-        full_rounds: full_rounds as usize,
-        partial_rounds: partial_rounds as usize,
+        full_rounds,
+        partial_rounds,
         alpha: alpha as u64,
         ark: round_constants.chunks(width).map(|c| c.to_vec()).collect(),
         mds,
