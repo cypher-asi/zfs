@@ -43,6 +43,55 @@ pub(crate) struct ZodeApp {
     pub settings_section: SettingsSection,
     pub detail_selection: Option<DetailSelection>,
     pub detail_closing: bool,
+    detail_panel_anim: PanelAnim,
+}
+
+/// Tracks a smoothstep animation between two width values.
+struct PanelAnim {
+    from: f32,
+    to: f32,
+    start: Option<f64>,
+}
+
+impl Default for PanelAnim {
+    fn default() -> Self {
+        Self {
+            from: 0.0,
+            to: 0.0,
+            start: None,
+        }
+    }
+}
+
+impl PanelAnim {
+    const DURATION: f64 = 0.2;
+
+    fn ease(t: f32) -> f32 {
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    fn value(&self, now: f64) -> f32 {
+        match self.start {
+            Some(start) => {
+                let t = ((now - start) / Self::DURATION).clamp(0.0, 1.0) as f32;
+                self.from + (self.to - self.from) * Self::ease(t)
+            }
+            None => self.to,
+        }
+    }
+
+    fn animating(&self, now: f64) -> bool {
+        self.start
+            .is_some_and(|start| (now - start) < Self::DURATION)
+    }
+
+    fn set_target(&mut self, target: f32, now: f64) {
+        if (self.to - target).abs() > 0.5 {
+            self.from = self.value(now);
+            self.to = target;
+            self.start = Some(now);
+        }
+    }
 }
 
 impl ZodeApp {
@@ -91,6 +140,7 @@ impl ZodeApp {
             settings_section: SettingsSection::General,
             detail_selection: None,
             detail_closing: false,
+            detail_panel_anim: PanelAnim::default(),
         }
     }
 
@@ -752,7 +802,6 @@ impl ZodeApp {
 
     fn render_central_panel(&mut self, ctx: &egui::Context, state: &crate::state::StateSnapshot) {
         const DETAIL_PANEL_WIDTH: f32 = 202.0;
-        const DETAIL_ANIM_SPEED: f32 = 0.15;
 
         let has_detail = self.detail_selection.is_some();
         let target_w = if has_detail && !self.detail_closing {
@@ -761,22 +810,22 @@ impl ZodeApp {
             0.0
         };
 
-        let anim_w = ctx.animate_value_with_time(
-            egui::Id::new("detail_panel_width"),
-            target_w,
-            DETAIL_ANIM_SPEED,
-        );
+        let now = ctx.input(|i| i.time);
+        self.detail_panel_anim.set_target(target_w, now);
 
-        if (anim_w - target_w).abs() > 0.5 {
+        let anim_w = self.detail_panel_anim.value(now);
+        let animating = self.detail_panel_anim.animating(now);
+
+        if animating {
             ctx.request_repaint();
         }
 
-        if self.detail_closing && anim_w < 1.0 {
+        if self.detail_closing && !animating {
             self.detail_selection = None;
             self.detail_closing = false;
         }
 
-        if anim_w > 1.0 {
+        if anim_w > 0.5 {
             let detail_frame =
                 egui::Frame::default()
                     .fill(colors::PANEL_BG)
