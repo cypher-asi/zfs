@@ -42,8 +42,9 @@ pub struct Zode {
     connected_peers: Arc<RwLock<Vec<String>>>,
     /// Zode ID -> IP address for connected peers, updated by the event loop.
     peer_ips: Arc<RwLock<HashMap<String, String>>>,
-    /// Zode ID -> last activity timestamp, updated by the event loop.
-    peer_last_activity: Arc<RwLock<HashMap<String, std::time::Instant>>>,
+    /// Zode ID -> milliseconds since last packet exchange, snapshotted from
+    /// the network service on each event loop iteration.
+    peer_last_activity: Arc<RwLock<HashMap<String, u64>>>,
     event_tx: broadcast::Sender<LogEvent>,
     shutdown_tx: mpsc::Sender<()>,
     publish_tx: mpsc::Sender<(String, Vec<u8>)>,
@@ -97,7 +98,7 @@ impl Zode {
         let metrics = Arc::new(ZodeMetrics::default());
         let connected_peers: Arc<RwLock<Vec<String>>> = Arc::default();
         let peer_ips: Arc<RwLock<HashMap<String, String>>> = Arc::default();
-        let peer_last_activity: Arc<RwLock<HashMap<String, std::time::Instant>>> = Arc::default();
+        let peer_last_activity: Arc<RwLock<HashMap<String, u64>>> = Arc::default();
 
         let mut proof_registry = ProofVerifierRegistry::new();
         proof_registry.register(ProofSystem::None, Arc::new(NoopVerifier));
@@ -266,7 +267,7 @@ impl Zode {
         metrics: Arc<ZodeMetrics>,
         connected_peers: Arc<RwLock<Vec<String>>>,
         peer_ips: Arc<RwLock<HashMap<String, String>>>,
-        peer_last_activity: Arc<RwLock<HashMap<String, std::time::Instant>>>,
+        peer_last_activity: Arc<RwLock<HashMap<String, u64>>>,
         shutdown_rx: mpsc::Receiver<()>,
         publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         sector_request_rx: mpsc::Receiver<SectorRequestSubmission>,
@@ -329,14 +330,10 @@ impl Zode {
 
         let topics = self.topics.read().map(|t| t.clone()).unwrap_or_default();
 
-        let peer_last_activity: HashMap<String, u64> = self
+        let peer_last_activity = self
             .peer_last_activity
             .read()
-            .map(|m| {
-                m.iter()
-                    .map(|(id, inst)| (id.clone(), inst.elapsed().as_millis() as u64))
-                    .collect()
-            })
+            .map(|m| m.clone())
             .unwrap_or_default();
 
         ZodeStatus {
@@ -535,7 +532,7 @@ impl Zode {
         metrics: Arc<ZodeMetrics>,
         connected_peers: Arc<RwLock<Vec<String>>>,
         peer_ips: Arc<RwLock<HashMap<String, String>>>,
-        peer_last_activity: Arc<RwLock<HashMap<String, std::time::Instant>>>,
+        peer_last_activity: Arc<RwLock<HashMap<String, u64>>>,
         mut shutdown_rx: mpsc::Receiver<()>,
         mut publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         mut sector_request_rx: mpsc::Receiver<SectorRequestSubmission>,
@@ -550,8 +547,9 @@ impl Zode {
                 let mut net = network.lock().await;
                 tokio::select! {
                     event = net.next_event() => {
-                        // Snapshot peer IPs while we hold the network lock,
-                        // since `status()` cannot acquire it during `next_event`.
+                        // Snapshot peer IPs and last-activity while we hold the
+                        // network lock, since `status()` cannot acquire it
+                        // during `next_event`.
                         let fresh: HashMap<String, String> = net
                             .connected_peers_with_addrs()
                             .into_iter()
@@ -563,6 +561,14 @@ impl Zode {
                             .collect();
                         if let Ok(mut map) = peer_ips.write() {
                             *map = fresh;
+                        }
+                        let activity: HashMap<String, u64> = net
+                            .peer_last_activity_millis()
+                            .into_iter()
+                            .map(|(pid, ms)| (format_zode_id(&pid), ms))
+                            .collect();
+                        if let Ok(mut map) = peer_last_activity.write() {
+                            *map = activity;
                         }
                         event
                     },
@@ -619,7 +625,6 @@ impl Zode {
                 &event_tx,
                 &metrics,
                 &connected_peers,
-                &peer_last_activity,
             )
             .await;
         }
@@ -632,21 +637,12 @@ impl Zode {
         event_tx: &broadcast::Sender<LogEvent>,
         metrics: &Arc<ZodeMetrics>,
         connected_peers: &Arc<RwLock<Vec<String>>>,
-        peer_last_activity: &Arc<RwLock<HashMap<String, std::time::Instant>>>,
     ) {
         match event {
             NetworkEvent::PeerConnected(peer) => {
-                let zid = format_zode_id(&peer);
-                if let Ok(mut map) = peer_last_activity.write() {
-                    map.insert(zid, std::time::Instant::now());
-                }
                 Self::handle_peer_connected(peer, metrics, connected_peers, event_tx);
             }
             NetworkEvent::PeerDisconnected(peer) => {
-                let zid = format_zode_id(&peer);
-                if let Ok(mut map) = peer_last_activity.write() {
-                    map.remove(&zid);
-                }
                 Self::handle_peer_disconnected(peer, metrics, connected_peers, event_tx);
             }
             NetworkEvent::IncomingSectorRequest {
@@ -654,9 +650,6 @@ impl Zode {
                 request,
                 channel,
             } => {
-                if let Ok(mut map) = peer_last_activity.write() {
-                    map.insert(format_zode_id(&peer), std::time::Instant::now());
-                }
                 Self::handle_incoming_sector(
                     sector_handler,
                     network,
@@ -678,11 +671,6 @@ impl Zode {
                 topic,
                 data,
             } => {
-                if let Some(ref src) = source {
-                    if let Ok(mut map) = peer_last_activity.write() {
-                        map.insert(format_zode_id(src), std::time::Instant::now());
-                    }
-                }
                 let sender = source.map(|id| format_zode_id(&id));
                 crate::gossip::handle_gossip_message(
                     sector_handler,

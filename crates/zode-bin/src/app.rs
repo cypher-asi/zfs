@@ -776,7 +776,18 @@ impl ZodeApp {
                 .show_separator_line(false)
                 .frame(detail_frame)
                 .show(ctx, |ui| {
-                    crate::render_detail::render_detail(self, ui);
+                    let visible = ui.max_rect();
+                    let full_w = DETAIL_PANEL_WIDTH - spacing::MD;
+                    let content_rect = egui::Rect::from_min_max(
+                        egui::pos2(visible.right() - full_w, visible.top()),
+                        visible.right_bottom(),
+                    );
+                    ui.scope_builder(
+                        egui::UiBuilder::new().max_rect(content_rect),
+                        |ui| {
+                            crate::render_detail::render_detail(self, ui);
+                        },
+                    );
                 });
         }
 

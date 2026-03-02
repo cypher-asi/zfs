@@ -63,6 +63,9 @@ pub struct NetworkService {
     /// accumulate in Kademlia.
     dial_backoff: HashMap<PeerId, Instant>,
     dial_backoff_duration: Duration,
+    /// Per-peer last packet-exchange timestamp, updated on every swarm event
+    /// that involves a specific peer (Ping, Identify, Gossip, Sector, etc.).
+    peer_last_activity: HashMap<PeerId, std::time::Instant>,
 }
 
 impl NetworkService {
@@ -186,6 +189,7 @@ impl NetworkService {
             pending_relay_events: Vec::new(),
             dial_backoff: HashMap::new(),
             dial_backoff_duration,
+            peer_last_activity: HashMap::new(),
         })
     }
 
@@ -289,6 +293,16 @@ impl NetworkService {
                 let addrs = self.peer_addresses.get(peer).cloned().unwrap_or_default();
                 (*peer, addrs)
             })
+            .collect()
+    }
+
+    /// Returns per-peer last activity as milliseconds elapsed since each
+    /// peer's most recent packet exchange (Ping, Identify, Gossip, Sector,
+    /// etc.). Only includes currently connected peers.
+    pub fn peer_last_activity_millis(&self) -> HashMap<PeerId, u64> {
+        self.peer_last_activity
+            .iter()
+            .map(|(peer, inst)| (*peer, inst.elapsed().as_millis() as u64))
             .collect()
     }
 
@@ -446,6 +460,8 @@ impl NetworkService {
 
                 self.try_start_relay_listeners(&peer_id, &raw_addr);
                 self.try_kademlia_bootstrap();
+                self.peer_last_activity
+                    .insert(peer_id, std::time::Instant::now());
 
                 (num_established.get() == 1).then(|| NetworkEvent::PeerConnected(peer_id))
             }
@@ -458,6 +474,7 @@ impl NetworkService {
                 if num_established == 0 {
                     self.active_relay_listeners.remove(&peer_id);
                     self.discovered_peers.remove(&peer_id);
+                    self.peer_last_activity.remove(&peer_id);
                     // NOTE: peer_addresses is intentionally kept so that
                     // recently-disconnected peers survive into the peer cache
                     // and are re-dialed on next boot.
@@ -740,14 +757,42 @@ impl NetworkService {
     }
 
     fn map_behaviour_event(&mut self, event: GridBehaviourEvent) -> Option<NetworkEvent> {
+        let now = std::time::Instant::now();
         match event {
             GridBehaviourEvent::ConnectionLimits(_) => None,
-            GridBehaviourEvent::Gossipsub(ev) => Self::map_gossip_event(ev),
-            GridBehaviourEvent::SectorRr(ev) => Self::map_sector_rr_event(ev),
+            GridBehaviourEvent::Gossipsub(ev) => {
+                if let gossipsub::Event::Message { ref message, .. } = ev {
+                    if let Some(src) = message.source {
+                        self.peer_last_activity.insert(src, now);
+                    }
+                }
+                Self::map_gossip_event(ev)
+            }
+            GridBehaviourEvent::SectorRr(ev) => {
+                if let request_response::Event::Message { peer, .. } = &ev {
+                    self.peer_last_activity.insert(*peer, now);
+                }
+                Self::map_sector_rr_event(ev)
+            }
             GridBehaviourEvent::Kademlia(ev) => self.map_kademlia_event(ev),
             GridBehaviourEvent::Relay(ev) => self.map_relay_event(ev),
-            GridBehaviourEvent::Identify(ev) => self.map_identify_event(ev),
-            GridBehaviourEvent::Ping(_) => None,
+            GridBehaviourEvent::Identify(ev) => {
+                match &ev {
+                    identify::Event::Received { peer_id, .. }
+                    | identify::Event::Sent { peer_id, .. }
+                    | identify::Event::Pushed { peer_id, .. } => {
+                        self.peer_last_activity.insert(*peer_id, now);
+                    }
+                    _ => {}
+                }
+                self.map_identify_event(ev)
+            }
+            GridBehaviourEvent::Ping(ping) => {
+                if ping.result.is_ok() {
+                    self.peer_last_activity.insert(ping.peer, now);
+                }
+                None
+            }
         }
     }
 
