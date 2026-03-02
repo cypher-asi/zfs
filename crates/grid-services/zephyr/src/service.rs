@@ -669,7 +669,7 @@ async fn zone_head_handler(
     }
     let pid = &state.zone_program_ids[id as usize];
     let rt = state.runtime.read().unwrap_or_else(|e| e.into_inner());
-    let head = rt.zone_heads.get(&id).map(|h| hex::encode(h));
+    let head = rt.zone_heads.get(&id).map(hex::encode);
     Json(serde_json::json!({
         "zone_id": id,
         "program_id": pid.to_hex(),

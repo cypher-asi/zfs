@@ -23,6 +23,7 @@ pub(crate) struct OrchestratorApp {
     pub managed_nodes: Vec<ManagedNode>,
     pub poller_handles: Vec<tokio::task::JoinHandle<()>>,
     pub log_handles: Vec<tokio::task::JoinHandle<()>>,
+    pub traffic_handle: Option<tokio::task::JoinHandle<()>>,
 
     pub tab: Tab,
     pub phase: AppPhase,
@@ -35,9 +36,7 @@ pub(crate) struct OrchestratorApp {
     pub icon_texture: Option<egui::TextureHandle>,
     pub log_level_filter: Option<LogLevel>,
 
-    #[allow(dead_code)]
     pub auto_traffic: bool,
-    #[allow(dead_code)]
     pub traffic_rate: f32,
 }
 
@@ -49,6 +48,7 @@ impl OrchestratorApp {
             managed_nodes: Vec::new(),
             poller_handles: Vec::new(),
             log_handles: Vec::new(),
+            traffic_handle: None,
 
             tab: Tab::Dashboard,
             phase: AppPhase::Launch,
@@ -81,9 +81,28 @@ impl OrchestratorApp {
         let listeners =
             node_manager::spawn_log_listeners(&nodes, Arc::clone(&self.shared), &self.rt);
 
+        let total_zones = self.selected_preset.zones();
+        let zone_program_ids: Vec<grid_core::ProgramId> = (0..total_zones)
+            .filter_map(|z| {
+                grid_programs_zephyr::ZephyrZoneDescriptor::new(z)
+                    .program_id()
+                    .ok()
+            })
+            .collect();
+
+        let zode_arcs: Vec<Arc<zode::Zode>> = nodes.iter().map(|mn| Arc::clone(&mn.zode)).collect();
+        let traffic = crate::traffic_gen::spawn_traffic_generator(
+            &zode_arcs,
+            &zone_program_ids,
+            total_zones,
+            Arc::clone(&self.shared),
+            &self.rt,
+        );
+
         self.managed_nodes = nodes;
         self.poller_handles = pollers;
         self.log_handles = listeners;
+        self.traffic_handle = Some(traffic);
         self.phase = AppPhase::Running;
         self.launching = false;
         self.launch_instant = Some(Instant::now());
@@ -103,6 +122,9 @@ impl OrchestratorApp {
 
     fn do_shutdown(&mut self) {
         self.phase = AppPhase::ShuttingDown;
+        if let Some(h) = self.traffic_handle.take() {
+            h.abort();
+        }
         for h in self.poller_handles.drain(..) {
             h.abort();
         }

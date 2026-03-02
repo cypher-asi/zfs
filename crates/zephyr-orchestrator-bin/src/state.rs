@@ -186,18 +186,10 @@ pub(crate) struct RecentTransaction {
 }
 
 /// Traffic generator statistics.
+#[derive(Default)]
 pub(crate) struct TrafficStats {
     pub total_submitted: u64,
     pub recent: VecDeque<RecentTransaction>,
-}
-
-impl Default for TrafficStats {
-    fn default() -> Self {
-        Self {
-            total_submitted: 0,
-            recent: VecDeque::new(),
-        }
-    }
 }
 
 /// Shared mutable state polled by the UI.
