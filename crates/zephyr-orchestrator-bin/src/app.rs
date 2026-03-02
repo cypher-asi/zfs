@@ -486,6 +486,19 @@ fn snapshot(state: &AppState) -> AppState {
         launch_start: state.launch_start,
         auto_traffic: state.auto_traffic,
         traffic_rate: state.traffic_rate,
+        traffic_stats: crate::state::TrafficStats {
+            total_submitted: state.traffic_stats.total_submitted,
+            recent: state
+                .traffic_stats
+                .recent
+                .iter()
+                .map(|r| crate::state::RecentTransaction {
+                    nullifier_hex: r.nullifier_hex.clone(),
+                    zone_id: r.zone_id,
+                    timestamp: r.timestamp,
+                })
+                .collect(),
+        },
     }
 }
 

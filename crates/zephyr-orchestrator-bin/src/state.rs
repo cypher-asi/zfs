@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
 /// Top-level application phase.
@@ -178,6 +178,28 @@ impl LogLevel {
     }
 }
 
+/// A recently submitted transaction for the activity feed.
+pub(crate) struct RecentTransaction {
+    pub nullifier_hex: String,
+    pub zone_id: u32,
+    pub timestamp: Instant,
+}
+
+/// Traffic generator statistics.
+pub(crate) struct TrafficStats {
+    pub total_submitted: u64,
+    pub recent: VecDeque<RecentTransaction>,
+}
+
+impl Default for TrafficStats {
+    fn default() -> Self {
+        Self {
+            total_submitted: 0,
+            recent: VecDeque::new(),
+        }
+    }
+}
+
 /// Shared mutable state polled by the UI.
 pub(crate) struct AppState {
     pub phase: AppPhase,
@@ -187,6 +209,7 @@ pub(crate) struct AppState {
     pub launch_start: Option<Instant>,
     pub auto_traffic: bool,
     pub traffic_rate: f32,
+    pub traffic_stats: TrafficStats,
 }
 
 impl Default for AppState {
@@ -199,6 +222,7 @@ impl Default for AppState {
             launch_start: None,
             auto_traffic: false,
             traffic_rate: 1.0,
+            traffic_stats: TrafficStats::default(),
         }
     }
 }

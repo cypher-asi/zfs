@@ -11,6 +11,7 @@ mod render_log;
 mod render_nodes;
 mod render_topology;
 mod state;
+mod traffic_gen;
 
 use std::sync::Arc;
 
