@@ -256,6 +256,17 @@ impl Zode {
             }
             Err(e) => warn!(error = %e, "failed to create interlink service"),
         }
+
+        match grid_services_zephyr::ZephyrService::new(
+            grid_services_zephyr::ZephyrConfig::default(),
+        ) {
+            Ok(svc) => {
+                if let Err(e) = registry.register(Arc::new(svc)) {
+                    warn!(error = %e, "failed to register zephyr service");
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to create zephyr service"),
+        }
     }
 
     async fn start_network(

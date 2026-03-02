@@ -9,7 +9,9 @@ use grid_programs_zephyr::{ZephyrGlobalDescriptor, ZephyrZoneDescriptor};
 use grid_service::{RouteInfo, Service, ServiceContext, ServiceDescriptor, ServiceError};
 use std::sync::Arc;
 
+use crate::committee::my_assigned_zones;
 use crate::config::ZephyrConfig;
+use crate::epoch::EpochManager;
 
 /// Shared state handed to HTTP route handlers.
 pub(crate) struct ZephyrState {
@@ -21,7 +23,10 @@ pub(crate) struct ZephyrState {
 /// The Zephyr currency service.
 ///
 /// Implements zone-scoped BFT consensus for a note-based currency on GRID.
-/// See the service spec for the full protocol description.
+/// Lifecycle:
+/// - `on_start`: subscribes to global + assigned zone topics, initializes
+///   epoch manager, spawns consensus tasks
+/// - `on_stop`: cancels all tasks via the shutdown token, unsubscribes topics
 pub struct ZephyrService {
     descriptor: ServiceDescriptor,
     config: ZephyrConfig,
@@ -83,6 +88,14 @@ impl ZephyrService {
     pub fn zone_program_ids(&self) -> &[ProgramId] {
         &self.zone_program_ids
     }
+
+    fn global_topic(&self) -> String {
+        grid_core::program_topic(&self.global_program_id)
+    }
+
+    fn zone_topic(&self, zone_id: u32) -> String {
+        grid_core::program_topic(&self.zone_program_ids[zone_id as usize])
+    }
 }
 
 #[async_trait]
@@ -106,12 +119,61 @@ impl Service for ZephyrService {
             .with_state(state)
     }
 
-    async fn on_start(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
+    async fn on_start(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
+        let global_topic = self.global_topic();
+        ctx.subscribe_topic(&global_topic)?;
+        tracing::info!(%global_topic, "subscribed to global topic");
+
+        if self.config.validators.is_empty() {
+            tracing::warn!("no validators configured; Zephyr running in observer mode");
+            return Ok(());
+        }
+
+        let my_validator_id = match ctx.identity() {
+            Some(id) => {
+                let mut vid = [0u8; 32];
+                let pk_bytes = id.public_key();
+                let copy_len = pk_bytes.len().min(32);
+                vid[..copy_len].copy_from_slice(&pk_bytes[..copy_len]);
+                vid
+            }
+            None => {
+                tracing::warn!("no node identity; Zephyr running in observer mode");
+                return Ok(());
+            }
+        };
+
+        let epoch_mgr = EpochManager::new(
+            0,
+            self.config.epoch_duration_ms,
+            self.config.initial_randomness,
+            self.config.validators.clone(),
+            self.config.total_zones,
+            self.config.committee_size,
+        );
+
+        let assigned_zones = my_assigned_zones(
+            &my_validator_id,
+            epoch_mgr.randomness_seed(),
+            &self.config.validators,
+            self.config.total_zones,
+            self.config.committee_size,
+        );
+
+        for &zone_id in &assigned_zones {
+            let topic = self.zone_topic(zone_id);
+            ctx.subscribe_topic(&topic)?;
+            tracing::info!(zone_id, %topic, "subscribed to zone topic");
+        }
+
         tracing::info!(
             zones = self.config.total_zones,
             committee_size = self.config.committee_size,
+            assigned_zones = assigned_zones.len(),
+            epoch = epoch_mgr.current_epoch(),
             "Zephyr service started"
         );
+
         Ok(())
     }
 
@@ -224,5 +286,30 @@ mod tests {
         let svc1 = ZephyrService::new(ZephyrConfig::default()).unwrap();
         let svc2 = ZephyrService::new(ZephyrConfig::default()).unwrap();
         assert_eq!(svc1.global_program_id(), svc2.global_program_id());
+    }
+
+    #[test]
+    fn global_topic_format() {
+        let svc = ZephyrService::new(ZephyrConfig::default()).unwrap();
+        let topic = svc.global_topic();
+        assert!(topic.starts_with("prog/"));
+        assert_eq!(topic.len(), 5 + 64);
+    }
+
+    #[test]
+    fn zone_topics_are_distinct() {
+        let config = ZephyrConfig {
+            total_zones: 4,
+            ..ZephyrConfig::default()
+        };
+        let svc = ZephyrService::new(config).unwrap();
+        let topics: Vec<String> = (0..4).map(|z| svc.zone_topic(z)).collect();
+        for (i, a) in topics.iter().enumerate() {
+            for (j, b) in topics.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "zone {i} and {j} should have distinct topics");
+                }
+            }
+        }
     }
 }

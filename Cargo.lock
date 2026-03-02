@@ -2877,9 +2877,19 @@ dependencies = [
 name = "grid-services-zephyr"
 version = "0.2.0"
 dependencies = [
+ "ark-bn254",
+ "ark-crypto-primitives",
+ "ark-ff",
+ "ark-groth16",
+ "ark-r1cs-std",
+ "ark-relations",
+ "ark-serialize",
+ "ark-snark",
+ "ark-std",
  "async-trait",
  "axum",
  "grid-core",
+ "grid-crypto",
  "grid-programs-zephyr",
  "grid-service",
  "hex",
@@ -8648,6 +8658,7 @@ dependencies = [
  "grid-service",
  "grid-services-identity",
  "grid-services-interlink",
+ "grid-services-zephyr",
  "grid-storage",
  "serde",
  "serde_bytes",
