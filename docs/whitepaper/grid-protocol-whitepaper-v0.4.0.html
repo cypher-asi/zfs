@@ -1047,6 +1047,16 @@ GET|POST /services/{service_id}/... -- per-service endpoints
 <li>Map ProgramStore keys to SectorIds via <code>SHA-256(key)</code>; <code>put</code> appends, <code>get</code> reads last entry.</li>
 </ol>
 
+<h2>Version History</h2>
+
+<table>
+<tr><th>Version</th><th>Date</th><th>Changes</th></tr>
+<tr><td>0.1.0</td><td>January 2025</td><td>Initial draft. Core protocol: serialization (CBOR), identifiers (ProgramId, SectorId, CID), cryptographic primitives (NeuralKey, HKDF-SHA256, Ed25519 + ML-DSA-65 hybrid signatures, X25519 + ML-KEM-768 hybrid key agreement), sector encryption (XChaCha20-Poly1305, Poseidon sponge), padding, key wrapping, storage model (append-only logs), wire protocol (<code>/grid/sector/1.0.0</code>), GossipSub replication, shape proofs (Groth16), and standard programs (ZID, Interlink).</td></tr>
+<tr><td>0.2.0</td><td>February 2025</td><td>Sector ID derivation (&sect;6.6). DID encoding (&sect;5.6). Shamir secret sharing for NeuralKey backup (&sect;5.7). Expanded ZODE behavior specification (startup sequence, event loop, append+gossip flow). Visibility and privacy properties. Security considerations. Interoperability requirements checklist.</td></tr>
+<tr><td>0.3.0</td><td>March 2026</td><td>Services layer (&sect;15). New first-class concept: stateless servers that run on ZODES, use Programs for persistent state via ProgramStore (key-value over sector logs), and expose HTTP endpoints. ServiceDescriptor and ServiceId (&sect;4.5). Service trait, ServiceContext, ProgramStore operations, ephemeral tokens. ServiceRegistry lifecycle. HTTP route integration alongside JSON-RPC. WASM runtime with WIT contract (store, ephemeral host imports). Standard services: Identity (DID resolution) and Interlink (message retrieval). Service GossipSub topics (<code>svc/</code> prefix, &sect;9.2). Updated ZODE startup/shutdown sequences. WASM isolation and service statefulness security considerations.</td></tr>
+<tr><td>0.4.0</td><td>March 2026</td><td>Added version history.</td></tr>
+</table>
+
 </div>
 
 </body>

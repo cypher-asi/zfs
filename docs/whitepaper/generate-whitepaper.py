@@ -13,6 +13,8 @@ import tempfile
 import time
 import urllib.request
 
+VERSION = "0.4.0"
+
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 HTML_CONTENT = r"""<!DOCTYPE html>
@@ -1064,6 +1066,16 @@ GET|POST /services/{service_id}/... -- per-service endpoints
 <li>Map ProgramStore keys to SectorIds via <code>SHA-256(key)</code>; <code>put</code> appends, <code>get</code> reads last entry.</li>
 </ol>
 
+<h2>Version History</h2>
+
+<table>
+<tr><th>Version</th><th>Date</th><th>Changes</th></tr>
+<tr><td>0.1.0</td><td>January 2025</td><td>Initial draft. Core protocol: serialization (CBOR), identifiers (ProgramId, SectorId, CID), cryptographic primitives (NeuralKey, HKDF-SHA256, Ed25519 + ML-DSA-65 hybrid signatures, X25519 + ML-KEM-768 hybrid key agreement), sector encryption (XChaCha20-Poly1305, Poseidon sponge), padding, key wrapping, storage model (append-only logs), wire protocol (<code>/grid/sector/1.0.0</code>), GossipSub replication, shape proofs (Groth16), and standard programs (ZID, Interlink).</td></tr>
+<tr><td>0.2.0</td><td>February 2025</td><td>Sector ID derivation (&sect;6.6). DID encoding (&sect;5.6). Shamir secret sharing for NeuralKey backup (&sect;5.7). Expanded ZODE behavior specification (startup sequence, event loop, append+gossip flow). Visibility and privacy properties. Security considerations. Interoperability requirements checklist.</td></tr>
+<tr><td>0.3.0</td><td>March 2026</td><td>Services layer (&sect;15). New first-class concept: stateless servers that run on ZODES, use Programs for persistent state via ProgramStore (key-value over sector logs), and expose HTTP endpoints. ServiceDescriptor and ServiceId (&sect;4.5). Service trait, ServiceContext, ProgramStore operations, ephemeral tokens. ServiceRegistry lifecycle. HTTP route integration alongside JSON-RPC. WASM runtime with WIT contract (store, ephemeral host imports). Standard services: Identity (DID resolution) and Interlink (message retrieval). Service GossipSub topics (<code>svc/</code> prefix, &sect;9.2). Updated ZODE startup/shutdown sequences. WASM isolation and service statefulness security considerations.</td></tr>
+<tr><td>0.4.0</td><td>March 2026</td><td>Added version history.</td></tr>
+</table>
+
 </div>
 
 </body>
@@ -1077,7 +1089,7 @@ FOOTER_TEMPLATE = (
     'box-sizing:border-box;">'
     '<div style="width:calc(100% - 124px);margin:0 auto;display:flex;align-items:center;">'
     '<span style="flex:1;text-align:left;">'
-    "Version 0.3.0 :: March 2026"
+    f"Version {VERSION} :: March 2026"
     "</span>"
     '<span style="flex:0 0 auto;text-align:center;">'
     "THE GRID"
@@ -1106,8 +1118,8 @@ def _wait_for_devtools(port, retries=40, delay=0.5):
 
 def main():
     out_dir = pathlib.Path(__file__).parent
-    html_path = out_dir / "grid-protocol-whitepaper.html"
-    pdf_path = out_dir / "grid-protocol-whitepaper.pdf"
+    html_path = out_dir / f"grid-protocol-whitepaper-v{VERSION}.html"
+    pdf_path = out_dir / f"grid-protocol-whitepaper-v{VERSION}.pdf"
 
     html_path.write_text(HTML_CONTENT, encoding="utf-8")
     print(f"Wrote HTML -> {html_path}")
