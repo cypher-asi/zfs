@@ -434,6 +434,7 @@ mod tests {
                     version: "1.0.0".into(),
                     required_programs: vec![],
                     owned_programs: vec![],
+                    summary: String::new(),
                 },
             }
         }

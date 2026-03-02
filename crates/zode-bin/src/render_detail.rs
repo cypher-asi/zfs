@@ -223,6 +223,16 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
         ui,
         &format!("{} v{}", svc.descriptor.name, svc.descriptor.version),
     );
+
+    if !svc.descriptor.summary.is_empty() {
+        ui.add_space(spacing::SM);
+        ui.label(
+            egui::RichText::new(&svc.descriptor.summary)
+                .size(font_size::BODY)
+                .color(colors::TEXT_SECONDARY),
+        );
+    }
+
     ui.add_space(10.0);
 
     let (status_text, status_color) = if svc.running {

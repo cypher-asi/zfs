@@ -10,7 +10,7 @@ use crate::components::{colors, loading_state, muted_label, section};
 use crate::state::DetailSelection;
 
 const CARD_WIDTH: f32 = 260.0;
-const CARD_HEIGHT: f32 = 100.0;
+const CARD_HEIGHT: f32 = 130.0;
 const CHECKBOX_SIZE: f32 = 18.0;
 
 pub(crate) fn render_services(app: &mut ZodeApp, ui: &mut egui::Ui) {
@@ -199,6 +199,20 @@ fn service_card(
         egui::FontId::proportional(font_size::SMALL),
         colors::TEXT_MUTED,
     );
+
+    if !svc.descriptor.summary.is_empty() {
+        let summary_rect = egui::Rect::from_min_max(
+            egui::pos2(inner.left(), inner.top() + 38.0),
+            egui::pos2(inner.right(), inner.bottom() - 20.0),
+        );
+        let galley = painter.layout(
+            svc.descriptor.summary.clone(),
+            egui::FontId::proportional(font_size::SMALL),
+            colors::TEXT_SECONDARY,
+            summary_rect.width(),
+        );
+        painter.galley(summary_rect.left_top(), galley, colors::TEXT_SECONDARY);
+    }
 
     let required = svc.descriptor.required_programs.len();
     let owned = svc.descriptor.owned_programs.len();

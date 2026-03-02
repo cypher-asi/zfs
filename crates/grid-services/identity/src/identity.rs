@@ -34,6 +34,7 @@ impl IdentityService {
                 version: "1.0.0".into(),
                 required_programs: required,
                 owned_programs: vec![],
+                summary: "A sovereign identity system backed by post-quantum cryptography.".into(),
             },
             zid_v1_program_id: zid_v1_pid,
         })

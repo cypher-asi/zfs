@@ -20,6 +20,10 @@ pub struct ServiceDescriptor {
     /// Programs this service defines and owns. The Zode auto-registers these
     /// when the service is enabled.
     pub owned_programs: Vec<ProgramDescriptor>,
+    /// Short human-readable summary shown in the ZODE UI.
+    /// Excluded from canonical encoding so it does not affect the [`ServiceId`].
+    #[serde(skip)]
+    pub summary: String,
 }
 
 /// 32-byte service identity: `SHA-256(canonical_cbor(ServiceDescriptor))`.
@@ -101,6 +105,7 @@ mod tests {
             version: "1.0.0".into(),
             required_programs: vec![],
             owned_programs: vec![],
+            summary: String::new(),
         };
         let id1 = desc.service_id().unwrap();
         let id2 = desc.service_id().unwrap();
@@ -114,12 +119,14 @@ mod tests {
             version: "1.0.0".into(),
             required_programs: vec![],
             owned_programs: vec![],
+            summary: String::new(),
         };
         let desc2 = ServiceDescriptor {
             name: "svc-b".into(),
             version: "1.0.0".into(),
             required_programs: vec![],
             owned_programs: vec![],
+            summary: String::new(),
         };
         assert_ne!(desc1.service_id().unwrap(), desc2.service_id().unwrap());
     }
@@ -131,6 +138,7 @@ mod tests {
             version: "1.0.0".into(),
             required_programs: vec![],
             owned_programs: vec![],
+            summary: String::new(),
         };
         let topic = desc.topic().unwrap();
         assert!(topic.starts_with("svc/"));
@@ -144,6 +152,7 @@ mod tests {
             version: "0.1.0".into(),
             required_programs: vec![],
             owned_programs: vec![],
+            summary: String::new(),
         };
         let id = desc.service_id().unwrap();
         let hex_str = id.to_hex();
@@ -163,6 +172,7 @@ mod tests {
             version: "1.0.0".into(),
             required_programs: vec![required_pid],
             owned_programs: vec![owned.clone()],
+            summary: String::new(),
         };
         let all = desc.all_program_ids().unwrap();
         assert_eq!(all.len(), 2);

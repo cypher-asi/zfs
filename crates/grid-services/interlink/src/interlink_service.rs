@@ -29,6 +29,7 @@ impl InterlinkService {
                 version: "1.0.0".into(),
                 required_programs: vec![pid],
                 owned_programs: vec![],
+                summary: "A simple message broadcast system to all ZODES on THE GRID.".into(),
             },
             interlink_program_id: pid,
         })
