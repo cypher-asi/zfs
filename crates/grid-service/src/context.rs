@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::descriptor::ServiceId;
 use crate::error::ServiceError;
+use crate::identity::NodeIdentity;
 
 /// Command to dynamically manage GossipSub subscriptions at runtime.
 #[derive(Debug, Clone)]
@@ -53,6 +54,7 @@ pub struct ServiceContext {
     publish_tx: Option<mpsc::Sender<(String, Vec<u8>)>>,
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
     direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
+    identity: Option<Arc<NodeIdentity>>,
 }
 
 impl ServiceContext {
@@ -72,7 +74,18 @@ impl ServiceContext {
             publish_tx: None,
             topic_tx: None,
             direct_tx: None,
+            identity: None,
         }
+    }
+
+    /// Access the node's identity for signing and identification.
+    pub fn identity(&self) -> Option<&NodeIdentity> {
+        self.identity.as_deref()
+    }
+
+    /// Set the node identity. Called during startup.
+    pub fn set_identity(&mut self, identity: Arc<NodeIdentity>) {
+        self.identity = Some(identity);
     }
 
     /// Set the GossipSub publish and topic management channels.

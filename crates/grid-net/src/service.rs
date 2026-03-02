@@ -223,6 +223,11 @@ impl NetworkService {
             .expect("ed25519 keypair protobuf encoding cannot fail")
     }
 
+    /// Clone the keypair (for building signing closures).
+    pub fn keypair(&self) -> &libp2p::identity::Keypair {
+        &self.keypair
+    }
+
     /// Subscribe to a GossipSub topic (e.g. `"prog/{program_id_hex}"`).
     pub fn subscribe(&mut self, topic: &str) -> Result<(), NetworkError> {
         let topic = gossipsub::IdentTopic::new(topic);

@@ -141,8 +141,20 @@ impl Zode {
         let (topic_tx, topic_rx) = mpsc::channel(64);
         let (direct_tx, direct_rx) = mpsc::channel(64);
 
+        let node_identity = {
+            let kp = network.keypair().clone();
+            let zid = format_zode_id(&zode_id);
+            let pub_key = kp.public().encode_protobuf();
+            Arc::new(grid_service::NodeIdentity::new(
+                zid,
+                pub_key,
+                Arc::new(move |data: &[u8]| kp.sign(data).unwrap_or_default()),
+            ))
+        };
+
         let mut service_registry = ServiceRegistry::new();
         service_registry.set_channels(publish_tx.clone(), topic_tx, direct_tx);
+        service_registry.set_identity(node_identity);
         Self::register_default_services(&mut service_registry);
         let service_programs = service_registry.required_programs();
         if !service_programs.is_empty() {

@@ -13,6 +13,7 @@ use crate::context::{ServiceContext, ServiceEvent, TopicCommand};
 use crate::descriptor::ServiceId;
 use crate::error::ServiceError;
 use crate::gossip::ServiceGossipHandler;
+use crate::identity::NodeIdentity;
 use crate::service::Service;
 
 /// Manages the lifecycle of all active services on a Zode.
@@ -33,6 +34,7 @@ pub struct ServiceRegistry {
     publish_tx: Option<mpsc::Sender<(String, Vec<u8>)>>,
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
     direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
+    identity: Option<Arc<NodeIdentity>>,
 }
 
 impl Default for ServiceRegistry {
@@ -56,6 +58,7 @@ impl ServiceRegistry {
             publish_tx: None,
             topic_tx: None,
             direct_tx: None,
+            identity: None,
         }
     }
 
@@ -72,6 +75,11 @@ impl ServiceRegistry {
         self.publish_tx = Some(publish_tx);
         self.topic_tx = Some(topic_tx);
         self.direct_tx = Some(direct_tx);
+    }
+
+    /// Set the node identity that will be shared with all service contexts.
+    pub fn set_identity(&mut self, identity: Arc<NodeIdentity>) {
+        self.identity = Some(identity);
     }
 
     /// Register a service. Does NOT start it yet.
@@ -121,6 +129,9 @@ impl ServiceRegistry {
             }
             if let Some(dtx) = &self.direct_tx {
                 ctx.set_direct_channel(dtx.clone());
+            }
+            if let Some(ident) = &self.identity {
+                ctx.set_identity(Arc::clone(ident));
             }
 
             if let Err(e) = service.on_start(&ctx).await {
@@ -231,6 +242,9 @@ impl ServiceRegistry {
         }
         if let Some(dtx) = &self.direct_tx {
             ctx.set_direct_channel(dtx.clone());
+        }
+        if let Some(ident) = &self.identity {
+            ctx.set_identity(Arc::clone(ident));
         }
 
         service.on_start(&ctx).await?;
