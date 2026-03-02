@@ -1,18 +1,9 @@
-use std::fmt;
+use thiserror::Error;
 
 /// Errors from the RPC server.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RpcError {
     /// Failed to bind the TCP listener.
-    Bind(std::io::Error),
+    #[error("RPC bind error: {0}")]
+    Bind(#[source] std::io::Error),
 }
-
-impl fmt::Display for RpcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Bind(e) => write!(f, "RPC bind error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for RpcError {}

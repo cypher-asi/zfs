@@ -3,8 +3,8 @@ use thiserror::Error;
 /// Errors produced by proof verification.
 #[derive(Debug, Error)]
 pub enum ProofError {
-    #[error("verifier key not found for program {program_id}")]
-    VerifierKeyNotFound { program_id: String },
+    #[error("no verifier registered for proof system {proof_system}")]
+    VerifierNotFound { proof_system: String },
 
     #[error("proof verification failed: {reason}")]
     VerificationFailed { reason: String },

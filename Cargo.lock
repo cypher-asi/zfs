@@ -2674,6 +2674,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "sha2",
+ "thiserror 2.0.18",
  "zeroize",
  "zid",
 ]
@@ -2768,6 +2769,7 @@ dependencies = [
  "grid-core",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tower-http",
  "tracing",

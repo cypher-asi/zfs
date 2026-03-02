@@ -71,11 +71,11 @@ mod tests {
     }
 
     #[test]
-    fn proof_error_verifier_key_not_found() {
-        let err = ProofError::VerifierKeyNotFound {
-            program_id: "abc123".into(),
+    fn proof_error_verifier_not_found() {
+        let err = ProofError::VerifierNotFound {
+            proof_system: "Groth16".into(),
         };
-        assert!(err.to_string().contains("abc123"));
+        assert!(err.to_string().contains("Groth16"));
     }
 
     #[test]

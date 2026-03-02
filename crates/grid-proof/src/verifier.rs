@@ -74,8 +74,8 @@ impl ProofVerifierRegistry {
         let verifier =
             self.verifiers
                 .get(system)
-                .ok_or_else(|| ProofError::VerifierKeyNotFound {
-                    program_id: format!("{system:?}"),
+                .ok_or_else(|| ProofError::VerifierNotFound {
+                    proof_system: format!("{system:?}"),
                 })?;
         verifier.verify(cid, program_id, version, proof, payload_context)
     }
