@@ -35,6 +35,7 @@ pub struct ServiceRegistry {
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
     direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
     identity: Option<Arc<NodeIdentity>>,
+    proof_registry: Option<Arc<grid_proof::ProofVerifierRegistry>>,
 }
 
 impl Default for ServiceRegistry {
@@ -59,6 +60,7 @@ impl ServiceRegistry {
             topic_tx: None,
             direct_tx: None,
             identity: None,
+            proof_registry: None,
         }
     }
 
@@ -80,6 +82,11 @@ impl ServiceRegistry {
     /// Set the node identity that will be shared with all service contexts.
     pub fn set_identity(&mut self, identity: Arc<NodeIdentity>) {
         self.identity = Some(identity);
+    }
+
+    /// Set the proof verifier registry shared with all service contexts.
+    pub fn set_proof_registry(&mut self, registry: Arc<grid_proof::ProofVerifierRegistry>) {
+        self.proof_registry = Some(registry);
     }
 
     /// Register a service. Does NOT start it yet.
@@ -132,6 +139,9 @@ impl ServiceRegistry {
             }
             if let Some(ident) = &self.identity {
                 ctx.set_identity(Arc::clone(ident));
+            }
+            if let Some(pr) = &self.proof_registry {
+                ctx.set_proof_registry(Arc::clone(pr));
             }
 
             if let Err(e) = service.on_start(&ctx).await {
@@ -245,6 +255,9 @@ impl ServiceRegistry {
         }
         if let Some(ident) = &self.identity {
             ctx.set_identity(Arc::clone(ident));
+        }
+        if let Some(pr) = &self.proof_registry {
+            ctx.set_proof_registry(Arc::clone(pr));
         }
 
         service.on_start(&ctx).await?;

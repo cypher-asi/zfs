@@ -128,6 +128,7 @@ impl Zode {
             program_proof_config.insert(pid, ProofSystem::Groth16);
         }
 
+        let proof_registry_shared = Arc::clone(&proof_registry);
         let sector_handler = Arc::new(SectorRequestHandler::new(
             Arc::clone(&storage),
             effective,
@@ -155,6 +156,7 @@ impl Zode {
         let mut service_registry = ServiceRegistry::new();
         service_registry.set_channels(publish_tx.clone(), topic_tx, direct_tx);
         service_registry.set_identity(node_identity);
+        service_registry.set_proof_registry(proof_registry_shared);
         Self::register_default_services(&mut service_registry);
         let service_programs = service_registry.required_programs();
         if !service_programs.is_empty() {

@@ -55,6 +55,7 @@ pub struct ServiceContext {
     topic_tx: Option<mpsc::Sender<TopicCommand>>,
     direct_tx: Option<mpsc::Sender<(String, String, Vec<u8>)>>,
     identity: Option<Arc<NodeIdentity>>,
+    proof_registry: Option<Arc<grid_proof::ProofVerifierRegistry>>,
 }
 
 impl ServiceContext {
@@ -75,6 +76,7 @@ impl ServiceContext {
             topic_tx: None,
             direct_tx: None,
             identity: None,
+            proof_registry: None,
         }
     }
 
@@ -86,6 +88,19 @@ impl ServiceContext {
     /// Set the node identity. Called during startup.
     pub fn set_identity(&mut self, identity: Arc<NodeIdentity>) {
         self.identity = Some(identity);
+    }
+
+    /// Access the proof verifier registry for standalone proof verification.
+    ///
+    /// Returns `None` if the Zode was started without proof verification
+    /// support (e.g. in test configurations).
+    pub fn proof_registry(&self) -> Option<&Arc<grid_proof::ProofVerifierRegistry>> {
+        self.proof_registry.as_ref()
+    }
+
+    /// Set the proof verifier registry. Called during startup.
+    pub fn set_proof_registry(&mut self, registry: Arc<grid_proof::ProofVerifierRegistry>) {
+        self.proof_registry = Some(registry);
     }
 
     /// Set the GossipSub publish and topic management channels.
