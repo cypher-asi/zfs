@@ -90,10 +90,19 @@ struct ResolveRequest {
     did: String,
 }
 
+const MAX_DID_LEN: usize = 256;
+
 async fn resolve_handler(
     State(store): State<Arc<grid_service::ProgramStore>>,
     Json(req): Json<ResolveRequest>,
 ) -> impl IntoResponse {
+    if req.did.is_empty() || req.did.len() > MAX_DID_LEN {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "invalid DID length" })),
+        )
+            .into_response();
+    }
     let key = format!("did/{}", req.did);
     match store.get(key.as_bytes()) {
         Ok(Some(bytes)) => match grid_core::decode_canonical::<ZidMessage>(&bytes) {

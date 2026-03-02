@@ -7,7 +7,8 @@ use ark_snark::SNARK;
 use rand::SeedableRng;
 
 use crate::circuit::{
-    bytes_to_field_elements, default_poseidon_config, max_elements_for_bucket, ShapeEncryptCircuit,
+    bytes_to_field_elements, default_poseidon_config, max_elements_for_bucket,
+    ShapeEncryptCircuit, BUCKET_1K, BUCKET_4K,
 };
 use crate::error::Groth16Error;
 
@@ -39,6 +40,9 @@ pub fn generate_keys_for_bucket(
     ),
     Groth16Error,
 > {
+    if bucket_size != BUCKET_1K && bucket_size != BUCKET_4K {
+        return Err(Groth16Error::InvalidBucketSize { size: bucket_size });
+    }
     let max_elems = max_elements_for_bucket(bucket_size);
     let dummy_plaintext = vec![Fr::from(0u64); max_elems];
     let dummy_key = bytes_to_field_elements(&[0u8; 32]);

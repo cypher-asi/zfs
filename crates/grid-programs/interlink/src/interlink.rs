@@ -95,6 +95,13 @@ impl InterlinkDescriptor {
 
     /// Decode from canonical CBOR bytes.
     pub fn decode_canonical(bytes: &[u8]) -> Result<Self, GridError> {
+        if bytes.len() > MAX_MESSAGE_SIZE {
+            return Err(GridError::InvalidPayload(format!(
+                "InterlinkDescriptor input too large: {} > {}",
+                bytes.len(),
+                MAX_MESSAGE_SIZE
+            )));
+        }
         grid_core::decode_canonical(bytes)
     }
 }
@@ -253,6 +260,13 @@ impl ZMessage {
 
     /// Decode from canonical CBOR bytes.
     pub fn decode_canonical(bytes: &[u8]) -> Result<Self, GridError> {
+        if bytes.len() > MAX_MESSAGE_SIZE {
+            return Err(GridError::InvalidPayload(format!(
+                "ZMessage input too large: {} > {}",
+                bytes.len(),
+                MAX_MESSAGE_SIZE
+            )));
+        }
         grid_core::decode_canonical(bytes)
     }
 }

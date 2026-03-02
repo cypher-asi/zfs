@@ -1,6 +1,9 @@
 use grid_core::{CborType, FieldDef, FieldSchema, GridError, ProgramId, ProofSystem};
 use serde::{Deserialize, Serialize};
 
+/// Maximum input size for ZID decode operations (64 KiB).
+const MAX_INPUT_SIZE: usize = 64 * 1024;
+
 /// ZID (Zero Identity) program descriptor.
 ///
 /// Defines the identity program parameters. The `program_id` is derived
@@ -83,6 +86,12 @@ impl ZidDescriptor {
 
     /// Decode from canonical CBOR bytes.
     pub fn decode_canonical(bytes: &[u8]) -> Result<Self, GridError> {
+        if bytes.len() > MAX_INPUT_SIZE {
+            return Err(GridError::InvalidPayload(format!(
+                "ZidDescriptor input too large: {} > {MAX_INPUT_SIZE}",
+                bytes.len(),
+            )));
+        }
         grid_core::decode_canonical(bytes)
     }
 }
@@ -124,6 +133,12 @@ impl ZidMessage {
 
     /// Decode from canonical CBOR bytes.
     pub fn decode_canonical(bytes: &[u8]) -> Result<Self, GridError> {
+        if bytes.len() > MAX_INPUT_SIZE {
+            return Err(GridError::InvalidPayload(format!(
+                "ZidMessage input too large: {} > {MAX_INPUT_SIZE}",
+                bytes.len(),
+            )));
+        }
         grid_core::decode_canonical(bytes)
     }
 }

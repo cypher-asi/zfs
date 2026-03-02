@@ -275,8 +275,9 @@ impl ZodeApp {
                 self.session_password = Some(password);
                 self.profiles.push(meta);
 
-                let data_dir = profile::data_dir_for_profile(&base, &profile_id);
-                self.settings.data_dir = data_dir.to_string_lossy().to_string();
+                if let Ok(data_dir) = profile::data_dir_for_profile(&base, &profile_id) {
+                    self.settings.data_dir = data_dir.to_string_lossy().to_string();
+                }
 
                 self.identity_state.save_password.clear();
                 self.identity_state.setup_password_confirm.clear();

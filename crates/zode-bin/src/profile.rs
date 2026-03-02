@@ -26,20 +26,35 @@ fn manifest_path(base: &Path) -> PathBuf {
     base.join("profiles.json")
 }
 
-fn profile_dir(base: &Path, id: &str) -> PathBuf {
-    base.join("profiles").join(id)
+fn validate_profile_id(id: &str) -> Result<(), ProfileError> {
+    if id.is_empty()
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains("..")
+        || id.contains('\0')
+    {
+        return Err(ProfileError::Io(format!(
+            "invalid profile id: {id:?}"
+        )));
+    }
+    Ok(())
 }
 
-fn vault_path(base: &Path, id: &str) -> PathBuf {
-    profile_dir(base, id).join("vault.enc")
+fn profile_dir(base: &Path, id: &str) -> Result<PathBuf, ProfileError> {
+    validate_profile_id(id)?;
+    Ok(base.join("profiles").join(id))
 }
 
-pub(crate) fn data_dir_for_profile(base: &Path, id: &str) -> PathBuf {
-    profile_dir(base, id).join("data")
+fn vault_path(base: &Path, id: &str) -> Result<PathBuf, ProfileError> {
+    Ok(profile_dir(base, id)?.join("vault.enc"))
 }
 
-pub(crate) fn settings_path_for_profile(base: &Path, id: &str) -> PathBuf {
-    profile_dir(base, id).join("settings.json")
+pub(crate) fn data_dir_for_profile(base: &Path, id: &str) -> Result<PathBuf, ProfileError> {
+    Ok(profile_dir(base, id)?.join("data"))
+}
+
+pub(crate) fn settings_path_for_profile(base: &Path, id: &str) -> Result<PathBuf, ProfileError> {
+    Ok(profile_dir(base, id)?.join("settings.json"))
 }
 
 pub(crate) fn global_settings_path(base: &Path) -> PathBuf {
@@ -92,14 +107,14 @@ pub(crate) fn create_profile(
             .as_nanos()
     });
 
-    let dir = profile_dir(base, &id);
+    let dir = profile_dir(base, &id)?;
     std::fs::create_dir_all(&dir).map_err(|e| ProfileError::Io(e.to_string()))?;
-    std::fs::create_dir_all(data_dir_for_profile(base, &id))
+    std::fs::create_dir_all(data_dir_for_profile(base, &id)?)
         .map_err(|e| ProfileError::Io(e.to_string()))?;
 
     let vault = vault::encrypt_vault(&params.plaintext, &params.password)
         .map_err(|e| ProfileError::Vault(e.to_string()))?;
-    vault::save_vault(&vault_path(base, &id), &vault)
+    vault::save_vault(&vault_path(base, &id)?, &vault)
         .map_err(|e| ProfileError::Vault(e.to_string()))?;
 
     let now = std::time::SystemTime::now()
@@ -127,7 +142,7 @@ pub(crate) fn unlock_profile(
     profile_id: &str,
     password: &str,
 ) -> Result<VaultPlaintext, ProfileError> {
-    let vp = vault_path(base, profile_id);
+    let vp = vault_path(base, profile_id)?;
     let vault = vault::load_vault(&vp).map_err(|e| ProfileError::Vault(e.to_string()))?;
     vault::decrypt_vault(&vault, password).map_err(|e| ProfileError::Vault(e.to_string()))
 }
@@ -140,12 +155,12 @@ pub(crate) fn update_vault(
 ) -> Result<(), ProfileError> {
     let vault = vault::encrypt_vault(plaintext, password)
         .map_err(|e| ProfileError::Vault(e.to_string()))?;
-    vault::save_vault(&vault_path(base, profile_id), &vault)
+    vault::save_vault(&vault_path(base, profile_id)?, &vault)
         .map_err(|e| ProfileError::Vault(e.to_string()))
 }
 
 pub(crate) fn delete_profile(base: &Path, profile_id: &str) -> Result<(), ProfileError> {
-    let dir = profile_dir(base, profile_id);
+    let dir = profile_dir(base, profile_id)?;
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| ProfileError::Io(e.to_string()))?;
     }

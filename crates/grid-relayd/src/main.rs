@@ -417,19 +417,28 @@ fn parse_config(cli: &Cli, env: &HashMap<String, String>) -> Result<RelaydConfig
     })
 }
 
+const MAX_CONFIG_VALUE: usize = 100_000;
+
 fn parse_usize(cli: Option<usize>, env: Option<&String>, name: &str) -> Result<Option<usize>> {
-    if cli.is_some() {
-        return Ok(cli);
-    }
-    match env {
-        Some(raw) => {
-            let parsed = raw
-                .parse::<usize>()
-                .map_err(|e| anyhow::anyhow!("{name}: invalid unsigned integer '{raw}': {e}"))?;
-            Ok(Some(parsed))
+    let value = if cli.is_some() {
+        cli
+    } else {
+        match env {
+            Some(raw) => {
+                let parsed = raw
+                    .parse::<usize>()
+                    .map_err(|e| anyhow::anyhow!("{name}: invalid unsigned integer '{raw}': {e}"))?;
+                Some(parsed)
+            }
+            None => None,
         }
-        None => Ok(None),
+    };
+    if let Some(v) = value {
+        if v > MAX_CONFIG_VALUE {
+            anyhow::bail!("{name}: value {v} exceeds maximum {MAX_CONFIG_VALUE}");
+        }
     }
+    Ok(value)
 }
 
 fn current_env() -> HashMap<String, String> {

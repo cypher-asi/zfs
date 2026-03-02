@@ -87,10 +87,19 @@ struct MessagesQuery {
     from: u64,
 }
 
+const MAX_CHANNEL_LEN: usize = 256;
+
 async fn get_messages(
     State(store): State<Arc<grid_service::ProgramStore>>,
     Query(query): Query<MessagesQuery>,
 ) -> impl IntoResponse {
+    if query.channel.is_empty() || query.channel.len() > MAX_CHANNEL_LEN {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "invalid channel name length" })),
+        )
+            .into_response();
+    }
     let channel_id = grid_programs_interlink::ChannelId::from_str_id(&query.channel);
     let sector_id_bytes = channel_id.sector_id();
     let key = sector_id_bytes.as_bytes();

@@ -163,8 +163,20 @@ pub fn default_poseidon_config() -> PoseidonConfig<Fr> {
     }
 }
 
+/// Maximum input size accepted by `bytes_to_field_elements` (largest bucket).
+const MAX_INPUT_BYTES: usize = BUCKET_4K as usize;
+
 /// Pack bytes into BN254 field elements (31 usable bytes each).
+///
+/// Panics if `data` exceeds `BUCKET_4K` bytes. Callers should validate
+/// input size before calling this function.
 pub fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
+    assert!(
+        data.len() <= MAX_INPUT_BYTES,
+        "bytes_to_field_elements: input {} bytes exceeds max {}",
+        data.len(),
+        MAX_INPUT_BYTES
+    );
     if data.is_empty() {
         return vec![Fr::from(0u64)];
     }

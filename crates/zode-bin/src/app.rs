@@ -100,6 +100,7 @@ impl ZodeApp {
         let base = profile::base_dir();
         if let Some(ref id) = self.active_profile_id {
             profile::settings_path_for_profile(&base, id)
+                .unwrap_or_else(|_| profile::global_settings_path(&base))
         } else {
             profile::global_settings_path(&base)
         }
@@ -182,8 +183,9 @@ impl ZodeApp {
                 self.session_password = Some(self.unlock_password.clone());
                 self.unlock_password.clear();
 
-                let settings_path = profile::settings_path_for_profile(&base, profile_id);
-                self.settings = Settings::load_from(&settings_path);
+                if let Ok(settings_path) = profile::settings_path_for_profile(&base, profile_id) {
+                    self.settings = Settings::load_from(&settings_path);
+                }
 
                 let shares: Vec<zid::ShamirShare> = plaintext
                     .shares
@@ -242,8 +244,9 @@ impl ZodeApp {
                         });
                 }
 
-                let data_dir = profile::data_dir_for_profile(&base, profile_id);
-                self.settings.data_dir = data_dir.to_string_lossy().to_string();
+                if let Ok(data_dir) = profile::data_dir_for_profile(&base, profile_id) {
+                    self.settings.data_dir = data_dir.to_string_lossy().to_string();
+                }
 
                 if self.zode.is_some() {
                     self.phase = AppPhase::Running;

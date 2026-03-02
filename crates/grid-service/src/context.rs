@@ -203,16 +203,21 @@ impl ProgramStore {
         }
     }
 
-    /// Read all entries for a key (full history / collection).
+    /// Default pagination limit for unbounded reads.
+    const DEFAULT_PAGE_LIMIT: u32 = 10_000;
+
+    /// Read all entries for a key (full history / collection), up to the
+    /// default pagination limit.
     pub fn list(&self, key: &[u8]) -> Result<Vec<Vec<u8>>, ServiceError> {
         let sector_id = self.key_to_sector_id(key);
-        self.read_log(&sector_id, 0, u32::MAX)
+        self.read_log(&sector_id, 0, Self::DEFAULT_PAGE_LIMIT)
     }
 
-    /// Read entries for a key starting from an index.
+    /// Read entries for a key starting from an index, up to the default
+    /// pagination limit.
     pub fn list_from(&self, key: &[u8], from: u64) -> Result<Vec<Vec<u8>>, ServiceError> {
         let sector_id = self.key_to_sector_id(key);
-        self.read_log(&sector_id, from, u32::MAX)
+        self.read_log(&sector_id, from, Self::DEFAULT_PAGE_LIMIT)
     }
 
     /// Get the number of entries for a key.
