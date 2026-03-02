@@ -12,6 +12,9 @@ pub enum ZodeError {
     #[error("core error: {0}")]
     Core(#[from] grid_core::GridError),
 
+    #[error("service error: {0}")]
+    Service(#[from] grid_service::ServiceError),
+
     #[error("policy reject: {0}")]
     PolicyReject(String),
 

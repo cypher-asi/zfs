@@ -128,17 +128,23 @@ impl Default for SectorLimitsConfig {
     }
 }
 
-/// Returns the ProgramIds of the v0.1.0 default programs (ZID and Interlink).
+/// Returns the ProgramIds of all known programs with human-readable names.
 ///
 /// These are the standard programs a Zode subscribes to out of the box.
 /// Each entry is `(human_name, program_id)`.
 pub fn default_program_ids() -> Vec<(&'static str, ProgramId)> {
-    let mut out = Vec::with_capacity(2);
+    let mut out = Vec::with_capacity(4);
     if let Ok(pid) = ZidDescriptor::v1().program_id() {
-        out.push(("ZID", pid));
+        out.push(("ZID v1", pid));
+    }
+    if let Ok(pid) = ZidDescriptor::v2().program_id() {
+        out.push(("ZID v2", pid));
+    }
+    if let Ok(pid) = InterlinkDescriptor::v1().program_id() {
+        out.push(("Interlink v1", pid));
     }
     if let Ok(pid) = InterlinkDescriptor::v2().program_id() {
-        out.push(("Interlink", pid));
+        out.push(("Interlink v2", pid));
     }
     out
 }

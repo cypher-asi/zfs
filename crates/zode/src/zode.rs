@@ -38,7 +38,7 @@ pub struct Zode {
     zode_id: ZodeId,
     keypair_protobuf: Vec<u8>,
     data_dir: std::path::PathBuf,
-    topics: Vec<String>,
+    topics: Arc<RwLock<Vec<String>>>,
     connected_peers: Arc<RwLock<Vec<String>>>,
     event_tx: broadcast::Sender<LogEvent>,
     shutdown_tx: mpsc::Sender<()>,
@@ -182,7 +182,7 @@ impl Zode {
             zode_id,
             keypair_protobuf,
             data_dir,
-            topics: topic_strings,
+            topics: Arc::new(RwLock::new(topic_strings)),
             connected_peers,
             event_tx,
             shutdown_tx,
@@ -313,11 +313,17 @@ impl Zode {
             HashMap::new()
         };
 
+        let topics = self
+            .topics
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default();
+
         ZodeStatus {
             zode_id: format_zode_id(&self.zode_id),
             peer_count,
             connected_peers,
-            topics: self.topics.clone(),
+            topics,
             metrics,
             rpc_enabled,
             rpc_addr,
@@ -360,9 +366,12 @@ impl Zode {
         &self.storage
     }
 
-    /// Lock-free access to subscribed topic strings (e.g. `"prog/{hex}"`).
-    pub fn topics(&self) -> &[String] {
-        &self.topics
+    /// Snapshot of currently subscribed topic strings (e.g. `"prog/{hex}"`).
+    pub fn topics(&self) -> Vec<String> {
+        self.topics
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default()
     }
 
     /// Queue a GossipSub publish.  The event loop will send it on the
@@ -395,6 +404,84 @@ impl Zode {
     /// Access the network service (for advanced operations).
     pub fn network(&self) -> &Arc<Mutex<NetworkService>> {
         &self.network
+    }
+
+    /// Stop a single service and unsubscribe from any programs that are no
+    /// longer required by any running service.
+    pub async fn stop_service(
+        &self,
+        id: &grid_service::ServiceId,
+    ) -> Result<(), crate::error::ZodeError> {
+        let mut registry = self.service_registry.lock().await;
+        registry
+            .stop_service(id)
+            .await
+            .map_err(ZodeError::Service)?;
+
+        let still_needed = registry.active_programs();
+        drop(registry);
+
+        self.sync_topics(&still_needed).await;
+        Ok(())
+    }
+
+    /// Start a single previously-stopped service and subscribe to any new
+    /// programs it requires.
+    pub async fn start_service(
+        &self,
+        id: &grid_service::ServiceId,
+    ) -> Result<(), crate::error::ZodeError> {
+        let mut registry = self.service_registry.lock().await;
+        registry
+            .start_service(id)
+            .await
+            .map_err(ZodeError::Service)?;
+
+        let needed = registry.active_programs();
+        drop(registry);
+
+        self.sync_topics(&needed).await;
+        Ok(())
+    }
+
+    /// Reconcile GossipSub subscriptions with the set of programs that
+    /// running services actually need. Subscribes to new topics and
+    /// unsubscribes from topics no longer required.
+    async fn sync_topics(&self, needed_programs: &std::collections::HashSet<grid_core::ProgramId>) {
+        let needed_topics: std::collections::HashSet<String> = needed_programs
+            .iter()
+            .map(grid_core::program_topic)
+            .collect();
+
+        let current_topics: std::collections::HashSet<String> = self
+            .topics
+            .read()
+            .map(|t| t.iter().cloned().collect())
+            .unwrap_or_default();
+
+        let mut net = self.network.lock().await;
+
+        for topic in current_topics.difference(&needed_topics) {
+            if let Err(e) = net.unsubscribe(topic) {
+                warn!(topic, error = %e, "failed to unsubscribe from topic");
+            } else {
+                info!(topic, "unsubscribed from topic");
+            }
+        }
+
+        for topic in needed_topics.difference(&current_topics) {
+            if let Err(e) = net.subscribe(topic) {
+                warn!(topic, error = %e, "failed to subscribe to topic");
+            } else {
+                info!(topic, "subscribed to topic");
+            }
+        }
+
+        drop(net);
+
+        if let Ok(mut topics) = self.topics.write() {
+            *topics = needed_topics.into_iter().collect();
+        }
     }
 
     /// Access the service registry.

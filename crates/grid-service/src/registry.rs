@@ -268,6 +268,19 @@ impl ServiceRegistry {
         programs
     }
 
+    /// Collect the union of programs needed by currently **running** services.
+    pub fn active_programs(&self) -> HashSet<ProgramId> {
+        let mut programs = HashSet::new();
+        for (&id, service) in &self.services {
+            if self.contexts.contains_key(&id) {
+                if let Ok(ids) = service.descriptor().all_program_ids() {
+                    programs.extend(ids);
+                }
+            }
+        }
+        programs
+    }
+
     pub fn event_tx(&self) -> &broadcast::Sender<ServiceEvent> {
         &self.event_tx
     }

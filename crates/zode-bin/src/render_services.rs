@@ -79,11 +79,10 @@ fn service_card(
         let service_id = svc.id;
         let is_running = svc.running;
         rt.spawn(async move {
-            let mut registry = zode.service_registry().lock().await;
             let result = if is_running {
-                registry.stop_service(&service_id).await
+                zode.stop_service(&service_id).await
             } else {
-                registry.start_service(&service_id).await
+                zode.start_service(&service_id).await
             };
             if let Err(e) = result {
                 tracing::error!(
