@@ -12,8 +12,8 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisE
 pub const BYTES_PER_ELEMENT: usize = 30;
 
 /// Supported message-size buckets and corresponding max field elements.
-pub const BUCKET_1K: u32 = 1024;
-pub const BUCKET_4K: u32 = 4096;
+pub(crate) const BUCKET_1K: u32 = 1024;
+pub(crate) const BUCKET_4K: u32 = 4096;
 
 /// Universal shape + encrypt circuit for Groth16.
 ///
@@ -127,7 +127,7 @@ impl ConstraintSynthesizer<Fr> for ShapeEncryptCircuit {
 }
 
 /// Build a Poseidon config matching the one in `grid-crypto`.
-pub fn default_poseidon_config() -> PoseidonConfig<Fr> {
+pub(crate) fn default_poseidon_config() -> PoseidonConfig<Fr> {
     let full_rounds: usize = 8;
     let partial_rounds: usize = 57;
     let alpha = 5;
@@ -170,7 +170,7 @@ const MAX_INPUT_BYTES: usize = BUCKET_4K as usize;
 ///
 /// Panics if `data` exceeds `BUCKET_4K` bytes. Callers should validate
 /// input size before calling this function.
-pub fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
+pub(crate) fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
     assert!(
         data.len() <= MAX_INPUT_BYTES,
         "bytes_to_field_elements: input {} bytes exceeds max {}",
@@ -191,7 +191,7 @@ pub fn bytes_to_field_elements(data: &[u8]) -> Vec<Fr> {
 }
 
 /// Max field elements for a given bucket size.
-pub fn max_elements_for_bucket(bucket: u32) -> usize {
+pub(crate) fn max_elements_for_bucket(bucket: u32) -> usize {
     (bucket as usize).div_ceil(BYTES_PER_ELEMENT)
 }
 

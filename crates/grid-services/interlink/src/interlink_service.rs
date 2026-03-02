@@ -10,12 +10,14 @@ use grid_service::{RouteInfo, Service, ServiceContext, ServiceDescriptor, Servic
 use serde::Deserialize;
 use std::sync::Arc;
 
+/// Service that provides channel-based messaging over the Interlink program.
 pub struct InterlinkService {
     descriptor: ServiceDescriptor,
     interlink_program_id: ProgramId,
 }
 
 impl InterlinkService {
+    /// Create a new `InterlinkService`, resolving the Interlink v2 program ID.
     pub fn new() -> Result<Self, ServiceError> {
         let pid = InterlinkDescriptor::v2()
             .program_id()

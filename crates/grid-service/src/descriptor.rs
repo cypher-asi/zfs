@@ -11,7 +11,9 @@ use std::fmt;
 /// own (`owned_programs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceDescriptor {
+    /// Human-readable service name (e.g. `"IDENTITY"`).
     pub name: String,
+    /// SemVer version string for this service descriptor.
     pub version: String,
     /// Programs this service reads/writes (must already exist on the Zode).
     pub required_programs: Vec<ProgramId>,
@@ -26,6 +28,7 @@ pub struct ServiceDescriptor {
 pub struct ServiceId(#[serde(with = "serde_bytes")] [u8; 32]);
 
 impl ServiceDescriptor {
+    /// Compute the deterministic [`ServiceId`] by hashing the canonical CBOR encoding.
     pub fn service_id(&self) -> Result<ServiceId, GridError> {
         let bytes = grid_core::encode_canonical(self)?;
         let hash = Sha256::digest(&bytes);
@@ -49,14 +52,17 @@ impl ServiceDescriptor {
 }
 
 impl ServiceId {
+    /// Return the raw 32-byte hash.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
+    /// Hex-encode the 32-byte id.
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
     }
 
+    /// Parse a [`ServiceId`] from a 64-char hex string.
     pub fn from_hex(s: &str) -> Result<Self, GridError> {
         let bytes = hex::decode(s).map_err(|e| GridError::Decode(e.to_string()))?;
         let arr: [u8; 32] = bytes.try_into().map_err(|_| {

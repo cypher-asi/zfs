@@ -10,12 +10,14 @@ use grid_service::{RouteInfo, Service, ServiceContext, ServiceDescriptor, Servic
 use serde::Deserialize;
 use std::sync::Arc;
 
+/// Service that resolves DIDs to their on-Zode identity records.
 pub struct IdentityService {
     descriptor: ServiceDescriptor,
     zid_v1_program_id: ProgramId,
 }
 
 impl IdentityService {
+    /// Create a new `IdentityService`, resolving required ZID program IDs.
     pub fn new() -> Result<Self, ServiceError> {
         let zid_v1_pid = ZidDescriptor::v1()
             .program_id()

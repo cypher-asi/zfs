@@ -71,10 +71,10 @@ pub const WIDGET_HEIGHT: f32 = 24.0;
 pub const ICON_SIZE: f32 = 16.0;
 pub const STROKE_DEFAULT: f32 = 1.0;
 
-pub fn default_stroke() -> eframe::egui::Stroke {
+pub(crate) fn default_stroke() -> eframe::egui::Stroke {
     eframe::egui::Stroke::new(STROKE_DEFAULT, colors::BORDER_SUBTLE)
 }
 
-pub fn border_stroke() -> eframe::egui::Stroke {
+pub(crate) fn border_stroke() -> eframe::egui::Stroke {
     eframe::egui::Stroke::new(STROKE_DEFAULT, colors::BORDER)
 }
