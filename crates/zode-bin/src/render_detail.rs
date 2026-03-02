@@ -60,6 +60,12 @@ fn kv_row_truncated(ui: &mut egui::Ui, key: &str, value: &str) {
     ui.end_row();
 }
 
+fn kv_row_colored(ui: &mut egui::Ui, key: &str, value: &str, color: egui::Color32) {
+    crate::components::field_label(ui, key);
+    ui.label(egui::RichText::new(value).color(color));
+    ui.end_row();
+}
+
 struct ProgramMeta {
     version: u32,
     field_schema: FieldSchema,
@@ -189,11 +195,15 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
     );
     ui.add_space(spacing::MD);
 
-    let status_text = if svc.running { "RUNNING" } else { "INACTIVE" };
+    let (status_text, status_color) = if svc.running {
+        ("RUNNING", colors::CONNECTED)
+    } else {
+        ("INACTIVE", colors::ERROR)
+    };
 
     info_grid(ui, "svc_detail", |ui| {
         kv_row_truncated(ui, "Service ID", &id_hex);
-        kv_row(ui, "Status", status_text);
+        kv_row_colored(ui, "Status", status_text, status_color);
 
         if let Ok(topic) = svc.descriptor.topic() {
             kv_row_truncated(ui, "Topic", &topic);
@@ -324,11 +334,15 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     let close = detail_header(ui, &heading);
     ui.add_space(spacing::MD);
 
-    let status_text = if subscribed { "SUBSCRIBED" } else { "INACTIVE" };
+    let (status_text, status_color) = if subscribed {
+        ("SUBSCRIBED", colors::CONNECTED)
+    } else {
+        ("INACTIVE", colors::ERROR)
+    };
 
     info_grid(ui, "prog_detail", |ui| {
         kv_row_truncated(ui, "Program ID", &id_hex);
-        kv_row(ui, "Status", status_text);
+        kv_row_colored(ui, "Status", status_text, status_color);
         kv_row(ui, "Relation", relation);
         kv_row_truncated(ui, "Topic", &format!("prog/{id_hex}"));
     });
