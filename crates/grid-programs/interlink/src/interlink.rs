@@ -25,7 +25,7 @@ impl InterlinkDescriptor {
     /// Create the canonical v1 Interlink descriptor.
     pub fn v1() -> Self {
         Self {
-            name: "INTERLINK".to_owned(),
+            name: "interlink".to_owned(),
             version: 1,
             proof_required: false,
             proof_system: None,
@@ -35,7 +35,7 @@ impl InterlinkDescriptor {
     /// Create the v2 descriptor with Groth16 shape proofs.
     pub fn v2() -> Self {
         Self {
-            name: "INTERLINK".to_owned(),
+            name: "interlink".to_owned(),
             version: 2,
             proof_required: true,
             proof_system: Some(ProofSystem::Groth16),
@@ -45,7 +45,7 @@ impl InterlinkDescriptor {
     /// Canonical field schema for Interlink messages (v2+).
     pub fn field_schema() -> FieldSchema {
         FieldSchema {
-            program_name: "INTERLINK".into(),
+            program_name: "interlink".into(),
             version: 1,
             fields: vec![
                 FieldDef {

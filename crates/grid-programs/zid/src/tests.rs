@@ -19,7 +19,7 @@ fn zid_descriptor_round_trip() {
 fn zid_different_versions_different_ids() {
     let d1 = ZidDescriptor::v1();
     let d2 = ZidDescriptor {
-        name: "ZID".into(),
+        name: "zid".into(),
         version: 2,
         proof_required: false,
         proof_system: None,

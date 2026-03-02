@@ -18,7 +18,7 @@ impl ZidDescriptor {
     /// Create the canonical v1 ZID descriptor.
     pub fn v1() -> Self {
         Self {
-            name: "ZID".to_owned(),
+            name: "zid".to_owned(),
             version: 1,
             proof_required: false,
             proof_system: None,
@@ -28,7 +28,7 @@ impl ZidDescriptor {
     /// Create the v2 descriptor with Groth16 shape proofs.
     pub fn v2() -> Self {
         Self {
-            name: "ZID".to_owned(),
+            name: "zid".to_owned(),
             version: 2,
             proof_required: true,
             proof_system: Some(ProofSystem::Groth16),
@@ -38,7 +38,7 @@ impl ZidDescriptor {
     /// Canonical field schema for ZID messages (v2+).
     pub fn field_schema() -> FieldSchema {
         FieldSchema {
-            program_name: "ZID".into(),
+            program_name: "zid".into(),
             version: 1,
             fields: vec![
                 FieldDef {
