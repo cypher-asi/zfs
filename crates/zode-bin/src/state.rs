@@ -5,6 +5,7 @@ use std::sync::Arc;
 use grid_core::{ProgramId, SectorId};
 use grid_crypto::SectorKey;
 use grid_programs_interlink::interlink::ChannelId;
+use grid_service::ServiceId;
 use zode::ZodeStatus;
 
 pub(crate) const MAX_LOG_ENTRIES: usize = 500;
@@ -87,6 +88,13 @@ impl SettingsSection {
             Self::Info => "Info",
         }
     }
+}
+
+/// Which detail side-panel is currently open (if any).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DetailSelection {
+    Service(ServiceId),
+    Program(ProgramId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

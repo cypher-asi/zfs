@@ -12,7 +12,7 @@ use crate::components::{
 use crate::components::tokens::{font_size, spacing};
 use crate::profile::{self, ProfileMeta};
 use crate::settings::Settings;
-use crate::state::{AppPhase, AppState, SettingsSection, Tab, MAX_LOG_ENTRIES};
+use crate::state::{AppPhase, AppState, DetailSelection, SettingsSection, Tab, MAX_LOG_ENTRIES};
 
 pub(crate) struct ZodeApp {
     pub rt: Runtime,
@@ -41,6 +41,7 @@ pub(crate) struct ZodeApp {
     pub active_profile_id: Option<String>,
     pub session_password: Option<String>,
     pub settings_section: SettingsSection,
+    pub detail_selection: Option<DetailSelection>,
 }
 
 impl ZodeApp {
@@ -87,6 +88,7 @@ impl ZodeApp {
             active_profile_id: None,
             session_password: None,
             settings_section: SettingsSection::General,
+            detail_selection: None,
         }
     }
 
@@ -750,6 +752,9 @@ impl ZodeApp {
                     if let Some(ref mut il) = self.interlink_state {
                         il.focus_compose = true;
                     }
+                }
+                if self.tab != self.prev_tab {
+                    self.detail_selection = None;
                 }
                 self.prev_tab = self.tab;
 
