@@ -30,11 +30,7 @@ impl SpendProofVerifier {
     ///
     /// `public_signals` must contain at least 2 elements:
     /// `[input_commitment, nullifier, output_commitment_0, ...]`
-    pub fn verify(
-        &self,
-        proof_bytes: &[u8],
-        public_signals: &[Fr],
-    ) -> Result<(), VerifierError> {
+    pub fn verify(&self, proof_bytes: &[u8], public_signals: &[Fr]) -> Result<(), VerifierError> {
         if public_signals.len() < 2 {
             return Err(VerifierError::InsufficientSignals {
                 expected: 2,
@@ -42,9 +38,8 @@ impl SpendProofVerifier {
             });
         }
 
-        let proof =
-            ark_groth16::Proof::<Bn254>::deserialize_compressed(proof_bytes)
-                .map_err(|e| VerifierError::InvalidFormat(e.to_string()))?;
+        let proof = ark_groth16::Proof::<Bn254>::deserialize_compressed(proof_bytes)
+            .map_err(|e| VerifierError::InvalidFormat(e.to_string()))?;
 
         let valid = Groth16::<Bn254>::verify_with_processed_vk(&self.pvk, public_signals, &proof)
             .map_err(|_| VerifierError::VerificationFailed)?;

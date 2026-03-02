@@ -83,8 +83,7 @@ impl Mempool {
     fn reindex(&mut self) {
         self.seen_nullifiers.clear();
         for (i, spend) in self.queue.iter().enumerate() {
-            self.seen_nullifiers
-                .insert(spend.nullifier.clone(), i);
+            self.seen_nullifiers.insert(spend.nullifier.clone(), i);
         }
     }
 }

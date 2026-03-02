@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use grid_core::{ProgramId, SectorId};
@@ -98,6 +98,8 @@ pub struct ZodeConfig {
     pub rpc: RpcConfig,
     /// Service registry configuration.
     pub services: ServiceRegistryConfig,
+    /// Per-service configuration keyed by service name (e.g. `"ZEPHYR"`).
+    pub service_configs: HashMap<String, serde_json::Value>,
 }
 
 impl ZodeConfig {
@@ -160,6 +162,7 @@ impl Default for ZodeConfig {
             network: NetworkConfig::default(),
             rpc: RpcConfig::default(),
             services: ServiceRegistryConfig::default(),
+            service_configs: HashMap::new(),
         }
     }
 }

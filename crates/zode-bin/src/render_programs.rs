@@ -43,17 +43,15 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
         for svc in services {
             let mut entries: Vec<ProgramEntry> = Vec::new();
 
-            for desc in &svc.descriptor.owned_programs {
-                if let Ok(pid) = desc.program_id() {
-                    entries.push(ProgramEntry {
-                        name: desc.name.clone(),
-                        version: Some(desc.version.clone()),
-                        program_id: pid,
-                        relation: ProgramRelation::Owned,
-                        subscribed: subscribed.contains(&pid),
-                    });
-                    service_program_ids.insert(pid);
-                }
+            for op in &svc.descriptor.owned_programs {
+                entries.push(ProgramEntry {
+                    name: op.name.clone(),
+                    version: Some(op.version.clone()),
+                    program_id: op.program_id,
+                    relation: ProgramRelation::Owned,
+                    active: svc.running,
+                });
+                service_program_ids.insert(op.program_id);
             }
 
             for &pid in &svc.descriptor.required_programs {
@@ -66,7 +64,7 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
                     version: None,
                     program_id: pid,
                     relation: ProgramRelation::Required,
-                    subscribed: subscribed.contains(&pid),
+                    active: subscribed.contains(&pid),
                 });
                 service_program_ids.insert(pid);
             }
@@ -98,7 +96,7 @@ pub(crate) fn render_programs(app: &mut ZodeApp, ui: &mut egui::Ui, state: &Stat
                 version: None,
                 program_id: pid,
                 relation: ProgramRelation::Default,
-                subscribed: true,
+                active: true,
             }
         })
         .collect();
@@ -140,7 +138,7 @@ struct ProgramEntry {
     version: Option<String>,
     program_id: ProgramId,
     relation: ProgramRelation,
-    subscribed: bool,
+    active: bool,
 }
 
 fn render_service_programs(
@@ -260,12 +258,8 @@ fn program_card(
         colors::TEXT_SECONDARY,
     );
 
-    let status_text = if entry.subscribed {
-        "SUBSCRIBED"
-    } else {
-        "INACTIVE"
-    };
-    let status_color = if entry.subscribed {
+    let status_text = if entry.active { "ACTIVE" } else { "INACTIVE" };
+    let status_color = if entry.active {
         colors::CONNECTED
     } else {
         colors::TEXT_MUTED

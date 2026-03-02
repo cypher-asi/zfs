@@ -18,8 +18,8 @@ impl ZoneLog {
     /// Append a finalized certificate to the zone log.
     pub fn append_batch(&self, cert: &FinalityCertificate) -> Result<(), ServiceError> {
         let key = format!("zone_log/{}", self.zone_id);
-        let encoded = grid_core::encode_canonical(cert)
-            .map_err(|e| ServiceError::Storage(e.to_string()))?;
+        let encoded =
+            grid_core::encode_canonical(cert).map_err(|e| ServiceError::Storage(e.to_string()))?;
         self.store.put(key.as_bytes(), encoded)
     }
 

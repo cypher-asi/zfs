@@ -4,7 +4,7 @@ use eframe::egui;
 use grid_core::{FieldSchema, ProgramId, ProofSystem};
 use grid_programs_interlink::InterlinkDescriptor;
 use grid_programs_zid::ZidDescriptor;
-use grid_service::ServiceId;
+use grid_service::{ConfigFieldType, ServiceId};
 
 use crate::app::ZodeApp;
 use crate::components::section_heading;
@@ -161,12 +161,14 @@ pub(crate) fn render_detail(app: &mut ZodeApp, ui: &mut egui::Ui) {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            match selection {
+            match &selection {
                 DetailSelection::Service(service_id) => {
-                    render_service_detail(app, ui, &service_id);
+                    let sid = *service_id;
+                    render_service_detail(app, ui, &sid);
                 }
                 DetailSelection::Program(program_id) => {
-                    render_program_detail(app, ui, &program_id);
+                    let pid = *program_id;
+                    render_program_detail(app, ui, &pid);
                 }
             }
         });
@@ -192,7 +194,7 @@ pub(crate) fn render_detail(app: &mut ZodeApp, ui: &mut egui::Ui) {
     }
 }
 
-fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceId) {
+fn render_service_detail(app: &mut ZodeApp, ui: &mut egui::Ui, service_id: &ServiceId) {
     let Some(ref zode) = app.zode else {
         ui.label("Zode not running.");
         return;
@@ -218,6 +220,9 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
         .collect();
 
     let id_hex = svc.id.to_hex();
+    let service_name = svc.descriptor.name.clone();
+    let config_schema = svc.config_schema.clone();
+    let current_config = svc.config.clone();
 
     section_heading(
         ui,
@@ -228,7 +233,7 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
         ui.add_space(spacing::SM);
         ui.label(
             egui::RichText::new(&svc.descriptor.summary)
-                .size(font_size::ACTION)
+                .size(font_size::SUBTITLE)
                 .color(colors::TEXT_SECONDARY),
         );
     }
@@ -286,10 +291,10 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
                 .color(egui::Color32::WHITE),
         );
         ui.add_space(spacing::SM);
-        for desc in &svc.descriptor.owned_programs {
+        for op in &svc.descriptor.owned_programs {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("•").color(colors::TEXT_MUTED));
-                ui.label(format!("{} v{}", desc.name, desc.version));
+                ui.label(format!("{} v{}", op.name, op.version));
             });
         }
         ui.add_space(spacing::MD);
@@ -325,9 +330,139 @@ fn render_service_detail(app: &ZodeApp, ui: &mut egui::Ui, service_id: &ServiceI
             ui.add_space(spacing::SM);
         }
     }
+
+    // Release borrows before mutating app
+    let _ = svc;
+    let _ = services;
+
+    if !config_schema.is_empty() {
+        ui.add_space(spacing::LG);
+        render_service_config(app, ui, &service_name, &config_schema, &current_config);
+    }
 }
 
-fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramId) {
+/// Render the generic CONFIGURATION section for a service and handle edits.
+fn render_service_config(
+    app: &mut ZodeApp,
+    ui: &mut egui::Ui,
+    service_name: &str,
+    schema: &[grid_service::ConfigField],
+    current: &serde_json::Value,
+) {
+    ui.label(
+        egui::RichText::new("CONFIGURATION")
+            .strong()
+            .size(font_size::BODY)
+            .color(egui::Color32::WHITE),
+    );
+    ui.add_space(spacing::SM);
+
+    let persisted = app
+        .settings
+        .service_configs
+        .entry(service_name.to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .clone();
+
+    let mut changed = false;
+    let mut new_config = persisted.clone();
+
+    for field in schema {
+        match &field.field_type {
+            ConfigFieldType::Bool { default } => {
+                let live = current
+                    .get(field.key)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(*default);
+                let mut val = persisted
+                    .get(field.key)
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(live);
+
+                let resp = ui.checkbox(&mut val, field.label);
+                if !field.description.is_empty() {
+                    resp.on_hover_text(field.description);
+                }
+
+                if val != live {
+                    new_config[field.key] = serde_json::Value::Bool(val);
+                    changed = true;
+                } else {
+                    new_config[field.key] = serde_json::Value::Bool(val);
+                }
+            }
+            ConfigFieldType::String { default } => {
+                let live = current
+                    .get(field.key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(default);
+                let mut val = persisted
+                    .get(field.key)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(live)
+                    .to_string();
+
+                ui.horizontal(|ui| {
+                    ui.label(field.label);
+                    let resp = ui.text_edit_singleline(&mut val);
+                    if !field.description.is_empty() {
+                        resp.on_hover_text(field.description);
+                    }
+                });
+
+                if val != live {
+                    new_config[field.key] = serde_json::Value::String(val);
+                    changed = true;
+                } else {
+                    new_config[field.key] = serde_json::Value::String(val);
+                }
+            }
+            ConfigFieldType::U64 { default, min, max } => {
+                let live = current
+                    .get(field.key)
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(*default);
+                let mut val = persisted
+                    .get(field.key)
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(live);
+
+                ui.horizontal(|ui| {
+                    ui.label(field.label);
+                    let mut drag = egui::DragValue::new(&mut val);
+                    if let Some(lo) = min {
+                        drag = drag.range(*lo..=u64::MAX);
+                    }
+                    if let Some(hi) = max {
+                        drag = drag.range(0..=*hi);
+                    }
+                    let resp = ui.add(drag);
+                    if !field.description.is_empty() {
+                        resp.on_hover_text(field.description);
+                    }
+                });
+
+                if val != live {
+                    new_config[field.key] = serde_json::json!(val);
+                    changed = true;
+                } else {
+                    new_config[field.key] = serde_json::json!(val);
+                }
+            }
+        }
+        ui.add_space(spacing::XS);
+    }
+
+    if changed {
+        app.settings
+            .service_configs
+            .insert(service_name.to_string(), new_config);
+        app.save_settings();
+        app.boot_zode();
+    }
+}
+
+fn render_program_detail(app: &mut ZodeApp, ui: &mut egui::Ui, program_id: &ProgramId) {
     let Some(ref zode) = app.zode else {
         ui.label("Zode not running.");
         return;
@@ -349,13 +484,15 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     let subscribed = status.topics.iter().any(|t| t == &format!("prog/{id_hex}"));
 
     let registry = zode.service_registry();
-    let relation = if let Ok(reg) = registry.try_read() {
+    let (relation, owner_running) = if let Ok(reg) = registry.try_read() {
         let services = reg.list_services();
         drop(reg);
         determine_relation(program_id, &services)
     } else {
-        "UNKNOWN"
+        ("UNKNOWN", false)
     };
+
+    let active = subscribed || (relation == "OWNED" && owner_running);
 
     let meta = meta_map.get(program_id);
     let version_str = meta.map(|m| format!("v{}", m.version)).unwrap_or_default();
@@ -369,8 +506,8 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     section_heading(ui, &heading);
     ui.add_space(10.0);
 
-    let (status_text, status_color) = if subscribed {
-        ("SUBSCRIBED", colors::CONNECTED)
+    let (status_text, status_color) = if active {
+        ("ACTIVE", colors::CONNECTED)
     } else {
         ("INACTIVE", colors::ERROR)
     };
@@ -435,18 +572,21 @@ fn render_program_detail(app: &ZodeApp, ui: &mut egui::Ui, program_id: &ProgramI
     }
 }
 
-fn determine_relation(pid: &ProgramId, services: &[grid_service::ServiceInfo]) -> &'static str {
+fn determine_relation(
+    pid: &ProgramId,
+    services: &[grid_service::ServiceInfo],
+) -> (&'static str, bool) {
     for svc in services {
-        for desc in &svc.descriptor.owned_programs {
-            if desc.program_id().ok().as_ref() == Some(pid) {
-                return "OWNED";
+        for op in &svc.descriptor.owned_programs {
+            if &op.program_id == pid {
+                return ("OWNED", svc.running);
             }
         }
         if svc.descriptor.required_programs.contains(pid) {
-            return "REQUIRED";
+            return ("REQUIRED", svc.running);
         }
     }
-    "DEFAULT"
+    ("DEFAULT", false)
 }
 
 fn cbor_type_label(ct: grid_core::CborType) -> &'static str {

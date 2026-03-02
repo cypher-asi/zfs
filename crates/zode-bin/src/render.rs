@@ -627,8 +627,7 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             for level in zode::LogLevel::ALL {
                 let active = app.log_level_filter == Some(level);
                 let color = log_level_color(level);
-                let (clicked, y, h) =
-                    filter_nav_item(ui, level.label(), active, Some(color));
+                let (clicked, y, h) = filter_nav_item(ui, level.label(), active, Some(color));
                 let _ = (y, h);
                 if active {
                     row_positions.push(("type_active", y, h));
@@ -641,9 +640,13 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
             ui.add_space(spacing::LG);
 
             // SERVICE group header
-            let (_, svc_header_rect) = ui.allocate_space(egui::vec2(ui.available_width(), header_h));
+            let (_, svc_header_rect) =
+                ui.allocate_space(egui::vec2(ui.available_width(), header_h));
             ui.painter().text(
-                egui::pos2(svc_header_rect.min.x + spacing::LG, svc_header_rect.center().y),
+                egui::pos2(
+                    svc_header_rect.min.x + spacing::LG,
+                    svc_header_rect.center().y,
+                ),
                 egui::Align2::LEFT_CENTER,
                 "SERVICE",
                 egui::FontId::proportional(font_size::SMALL),
@@ -669,11 +672,7 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
                     row_positions.push(("svc_active", y, h));
                 }
                 if clicked {
-                    app.log_service_filter = if active {
-                        None
-                    } else {
-                        Some(svc.clone())
-                    };
+                    app.log_service_filter = if active { None } else { Some(svc.clone()) };
                 }
             }
 
@@ -697,13 +696,15 @@ pub(crate) fn render_log(app: &mut ZodeApp, ui: &mut egui::Ui, state: &StateSnap
         });
 
     let nav_rect = nav_resp.response.rect;
-    let border_x = nav_rect.max.x - spacing::MD;
-    ui.painter().line_segment(
-        [
-            egui::pos2(border_x, nav_rect.min.y),
-            egui::pos2(border_x, nav_rect.max.y - spacing::MD),
-        ],
-        egui::Stroke::new(1.0, colors::BORDER),
+    let nav_border = egui::Rect::from_min_max(
+        nav_rect.min,
+        egui::pos2(nav_rect.max.x - spacing::MD, nav_rect.max.y - spacing::MD),
+    );
+    ui.painter().rect_stroke(
+        nav_border,
+        0.0,
+        tokens::border_stroke(),
+        egui::StrokeKind::Inside,
     );
 
     // Filter entries

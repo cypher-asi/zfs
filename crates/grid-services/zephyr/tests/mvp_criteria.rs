@@ -102,10 +102,22 @@ fn criterion_2_parallel_finality() {
     let leader_a = leader_for_round(&committee_a, 0, 0).validator_id;
     let leader_b = leader_for_round(&committee_b, 0, 0).validator_id;
 
-    let mut consensus_a =
-        ZoneConsensus::new(zone_a, 0, committee_a.clone(), leader_a, [0; 32], config.clone());
-    let mut consensus_b =
-        ZoneConsensus::new(zone_b, 0, committee_b.clone(), leader_b, [0; 32], config.clone());
+    let mut consensus_a = ZoneConsensus::new(
+        zone_a,
+        0,
+        committee_a.clone(),
+        leader_a,
+        [0; 32],
+        config.clone(),
+    );
+    let mut consensus_b = ZoneConsensus::new(
+        zone_b,
+        0,
+        committee_b.clone(),
+        leader_b,
+        [0; 32],
+        config.clone(),
+    );
 
     let proposal_a = match consensus_a.propose(vec![spend_a], identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
@@ -231,8 +243,14 @@ fn criterion_4_rotation_continuity() {
 
     let committee_e0 = epoch_mgr.committee_for_zone(test_zone);
     let leader_e0 = leader_for_round(&committee_e0, 0, 0).validator_id;
-    let mut consensus_e0 =
-        ZoneConsensus::new(test_zone, 0, committee_e0.clone(), leader_e0, [0; 32], config.clone());
+    let mut consensus_e0 = ZoneConsensus::new(
+        test_zone,
+        0,
+        committee_e0.clone(),
+        leader_e0,
+        [0; 32],
+        config.clone(),
+    );
 
     let proposal = match consensus_e0
         .propose(vec![dummy_spend(0x01)], identity_sign)
@@ -250,9 +268,7 @@ fn criterion_4_rotation_continuity() {
             voter_id: voter.validator_id,
             signature: proposal.batch_hash.to_vec(),
         };
-        if let Some(ConsensusAction::BroadcastCertificate(cert)) =
-            consensus_e0.receive_vote(vote)
-        {
+        if let Some(ConsensusAction::BroadcastCertificate(cert)) = consensus_e0.receive_vote(vote) {
             zone_heads.set(test_zone, cert.new_zone_head);
         }
     }
@@ -338,8 +354,7 @@ fn criterion_5_invalid_proof_containment() {
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
     let spends = mempool.drain(64);
-    let consensus =
-        ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
+    let consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
 
     let proposal = match consensus.propose(spends, identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,

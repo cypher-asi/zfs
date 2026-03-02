@@ -203,11 +203,11 @@ fn service_card(
     if !svc.descriptor.summary.is_empty() {
         let summary_rect = egui::Rect::from_min_max(
             egui::pos2(inner.left(), inner.top() + 38.0),
-            egui::pos2(inner.right(), inner.bottom() - 20.0),
+            egui::pos2(inner.right(), inner.bottom() - 22.0),
         );
         let galley = painter.layout(
             svc.descriptor.summary.clone(),
-            egui::FontId::proportional(font_size::BODY),
+            egui::FontId::proportional(font_size::ACTION),
             colors::TEXT_SECONDARY,
             summary_rect.width(),
         );

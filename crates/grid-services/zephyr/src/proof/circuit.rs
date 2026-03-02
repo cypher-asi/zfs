@@ -103,17 +103,24 @@ impl ConstraintSynthesizer<Fr> for SpendCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let num_outputs = self.output_values.len();
 
-        let owner_secret_var =
-            FpVar::new_witness(cs.clone(), || self.owner_secret.ok_or(SynthesisError::AssignmentMissing))?;
-        let input_value_var =
-            FpVar::new_witness(cs.clone(), || self.input_value.ok_or(SynthesisError::AssignmentMissing))?;
-        let input_randomness_var =
-            FpVar::new_witness(cs.clone(), || self.input_randomness.ok_or(SynthesisError::AssignmentMissing))?;
+        let owner_secret_var = FpVar::new_witness(cs.clone(), || {
+            self.owner_secret.ok_or(SynthesisError::AssignmentMissing)
+        })?;
+        let input_value_var = FpVar::new_witness(cs.clone(), || {
+            self.input_value.ok_or(SynthesisError::AssignmentMissing)
+        })?;
+        let input_randomness_var = FpVar::new_witness(cs.clone(), || {
+            self.input_randomness
+                .ok_or(SynthesisError::AssignmentMissing)
+        })?;
 
-        let input_commitment_var =
-            FpVar::new_input(cs.clone(), || self.input_commitment.ok_or(SynthesisError::AssignmentMissing))?;
-        let nullifier_var =
-            FpVar::new_input(cs.clone(), || self.nullifier.ok_or(SynthesisError::AssignmentMissing))?;
+        let input_commitment_var = FpVar::new_input(cs.clone(), || {
+            self.input_commitment
+                .ok_or(SynthesisError::AssignmentMissing)
+        })?;
+        let nullifier_var = FpVar::new_input(cs.clone(), || {
+            self.nullifier.ok_or(SynthesisError::AssignmentMissing)
+        })?;
 
         // owner_pubkey = owner_secret (simplified; in production: Poseidon(owner_secret))
         let owner_pubkey_var = &owner_secret_var;
@@ -151,8 +158,7 @@ impl ConstraintSynthesizer<Fr> for SpendCircuit {
             })?;
 
             // Constraint 4: output_commitment_i == hash(output_value_i, output_owner_pubkey_i, output_randomness_i)
-            let computed_out =
-                simplified_hash(cs.clone(), &out_val, &out_pubkey, &out_rand)?;
+            let computed_out = simplified_hash(cs.clone(), &out_val, &out_pubkey, &out_rand)?;
             computed_out.enforce_equal(&out_commitment_var)?;
 
             output_sum = &output_sum + &out_val;

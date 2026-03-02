@@ -5,8 +5,13 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use grid_core::ProgramId;
-use grid_programs_zephyr::{ZephyrGlobalDescriptor, ZephyrZoneDescriptor};
-use grid_service::{RouteInfo, Service, ServiceContext, ServiceDescriptor, ServiceError};
+use grid_programs_zephyr::{
+    ZephyrGlobalDescriptor, ZephyrSpendDescriptor, ZephyrValidatorDescriptor, ZephyrZoneDescriptor,
+};
+use grid_service::{
+    ConfigField, ConfigFieldType, OwnedProgram, RouteInfo, Service, ServiceContext,
+    ServiceDescriptor, ServiceError,
+};
 use std::sync::Arc;
 
 use crate::committee::my_assigned_zones;
@@ -48,18 +53,28 @@ impl ZephyrService {
             zone_pids.push(pid);
         }
 
+        let spend_pid = ZephyrSpendDescriptor::new()
+            .program_id()
+            .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
+        let validator_pid = ZephyrValidatorDescriptor::new()
+            .program_id()
+            .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
+
         let owned_programs = vec![
-            grid_core::ProgramDescriptor {
+            OwnedProgram {
                 name: "zephyr/global".into(),
                 version: "1".into(),
+                program_id: global_pid,
             },
-            grid_core::ProgramDescriptor {
+            OwnedProgram {
                 name: "zephyr/spend".into(),
                 version: "1".into(),
+                program_id: spend_pid,
             },
-            grid_core::ProgramDescriptor {
+            OwnedProgram {
                 name: "zephyr/validators".into(),
                 version: "1".into(),
+                program_id: validator_pid,
             },
         ];
 
@@ -69,7 +84,7 @@ impl ZephyrService {
                 version: "0.1.0".into(),
                 required_programs: vec![],
                 owned_programs,
-                summary: "Note-based currency with zone-scoped consensus".into(),
+                summary: "Note-based currency with zone-scoped consensus.".into(),
             },
             config,
             global_program_id: global_pid,
@@ -120,11 +135,36 @@ impl Service for ZephyrService {
     }
 
     async fn on_start(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
+        use grid_programs_zephyr::ValidatorInfo;
+
         let global_topic = self.global_topic();
         ctx.subscribe_topic(&global_topic)?;
         tracing::info!(%global_topic, "subscribed to global topic");
 
-        if self.config.validators.is_empty() {
+        let mut validators = self.config.validators.clone();
+
+        if self.config.self_validate && validators.is_empty() {
+            if let Some(id) = ctx.identity() {
+                let pk_bytes = id.public_key();
+                let mut vid = [0u8; 32];
+                let copy_len = pk_bytes.len().min(32);
+                vid[..copy_len].copy_from_slice(&pk_bytes[..copy_len]);
+
+                let mut pubkey = [0u8; 32];
+                pubkey[..copy_len].copy_from_slice(&pk_bytes[..copy_len]);
+
+                validators.push(ValidatorInfo {
+                    validator_id: vid,
+                    pubkey,
+                    p2p_endpoint: id.zode_id().to_string(),
+                });
+                tracing::info!("self_validate enabled; running as solo validator");
+            } else {
+                tracing::warn!("self_validate enabled but no node identity available");
+            }
+        }
+
+        if validators.is_empty() {
             tracing::warn!("no validators configured; Zephyr running in observer mode");
             return Ok(());
         }
@@ -147,7 +187,7 @@ impl Service for ZephyrService {
             0,
             self.config.epoch_duration_ms,
             self.config.initial_randomness,
-            self.config.validators.clone(),
+            validators.clone(),
             self.config.total_zones,
             self.config.committee_size,
         );
@@ -155,7 +195,7 @@ impl Service for ZephyrService {
         let assigned_zones = my_assigned_zones(
             &my_validator_id,
             epoch_mgr.randomness_seed(),
-            &self.config.validators,
+            &validators,
             self.config.total_zones,
             self.config.committee_size,
         );
@@ -205,6 +245,21 @@ impl Service for ZephyrService {
                 description: "Health check",
             },
         ]
+    }
+
+    fn config_schema(&self) -> Vec<ConfigField> {
+        vec![ConfigField {
+            key: "self_validate",
+            label: "Participate as validator",
+            description: "Run this node as a solo validator using its own identity",
+            field_type: ConfigFieldType::Bool { default: false },
+        }]
+    }
+
+    fn current_config(&self) -> serde_json::Value {
+        serde_json::json!({
+            "self_validate": self.config.self_validate,
+        })
     }
 }
 

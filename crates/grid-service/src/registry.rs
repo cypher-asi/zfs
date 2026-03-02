@@ -320,6 +320,8 @@ impl ServiceRegistry {
                     descriptor: svc.descriptor().clone(),
                     running,
                     routes: svc.route_info(),
+                    config_schema: svc.config_schema(),
+                    config: svc.current_config(),
                 }
             })
             .collect();
@@ -331,9 +333,7 @@ impl ServiceRegistry {
     pub fn required_programs(&self) -> HashSet<ProgramId> {
         let mut programs = HashSet::new();
         for service in self.services.values() {
-            if let Ok(ids) = service.descriptor().all_program_ids() {
-                programs.extend(ids);
-            }
+            programs.extend(service.descriptor().all_program_ids());
         }
         programs
     }
@@ -343,9 +343,7 @@ impl ServiceRegistry {
         let mut programs = HashSet::new();
         for (&id, service) in &self.services {
             if self.contexts.contains_key(&id) {
-                if let Ok(ids) = service.descriptor().all_program_ids() {
-                    programs.extend(ids);
-                }
+                programs.extend(service.descriptor().all_program_ids());
             }
         }
         programs
@@ -374,6 +372,10 @@ pub struct ServiceInfo {
     pub descriptor: crate::descriptor::ServiceDescriptor,
     pub running: bool,
     pub routes: Vec<crate::service::RouteInfo>,
+    /// Declared configuration fields (empty for services with no settings).
+    pub config_schema: Vec<crate::config::ConfigField>,
+    /// Current live configuration values as a flat JSON object.
+    pub config: serde_json::Value,
 }
 
 /// Per-service middleware: returns 503 when the service is not in the active set.

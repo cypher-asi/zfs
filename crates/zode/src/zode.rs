@@ -8,6 +8,7 @@ use grid_proof::{NoopVerifier, ProofVerifierRegistry};
 use grid_proof_groth16::Groth16ShapeVerifier;
 use grid_service::ServiceRegistry;
 use grid_storage::{RocksStorage, SectorStore};
+use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
@@ -157,7 +158,7 @@ impl Zode {
         service_registry.set_channels(publish_tx.clone(), topic_tx, direct_tx);
         service_registry.set_identity(node_identity);
         service_registry.set_proof_registry(proof_registry_shared);
-        Self::register_default_services(&mut service_registry);
+        Self::register_default_services(&mut service_registry, &config.service_configs);
         let service_programs = service_registry.required_programs();
         if !service_programs.is_empty() {
             info!(
@@ -200,6 +201,7 @@ impl Zode {
 
         let network = Arc::new(Mutex::new(network));
         let service_registry_arc = Arc::new(tokio::sync::RwLock::new(service_registry));
+        let topics = Arc::new(RwLock::new(topic_strings));
         let event_loop_handle = Self::spawn_event_loop(
             sector_handler,
             Arc::clone(&service_registry_arc),
@@ -209,6 +211,7 @@ impl Zode {
             Arc::clone(&connected_peers),
             Arc::clone(&peer_ips),
             Arc::clone(&peer_last_activity),
+            Arc::clone(&topics),
             shutdown_rx,
             publish_rx,
             topic_rx,
@@ -223,7 +226,7 @@ impl Zode {
             zode_id,
             keypair_protobuf,
             data_dir,
-            topics: Arc::new(RwLock::new(topic_strings)),
+            topics,
             connected_peers,
             peer_ips,
             peer_last_activity,
@@ -238,7 +241,10 @@ impl Zode {
         })
     }
 
-    fn register_default_services(registry: &mut ServiceRegistry) {
+    fn register_default_services(
+        registry: &mut ServiceRegistry,
+        service_configs: &HashMap<String, Value>,
+    ) {
         match grid_services_identity::IdentityService::new() {
             Ok(svc) => {
                 if let Err(e) = registry.register(Arc::new(svc)) {
@@ -257,9 +263,20 @@ impl Zode {
             Err(e) => warn!(error = %e, "failed to create interlink service"),
         }
 
-        match grid_services_zephyr::ZephyrService::new(
-            grid_services_zephyr::ZephyrConfig::default(),
-        ) {
+        let zephyr_config = match service_configs.get("ZEPHYR") {
+            Some(val) => {
+                match serde_json::from_value::<grid_services_zephyr::ZephyrConfig>(val.clone()) {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        warn!(error = %e, "invalid ZEPHYR config, using defaults");
+                        grid_services_zephyr::ZephyrConfig::default()
+                    }
+                }
+            }
+            None => grid_services_zephyr::ZephyrConfig::default(),
+        };
+
+        match grid_services_zephyr::ZephyrService::new(zephyr_config) {
             Ok(svc) => {
                 if let Err(e) = registry.register(Arc::new(svc)) {
                     warn!(error = %e, "failed to register zephyr service");
@@ -309,6 +326,7 @@ impl Zode {
         connected_peers: Arc<RwLock<Vec<String>>>,
         peer_ips: Arc<RwLock<HashMap<String, String>>>,
         peer_last_activity: Arc<RwLock<HashMap<String, u64>>>,
+        topics: Arc<RwLock<Vec<String>>>,
         shutdown_rx: mpsc::Receiver<()>,
         publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         topic_rx: mpsc::Receiver<grid_service::TopicCommand>,
@@ -325,6 +343,7 @@ impl Zode {
                 connected_peers,
                 peer_ips,
                 peer_last_activity,
+                topics,
                 shutdown_rx,
                 publish_rx,
                 topic_rx,
@@ -579,6 +598,7 @@ impl Zode {
         connected_peers: Arc<RwLock<Vec<String>>>,
         peer_ips: Arc<RwLock<HashMap<String, String>>>,
         peer_last_activity: Arc<RwLock<HashMap<String, u64>>>,
+        topics: Arc<RwLock<Vec<String>>>,
         mut shutdown_rx: mpsc::Receiver<()>,
         mut publish_rx: mpsc::Receiver<(String, Vec<u8>)>,
         mut topic_rx: mpsc::Receiver<grid_service::TopicCommand>,
@@ -642,6 +662,11 @@ impl Zode {
                                     warn!(error = %e, %topic, "dynamic subscribe failed");
                                 } else {
                                     info!(%topic, "dynamic subscribe");
+                                    if let Ok(mut t) = topics.write() {
+                                        if !t.contains(&topic) {
+                                            t.push(topic);
+                                        }
+                                    }
                                 }
                             }
                             grid_service::TopicCommand::Unsubscribe(topic) => {
@@ -649,6 +674,9 @@ impl Zode {
                                     warn!(error = %e, %topic, "dynamic unsubscribe failed");
                                 } else {
                                     info!(%topic, "dynamic unsubscribe");
+                                    if let Ok(mut t) = topics.write() {
+                                        t.retain(|s| s != &topic);
+                                    }
                                 }
                             }
                         }

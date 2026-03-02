@@ -1,6 +1,4 @@
-use grid_programs_zephyr::{
-    BatchVote, CertSignature, EpochId, FinalityCertificate, ZoneId,
-};
+use grid_programs_zephyr::{BatchVote, CertSignature, EpochId, FinalityCertificate, ZoneId};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 

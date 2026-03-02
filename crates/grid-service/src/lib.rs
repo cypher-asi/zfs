@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod config;
 mod context;
 mod descriptor;
 mod error;
@@ -10,8 +11,9 @@ mod service;
 mod wasm_bindings;
 mod wasm_host;
 
+pub use config::{ConfigField, ConfigFieldType};
 pub use context::{ProgramStore, ServiceContext, ServiceEvent, TopicCommand};
-pub use descriptor::{ServiceDescriptor, ServiceId};
+pub use descriptor::{OwnedProgram, ServiceDescriptor, ServiceId};
 pub use error::ServiceError;
 pub use gossip::ServiceGossipHandler;
 pub use identity::NodeIdentity;

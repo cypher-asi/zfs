@@ -1,6 +1,5 @@
 use grid_programs_zephyr::{
-    BatchProposal, BatchVote, EpochId, FinalityCertificate, SpendTransaction, ValidatorInfo,
-    ZoneId,
+    BatchProposal, BatchVote, EpochId, FinalityCertificate, SpendTransaction, ValidatorInfo, ZoneId,
 };
 
 use super::leader::leader_for_round;
@@ -290,14 +289,8 @@ mod tests {
             _ => panic!("expected proposal"),
         };
 
-        let mut collector = ZoneConsensus::new(
-            0,
-            0,
-            committee.clone(),
-            leader_id,
-            [0; 32],
-            test_config(),
-        );
+        let mut collector =
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
 
         for voter in &committee[..2] {
             let vote = BatchVote {
@@ -307,8 +300,7 @@ mod tests {
                 voter_id: voter.validator_id,
                 signature: proposal.batch_hash.to_vec(),
             };
-            if let Some(ConsensusAction::BroadcastCertificate(cert)) =
-                collector.receive_vote(vote)
+            if let Some(ConsensusAction::BroadcastCertificate(cert)) = collector.receive_vote(vote)
             {
                 assert_eq!(cert.zone_id, 0);
                 assert_eq!(cert.signatures.len(), 2);

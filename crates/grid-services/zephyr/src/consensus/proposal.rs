@@ -89,9 +89,8 @@ mod tests {
     #[test]
     fn build_proposal_includes_all_nullifiers() {
         let spends = vec![dummy_spend(1), dummy_spend(2)];
-        let proposal = build_batch_proposal(0, 1, [0; 32], spends, [0xAA; 32], |hash| {
-            hash.to_vec()
-        });
+        let proposal =
+            build_batch_proposal(0, 1, [0; 32], spends, [0xAA; 32], |hash| hash.to_vec());
         assert_eq!(proposal.nullifiers.len(), 2);
         assert_eq!(proposal.spends.len(), 2);
         assert_eq!(proposal.proposer_id, [0xAA; 32]);
@@ -100,9 +99,8 @@ mod tests {
     #[test]
     fn build_proposal_signs_batch_hash() {
         let spends = vec![dummy_spend(1)];
-        let proposal = build_batch_proposal(0, 1, [0; 32], spends, [0xBB; 32], |hash| {
-            hash.to_vec()
-        });
+        let proposal =
+            build_batch_proposal(0, 1, [0; 32], spends, [0xBB; 32], |hash| hash.to_vec());
         assert_eq!(proposal.proposer_sig, proposal.batch_hash.to_vec());
     }
 }

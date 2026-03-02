@@ -1,7 +1,7 @@
 use grid_programs_zephyr::{ValidatorInfo, ZoneId};
 use rand::Rng;
-use rand_chacha::ChaCha20Rng;
 use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use sha2::{Digest, Sha256};
 
 /// Deterministic committee sampling for a zone in an epoch.
@@ -49,10 +49,7 @@ pub fn my_assigned_zones(
     let mut zones = Vec::new();
     for zone_id in 0..total_zones {
         let committee = sample_committee(randomness_seed, zone_id, validators, committee_size);
-        if committee
-            .iter()
-            .any(|v| v.validator_id == *my_validator_id)
-        {
+        if committee.iter().any(|v| v.validator_id == *my_validator_id) {
             zones.push(zone_id);
         }
     }

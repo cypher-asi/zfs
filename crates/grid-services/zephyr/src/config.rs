@@ -12,35 +12,66 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZephyrConfig {
     /// Number of zones (A). Nullifiers are routed via `H(N) mod A`.
+    #[serde(default = "default_total_zones")]
     pub total_zones: u32,
     /// Committee size per zone (k).
+    #[serde(default = "default_committee_size")]
     pub committee_size: usize,
     /// Epoch duration in milliseconds (E).
+    #[serde(default = "default_epoch_duration_ms")]
     pub epoch_duration_ms: u64,
     /// Proposal round interval in milliseconds (T_round).
+    #[serde(default = "default_round_interval_ms")]
     pub round_interval_ms: u64,
     /// Quorum threshold for certificate assembly: `ceil(2k/3)`.
+    #[serde(default = "default_quorum_threshold")]
     pub quorum_threshold: usize,
     /// Maximum spends per batch.
+    #[serde(default = "default_max_batch_size")]
     pub max_batch_size: usize,
     /// Genesis randomness seed (R_0).
-    #[serde(with = "hex_bytes")]
+    #[serde(default, with = "hex_bytes")]
     pub initial_randomness: [u8; 32],
     /// Static validator list (MVP).
+    #[serde(default)]
     pub validators: Vec<ValidatorInfo>,
+    /// When true, this node participates as a solo validator using its own
+    /// identity. The validator list is auto-populated on start.
+    #[serde(default)]
+    pub self_validate: bool,
+}
+
+fn default_total_zones() -> u32 {
+    256
+}
+fn default_committee_size() -> usize {
+    5
+}
+fn default_epoch_duration_ms() -> u64 {
+    120_000
+}
+fn default_round_interval_ms() -> u64 {
+    500
+}
+fn default_quorum_threshold() -> usize {
+    4
+}
+fn default_max_batch_size() -> usize {
+    64
 }
 
 impl Default for ZephyrConfig {
     fn default() -> Self {
         Self {
-            total_zones: 256,
-            committee_size: 5,
-            epoch_duration_ms: 120_000,
-            round_interval_ms: 500,
-            quorum_threshold: 4,
-            max_batch_size: 64,
+            total_zones: default_total_zones(),
+            committee_size: default_committee_size(),
+            epoch_duration_ms: default_epoch_duration_ms(),
+            round_interval_ms: default_round_interval_ms(),
+            quorum_threshold: default_quorum_threshold(),
+            max_batch_size: default_max_batch_size(),
             initial_randomness: [0u8; 32],
             validators: vec![],
+            self_validate: false,
         }
     }
 }

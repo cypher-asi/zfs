@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use grid_core::ProgramId;
@@ -41,6 +41,9 @@ pub(crate) struct PersistedSettings {
     /// Peers seen in previous sessions, merged into bootstrap on next start.
     #[serde(default)]
     pub known_peers: Vec<String>,
+    /// Per-service configuration keyed by service name (e.g. `"ZEPHYR"`).
+    #[serde(default)]
+    pub service_configs: HashMap<String, serde_json::Value>,
 }
 
 fn default_data_dir() -> String {
@@ -85,6 +88,8 @@ pub(crate) struct Settings {
     pub rpc_api_key: String,
     /// Peers from previous sessions.
     pub known_peers: Vec<String>,
+    /// Per-service configuration keyed by service name (e.g. `"ZEPHYR"`).
+    pub service_configs: HashMap<String, serde_json::Value>,
 }
 
 impl Default for Settings {
@@ -108,6 +113,7 @@ impl Default for Settings {
             rpc_bind_addr: "127.0.0.1:4690".into(),
             rpc_api_key: String::new(),
             known_peers: Vec::new(),
+            service_configs: HashMap::new(),
         }
     }
 }
@@ -130,6 +136,7 @@ impl Settings {
             rpc_bind_addr: self.rpc_bind_addr.clone(),
             rpc_api_key: self.rpc_api_key.clone(),
             known_peers: self.known_peers.clone(),
+            service_configs: self.service_configs.clone(),
         }
     }
 
@@ -149,6 +156,7 @@ impl Settings {
         self.rpc_bind_addr = p.rpc_bind_addr;
         self.rpc_api_key = p.rpc_api_key;
         self.known_peers = p.known_peers;
+        self.service_configs = p.service_configs;
     }
 
     /// Load persisted settings from a JSON file. Returns default if the file
@@ -283,6 +291,7 @@ impl Settings {
             network,
             rpc,
             services: Default::default(),
+            service_configs: self.service_configs.clone(),
         })
     }
 

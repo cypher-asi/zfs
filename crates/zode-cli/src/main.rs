@@ -191,6 +191,7 @@ fn build_config(cli: &Cli) -> Result<ZodeConfig> {
         network,
         rpc,
         services: Default::default(),
+        service_configs: Default::default(),
     })
 }
 

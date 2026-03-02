@@ -5,8 +5,7 @@ mod messages;
 mod types;
 
 pub use descriptors::{
-    ZephyrGlobalDescriptor, ZephyrSpendDescriptor, ZephyrValidatorDescriptor,
-    ZephyrZoneDescriptor,
+    ZephyrGlobalDescriptor, ZephyrSpendDescriptor, ZephyrValidatorDescriptor, ZephyrZoneDescriptor,
 };
 pub use messages::{
     EpochAnnouncement, RejectReason, SpendReject, ZephyrGlobalMessage, ZephyrZoneMessage,

@@ -44,8 +44,8 @@ impl NullifierSet {
             return Ok(false);
         }
         let key = format!("nullifiers/{}", self.zone_id);
-        let encoded = grid_core::encode_canonical(&n)
-            .map_err(|e| ServiceError::Storage(e.to_string()))?;
+        let encoded =
+            grid_core::encode_canonical(&n).map_err(|e| ServiceError::Storage(e.to_string()))?;
         self.store.put(key.as_bytes(), encoded)?;
         Ok(true)
     }

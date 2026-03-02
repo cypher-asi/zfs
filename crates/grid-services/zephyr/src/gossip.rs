@@ -100,8 +100,7 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
 mod tests {
     use super::*;
     use grid_programs_zephyr::{
-        EpochAnnouncement, Nullifier, NoteCommitment, RejectReason, SpendReject,
-        SpendTransaction,
+        EpochAnnouncement, NoteCommitment, Nullifier, RejectReason, SpendReject, SpendTransaction,
     };
 
     fn make_handler() -> (
@@ -111,11 +110,8 @@ mod tests {
     ) {
         let (zone_tx, zone_rx) = tokio::sync::mpsc::channel(32);
         let (global_tx, global_rx) = tokio::sync::mpsc::channel(32);
-        let handler = ZephyrGossipHandler::new(
-            "prog/global_topic_hex".to_owned(),
-            zone_tx,
-            global_tx,
-        );
+        let handler =
+            ZephyrGossipHandler::new("prog/global_topic_hex".to_owned(), zone_tx, global_tx);
         (handler, zone_rx, global_rx)
     }
 
@@ -161,9 +157,7 @@ mod tests {
         });
         let data = grid_core::encode_canonical(&msg).unwrap();
 
-        handler
-            .on_gossip("prog/zone_5", &data, None)
-            .await;
+        handler.on_gossip("prog/zone_5", &data, None).await;
 
         let (topic, received) = zone_rx.try_recv().unwrap();
         assert_eq!(topic, "prog/zone_5");
@@ -175,9 +169,7 @@ mod tests {
         let (handler, mut zone_rx, _) = make_handler();
         handler.add_zone_topic("prog/zone_0".to_owned());
 
-        handler
-            .on_gossip("prog/zone_0", &[0xFF, 0xFF], None)
-            .await;
+        handler.on_gossip("prog/zone_0", &[0xFF, 0xFF], None).await;
 
         assert!(zone_rx.try_recv().is_err());
     }

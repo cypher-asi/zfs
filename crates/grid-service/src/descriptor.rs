@@ -1,7 +1,17 @@
-use grid_core::{GridError, ProgramDescriptor, ProgramId};
+use grid_core::{GridError, ProgramId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
+
+/// A program owned by a service, pairing the authoritative [`ProgramId`]
+/// (derived from the program's own canonical descriptor) with display
+/// metadata for the UI.
+#[derive(Debug, Clone)]
+pub struct OwnedProgram {
+    pub name: String,
+    pub version: String,
+    pub program_id: ProgramId,
+}
 
 /// Canonical descriptor for a Grid Service.
 ///
@@ -17,9 +27,10 @@ pub struct ServiceDescriptor {
     pub version: String,
     /// Programs this service reads/writes (must already exist on the Zode).
     pub required_programs: Vec<ProgramId>,
-    /// Programs this service defines and owns. The Zode auto-registers these
-    /// when the service is enabled.
-    pub owned_programs: Vec<ProgramDescriptor>,
+    /// Programs this service defines and owns, each carrying the
+    /// authoritative [`ProgramId`] derived from the program's own descriptor.
+    #[serde(skip)]
+    pub owned_programs: Vec<OwnedProgram>,
     /// Short human-readable summary shown in the ZODE UI.
     /// Excluded from canonical encoding so it does not affect the [`ServiceId`].
     #[serde(skip)]
@@ -46,12 +57,12 @@ impl ServiceDescriptor {
     }
 
     /// All program IDs this service needs: required + owned.
-    pub fn all_program_ids(&self) -> Result<Vec<ProgramId>, GridError> {
+    pub fn all_program_ids(&self) -> Vec<ProgramId> {
         let mut ids: Vec<ProgramId> = self.required_programs.clone();
-        for desc in &self.owned_programs {
-            ids.push(desc.program_id()?);
+        for op in &self.owned_programs {
+            ids.push(op.program_id);
         }
-        Ok(ids)
+        ids
     }
 }
 
@@ -162,21 +173,23 @@ mod tests {
 
     #[test]
     fn all_program_ids_includes_required_and_owned() {
-        let owned = ProgramDescriptor {
+        let owned_pid = ProgramId::from([0xBB; 32]);
+        let owned = OwnedProgram {
             name: "owned-prog".into(),
             version: "1.0.0".into(),
+            program_id: owned_pid,
         };
         let required_pid = ProgramId::from([0xAA; 32]);
         let desc = ServiceDescriptor {
             name: "svc".into(),
             version: "1.0.0".into(),
             required_programs: vec![required_pid],
-            owned_programs: vec![owned.clone()],
+            owned_programs: vec![owned],
             summary: String::new(),
         };
-        let all = desc.all_program_ids().unwrap();
+        let all = desc.all_program_ids();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0], required_pid);
-        assert_eq!(all[1], owned.program_id().unwrap());
+        assert_eq!(all[1], owned_pid);
     }
 }
