@@ -121,6 +121,11 @@ impl ServiceContext {
         self.direct_tx = Some(direct_tx);
     }
 
+    /// Get a clone of the publish channel sender for use in spawned tasks.
+    pub fn publish_sender(&self) -> Option<mpsc::Sender<(String, Vec<u8>)>> {
+        self.publish_tx.clone()
+    }
+
     /// Publish a message to a GossipSub topic.
     ///
     /// Non-blocking; queues the message for the Zode event loop to send.
