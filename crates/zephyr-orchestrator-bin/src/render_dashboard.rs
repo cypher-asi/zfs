@@ -198,44 +198,127 @@ fn render_epoch_timeline(ui: &mut egui::Ui, state: &AppState) {
 }
 
 fn render_activity_feed(ui: &mut egui::Ui, state: &AppState) {
-    if state.traffic_stats.recent.is_empty() {
+    if state.network.total_zones == 0 {
         return;
     }
 
     section(ui, "Activity Feed", |ui| {
-        let max_entries = 20;
-        let start = state
-            .traffic_stats
-            .recent
-            .len()
-            .saturating_sub(max_entries);
-        for entry in state.traffic_stats.recent.iter().skip(start).rev() {
-            let age = entry.timestamp.elapsed();
-            let age_str = if age.as_secs() < 60 {
-                format!("{}s ago", age.as_secs())
-            } else {
-                format!("{}m ago", age.as_secs() / 60)
-            };
+        let avail_w = ui.available_width();
+        let card_w = 200.0_f32;
+        let cols = ((avail_w + spacing::MD) / (card_w + spacing::MD))
+            .floor()
+            .max(1.0) as u32;
+        let tx_row_h = 18.0;
+        let max_visible_txs = 10;
+        let header_h = 40.0;
+        let card_h = header_h + (max_visible_txs as f32 * tx_row_h) + spacing::SM;
+
+        for row_start in (0..state.network.total_zones).step_by(cols as usize) {
             ui.horizontal(|ui| {
+                for zone_id in row_start..state.network.total_zones.min(row_start + cols) {
+                    render_zone_activity_column(ui, zone_id, state, card_w, card_h, header_h);
+                    ui.add_space(spacing::MD);
+                }
+            });
+            ui.add_space(spacing::MD);
+        }
+    });
+}
+
+fn render_zone_activity_column(
+    ui: &mut egui::Ui,
+    zone_id: u32,
+    state: &AppState,
+    card_w: f32,
+    card_h: f32,
+    header_h: f32,
+) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+
+    painter.rect(
+        rect,
+        0.0,
+        colors::SURFACE_DARK,
+        egui::Stroke::new(tokens::STROKE_DEFAULT, colors::BORDER),
+        egui::StrokeKind::Inside,
+    );
+
+    let pad = spacing::SM;
+    let inner = rect.shrink(pad);
+
+    painter.text(
+        inner.left_top(),
+        egui::Align2::LEFT_TOP,
+        format!("Zone {zone_id}"),
+        egui::FontId::proportional(font_size::SUBTITLE),
+        colors::TEXT_HEADING,
+    );
+
+    if let Some(head) = state.network.zone_heads.get(&zone_id) {
+        let hex = hex::encode(&head[..4]);
+        painter.text(
+            egui::pos2(inner.left(), inner.top() + 18.0),
+            egui::Align2::LEFT_TOP,
+            format!("head: {hex}..."),
+            egui::FontId::proportional(font_size::SMALL),
+            colors::TEXT_MUTED,
+        );
+    }
+
+    let separator_y = rect.top() + pad + header_h;
+    painter.line_segment(
+        [
+            egui::pos2(rect.left() + pad, separator_y),
+            egui::pos2(rect.right() - pad, separator_y),
+        ],
+        egui::Stroke::new(0.5, colors::BORDER),
+    );
+
+    let tx_area = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + pad, separator_y + 2.0),
+        egui::pos2(rect.right() - pad, rect.bottom() - pad),
+    );
+
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tx_area));
+    egui::ScrollArea::vertical()
+        .id_salt(format!("zone_activity_{zone_id}"))
+        .max_height(tx_area.height())
+        .show(&mut child, |ui| {
+            let zone_txs: Vec<_> = state
+                .traffic_stats
+                .recent
+                .iter()
+                .filter(|e| e.zone_id == zone_id)
+                .collect();
+
+            if zone_txs.is_empty() {
                 ui.label(
-                    egui::RichText::new(egui_phosphor::regular::ARROW_RIGHT)
-                        .size(font_size::SMALL)
-                        .color(colors::ACCENT),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Zone {} — {}",
-                        entry.zone_id, entry.nullifier_hex
-                    ))
-                    .size(font_size::SMALL)
-                    .color(colors::TEXT_SECONDARY),
-                );
-                ui.label(
-                    egui::RichText::new(age_str)
+                    egui::RichText::new("no transactions")
                         .size(font_size::SMALL)
                         .color(colors::TEXT_MUTED),
                 );
-            });
-        }
-    });
+            } else {
+                for entry in zone_txs.iter().rev() {
+                    let age = entry.timestamp.elapsed();
+                    let age_str = if age.as_secs() < 60 {
+                        format!("{}s", age.as_secs())
+                    } else {
+                        format!("{}m", age.as_secs() / 60)
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(&entry.nullifier_hex)
+                                .size(font_size::SMALL)
+                                .color(colors::TEXT_SECONDARY),
+                        );
+                        ui.label(
+                            egui::RichText::new(age_str)
+                                .size(font_size::SMALL)
+                                .color(colors::TEXT_MUTED),
+                        );
+                    });
+                }
+            }
+        });
 }
