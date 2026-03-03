@@ -275,6 +275,8 @@ impl BlockflowVisualization {
         let total_blocks = self.blocks.len();
         let total_tps = state.network.actual_tps;
 
+        let entry_lead = self.smoothed_speed * ENTRY_LEAD_SECS;
+
         for row_idx in 0..self.zone_buf.len() {
             let zone_id = self.zone_buf[row_idx];
             let scaled_bar_h = BAR_HEIGHT * self.camera.zoom;
@@ -304,7 +306,6 @@ impl BlockflowVisualization {
 
             for &bi in &zone_indices {
                 let block = &self.blocks[bi];
-                let entry_lead = self.smoothed_speed * ENTRY_LEAD_SECS;
                 if block.birth_scroll_pos > self.scroll_pos + entry_lead {
                     continue;
                 }
@@ -316,7 +317,10 @@ impl BlockflowVisualization {
                     + LABEL_WIDTH
                     + (x_offset + self.camera.offset.x) * self.camera.zoom;
 
-                if screen_x + scaled_w < rect.left() || screen_x > rect.right() {
+                if screen_x > rect.right() {
+                    break;
+                }
+                if screen_x + scaled_w < rect.left() {
                     prev_screen_right = Some(screen_x + scaled_w);
                     continue;
                 }
@@ -393,17 +397,19 @@ impl BlockflowVisualization {
                         with_alpha(glow_color, right_alpha),
                     );
 
-                    let tail_w = GLOW_TAIL_LENGTH * self.camera.zoom;
-                    let tail_rect = egui::Rect::from_min_size(
-                        egui::pos2(bar_rect.right(), bar_rect.top()),
-                        egui::vec2(tail_w, scaled_bar_h),
-                    );
-                    draw_gradient_rect(
-                        &painter,
-                        tail_rect,
-                        with_alpha(glow_color, right_alpha),
-                        with_alpha(glow_color, 0),
-                    );
+                    if bar_rect.right() < rect.right() {
+                        let tail_w = GLOW_TAIL_LENGTH * self.camera.zoom;
+                        let tail_rect = egui::Rect::from_min_size(
+                            egui::pos2(bar_rect.right(), bar_rect.top()),
+                            egui::vec2(tail_w, scaled_bar_h),
+                        );
+                        draw_gradient_rect(
+                            &painter,
+                            tail_rect,
+                            with_alpha(glow_color, right_alpha),
+                            with_alpha(glow_color, 0),
+                        );
+                    }
 
                     let certified_secs = certified_age as f32 / 1000.0;
                     let total_pulse = PULSE_FILL_SECS + PULSE_DRAIN_SECS;
