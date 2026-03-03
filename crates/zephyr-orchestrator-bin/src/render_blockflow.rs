@@ -34,8 +34,8 @@ const MICRO_JITTER_SECS: f32 = 0.06;
 const ENTRY_LEAD_SECS: f32 = 0.5;
 const COLOR_BLEND_MS: f32 = 150.0;
 
-const PROPOSED_THRESHOLD_MS: u128 = 300;
-const VOTING_THRESHOLD_MS: u128 = 600;
+const PROPOSED_THRESHOLD_MS: u128 = 500;
+const VOTING_THRESHOLD_MS: u128 = 1000;
 
 const PULSE_FILL_SECS: f32 = 0.35;
 const PULSE_DRAIN_SECS: f32 = 0.35;
@@ -57,7 +57,6 @@ struct FlowBlock {
     #[allow(dead_code)]
     height: u64,
     tx_count: usize,
-    birth: Instant,
     birth_scroll_pos: f32,
     #[allow(dead_code)]
     block_hash_hex: String,
@@ -93,7 +92,6 @@ impl Default for BlockflowVisualization {
 
 impl BlockflowVisualization {
     fn ingest(&mut self, state: &AppState) -> bool {
-        let now = Instant::now();
         let first_load = self.seen.is_empty() && !state.recent_blocks.is_empty();
 
         let mut new_blocks = Vec::new();
@@ -137,14 +135,10 @@ impl BlockflowVisualization {
                         None => self.scroll_pos - phase_offset,
                         Some(prev) => prev - prev_width - BLOCK_GAP - gap_jitter,
                     };
-                    let age_secs = (self.scroll_pos - bsp).max(0.0) / speed;
                     self.blocks.push(FlowBlock {
                         zone_id: block.zone_id,
                         height: block.height,
                         tx_count: block.tx_count,
-                        birth: now
-                            .checked_sub(Duration::from_secs_f32(age_secs))
-                            .unwrap_or(now),
                         birth_scroll_pos: bsp,
                         block_hash_hex: block.block_hash_hex.clone(),
                     });
@@ -179,13 +173,10 @@ impl BlockflowVisualization {
                 let actual_bsp = desired_bsp.max(min_bsp);
                 zone_head.insert(block.zone_id, actual_bsp);
 
-                let time_to_enter =
-                    (actual_bsp - self.scroll_pos) / self.smoothed_speed.max(1.0);
                 self.blocks.push(FlowBlock {
                     zone_id: block.zone_id,
                     height: block.height,
                     tx_count: block.tx_count,
-                    birth: now + Duration::from_secs_f32(time_to_enter),
                     birth_scroll_pos: actual_bsp,
                     block_hash_hex: block.block_hash_hex.clone(),
                 });
@@ -349,9 +340,9 @@ impl BlockflowVisualization {
                     );
                 }
 
-                let age_ms = now
-                    .checked_duration_since(block.birth)
-                    .map_or(0, |d| d.as_millis());
+                let visual_age_secs =
+                    (x_offset + entry_lead) / self.smoothed_speed.max(1.0);
+                let age_ms = (visual_age_secs.max(0.0) * 1000.0) as u128;
                 let blended_color = status_color_blended(age_ms);
 
                 let bg_alpha = (BLOCK_BG_ALPHA * 255.0 * alpha_mul) as u8;
