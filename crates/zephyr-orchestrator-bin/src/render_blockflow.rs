@@ -26,8 +26,11 @@ const BASE_SCROLL_SPEED: f32 = 40.0;
 const TPS_SPEED_FACTOR: f32 = 12.0;
 const MAX_SCROLL_SPEED: f32 = 800.0;
 const MAX_BLOCKS_PER_ZONE: usize = 200;
-const ENTRANCE_DURATION_SECS: f32 = 0.35;
 const BATCH_STAGGER_SECS: f32 = 0.06;
+const ZONE_PHASE_MAX_SECS: f32 = 0.25;
+const GAP_JITTER_FRAC: f32 = 0.4;
+const MICRO_JITTER_SECS: f32 = 0.06;
+const ENTRY_LEAD_SECS: f32 = 0.5;
 const COLOR_BLEND_MS: f32 = 150.0;
 
 const PROPOSED_THRESHOLD_MS: u128 = 300;
@@ -45,6 +48,7 @@ pub(crate) struct BlockflowVisualization {
     scroll_pos: f32,
     last_frame: Instant,
     smoothed_speed: f32,
+    zone_buf: Vec<u32>,
 }
 
 struct FlowBlock {
@@ -81,12 +85,13 @@ impl Default for BlockflowVisualization {
             scroll_pos: 0.0,
             last_frame: Instant::now(),
             smoothed_speed: BASE_SCROLL_SPEED,
+            zone_buf: Vec::new(),
         }
     }
 }
 
 impl BlockflowVisualization {
-    pub fn ingest(&mut self, state: &AppState) {
+    fn ingest(&mut self, state: &AppState) -> bool {
         let now = Instant::now();
         let first_load = self.seen.is_empty() && !state.recent_blocks.is_empty();
 
@@ -99,7 +104,7 @@ impl BlockflowVisualization {
         }
 
         if new_blocks.is_empty() {
-            return;
+            return false;
         }
 
         let mut zone_head: HashMap<u32, f32> = HashMap::new();
@@ -116,15 +121,20 @@ impl BlockflowVisualization {
             for b in &new_blocks {
                 by_zone.entry(b.zone_id).or_default().push(*b);
             }
-            for (_, zone_blocks) in &mut by_zone {
+            for (&zone_id, zone_blocks) in &mut by_zone {
                 zone_blocks.sort_by(|a, b| b.height.cmp(&a.height));
+                let phase_offset =
+                    pseudo_rand(zone_id as u64, 0) * ZONE_PHASE_MAX_SECS * speed;
                 let mut prev_bsp: Option<f32> = None;
                 let mut prev_width: f32 = 0.0;
                 for block in zone_blocks.iter() {
                     let bar_w = block_width(block.tx_count);
+                    let gap_jitter = pseudo_rand(block.zone_id as u64, block.height)
+                        * GAP_JITTER_FRAC
+                        * BLOCK_GAP;
                     let bsp = match prev_bsp {
-                        None => self.scroll_pos,
-                        Some(prev) => prev - prev_width - BLOCK_GAP,
+                        None => self.scroll_pos - phase_offset,
+                        Some(prev) => prev - prev_width - BLOCK_GAP - gap_jitter,
                     };
                     let age_secs = (self.scroll_pos - bsp).max(0.0) / speed;
                     self.blocks.push(FlowBlock {
@@ -142,14 +152,28 @@ impl BlockflowVisualization {
                 }
             }
         } else {
-            for (i, block) in new_blocks.iter().enumerate() {
-                let stagger_secs = i as f32 * BATCH_STAGGER_SECS;
+            let mut zone_batch_idx: HashMap<u32, usize> = HashMap::new();
+
+            for block in new_blocks.iter() {
+                let idx = zone_batch_idx.entry(block.zone_id).or_insert(0);
+                let within_zone_stagger = *idx as f32 * BATCH_STAGGER_SECS;
+                *idx += 1;
+
+                let zone_phase =
+                    pseudo_rand(block.zone_id as u64, 0) * ZONE_PHASE_MAX_SECS;
+                let jitter =
+                    pseudo_rand(block.zone_id as u64, block.height) * MICRO_JITTER_SECS;
+
                 let bar_w = block_width(block.tx_count);
-                let desired_bsp =
-                    self.scroll_pos + self.smoothed_speed * stagger_secs;
+                let desired_bsp = self.scroll_pos
+                    + self.smoothed_speed
+                        * (within_zone_stagger + zone_phase + jitter);
+                let gap_jitter = pseudo_rand(block.zone_id as u64, block.height)
+                    * GAP_JITTER_FRAC
+                    * BLOCK_GAP;
                 let min_bsp = zone_head
                     .get(&block.zone_id)
-                    .map(|&prev| prev + bar_w + BLOCK_GAP)
+                    .map(|&prev| prev + bar_w + BLOCK_GAP + gap_jitter)
                     .unwrap_or(desired_bsp);
                 let actual_bsp = desired_bsp.max(min_bsp);
                 zone_head.insert(block.zone_id, actual_bsp);
@@ -168,6 +192,7 @@ impl BlockflowVisualization {
         }
 
         self.enforce_limits();
+        true
     }
 
     fn enforce_limits(&mut self) {
@@ -199,9 +224,14 @@ impl BlockflowVisualization {
 
     fn cull(&mut self, max_x: f32) {
         let scroll_pos = self.scroll_pos;
+        let seen = &mut self.seen;
         self.blocks.retain(|b| {
             let x = scroll_pos - b.birth_scroll_pos;
-            x < max_x + BAR_MAX_WIDTH * 2.0
+            let keep = x < max_x + BAR_MAX_WIDTH * 2.0;
+            if !keep {
+                seen.remove(&(b.zone_id, b.height));
+            }
+            keep
         });
     }
 
@@ -215,7 +245,7 @@ impl BlockflowVisualization {
             (target_speed - self.smoothed_speed) * (1.0 - (-dt * 4.0).exp());
         self.scroll_pos += self.smoothed_speed * dt;
 
-        self.ingest(state);
+        let has_new_blocks = self.ingest(state);
 
         let avail = ui.available_size();
         let (outer_rect, _) = ui.allocate_exact_size(avail, egui::Sense::hover());
@@ -235,15 +265,17 @@ impl BlockflowVisualization {
 
         painter.rect_filled(rect, 0.0, colors::PANEL_BG);
 
-        let mut zones: Vec<u32> = self.blocks.iter().map(|b| b.zone_id).collect();
-        zones.sort_unstable();
-        zones.dedup();
+        self.zone_buf.clear();
+        self.zone_buf.extend(self.blocks.iter().map(|b| b.zone_id));
+        self.zone_buf.sort_unstable();
+        self.zone_buf.dedup();
 
-        let zone_count = zones.len();
+        let zone_count = self.zone_buf.len();
         let total_blocks = self.blocks.len();
         let total_tps = state.network.actual_tps;
 
-        for (row_idx, &zone_id) in zones.iter().enumerate() {
+        for row_idx in 0..self.zone_buf.len() {
+            let zone_id = self.zone_buf[row_idx];
             let scaled_bar_h = BAR_HEIGHT * self.camera.zoom;
             let row_y = rect.top()
                 + ROW_TOP_MARGIN
@@ -254,31 +286,27 @@ impl BlockflowVisualization {
                 continue;
             }
 
-            let label_x = rect.left() + 8.0;
-            painter.text(
-                egui::pos2(label_x, row_y + scaled_bar_h * 0.5),
-                egui::Align2::LEFT_CENTER,
-                format!("ZONE {zone_id}  \u{25B8}"),
-                egui::FontId::proportional(11.0 * self.camera.zoom.sqrt()),
-                egui::Color32::WHITE,
-            );
-
-            let mut zone_blocks: Vec<&FlowBlock> = self
+            let mut zone_indices: Vec<usize> = self
                 .blocks
                 .iter()
-                .filter(|b| b.zone_id == zone_id)
+                .enumerate()
+                .filter(|(_, b)| b.zone_id == zone_id)
+                .map(|(i, _)| i)
                 .collect();
-            zone_blocks.sort_by(|a, b| b.birth_scroll_pos.total_cmp(&a.birth_scroll_pos));
+            zone_indices.sort_by(|&a, &b| {
+                self.blocks[b]
+                    .birth_scroll_pos
+                    .total_cmp(&self.blocks[a].birth_scroll_pos)
+            });
 
             let mut prev_screen_right: Option<f32> = None;
 
-            for block in &zone_blocks {
-                if self.scroll_pos < block.birth_scroll_pos {
+            for &bi in &zone_indices {
+                let block = &self.blocks[bi];
+                let entry_lead = self.smoothed_speed * ENTRY_LEAD_SECS;
+                if block.birth_scroll_pos > self.scroll_pos + entry_lead {
                     continue;
                 }
-                let age = now
-                    .checked_duration_since(block.birth)
-                    .map_or(0.0, |d| d.as_secs_f32());
                 let x_offset = self.scroll_pos - block.birth_scroll_pos;
                 let bar_w = block_width(block.tx_count);
                 let scaled_w = bar_w * self.camera.zoom;
@@ -292,8 +320,9 @@ impl BlockflowVisualization {
                     continue;
                 }
 
-                let entrance_t = (age / ENTRANCE_DURATION_SECS).min(1.0);
-                let alpha_mul = 1.0 - (1.0 - entrance_t).powi(2);
+                let scroll_frac =
+                    ((x_offset + entry_lead) / entry_lead.max(1.0)).clamp(0.0, 1.0);
+                let alpha_mul = 1.0 - (1.0 - scroll_frac).powi(2);
 
                 let bar_rect = egui::Rect::from_min_size(
                     egui::pos2(screen_x, row_y),
@@ -442,6 +471,19 @@ impl BlockflowVisualization {
 
                 prev_screen_right = Some(screen_x + scaled_w);
             }
+
+            let label_bg = egui::Rect::from_min_max(
+                egui::pos2(rect.left(), row_y - ROW_HEIGHT * 0.3),
+                egui::pos2(rect.left() + LABEL_WIDTH, row_y + scaled_bar_h + ROW_HEIGHT * 0.3),
+            );
+            painter.rect_filled(label_bg, 0.0, colors::PANEL_BG);
+            painter.text(
+                egui::pos2(rect.left() + 8.0, row_y + scaled_bar_h * 0.5),
+                egui::Align2::LEFT_CENTER,
+                format!("ZONE {zone_id}  \u{25B8}"),
+                egui::FontId::proportional(11.0 * self.camera.zoom.sqrt()),
+                egui::Color32::WHITE,
+            );
         }
 
         let overlay_pos = rect.left_top() + egui::vec2(12.0, 8.0);
@@ -479,7 +521,11 @@ impl BlockflowVisualization {
                 });
             });
 
-        ui.ctx().request_repaint();
+        let is_animating = self.smoothed_speed > 0.5 || has_new_blocks;
+        if is_animating {
+            ui.ctx()
+                .request_repaint_after(Duration::from_millis(32));
+        }
     }
 
     fn handle_pan_zoom(&mut self, resp: &egui::Response, ui: &egui::Ui) {
@@ -528,6 +574,15 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
         (a.b() as f32 + (b.b() as f32 - a.b() as f32) * t) as u8,
         (a.a() as f32 + (b.a() as f32 - a.a() as f32) * t) as u8,
     )
+}
+
+fn pseudo_rand(a: u64, b: u64) -> f32 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    h ^= a;
+    h = h.wrapping_mul(0x100000001b3);
+    h ^= b;
+    h = h.wrapping_mul(0x100000001b3);
+    (h % 10000) as f32 / 10000.0
 }
 
 fn block_width(tx_count: usize) -> f32 {
