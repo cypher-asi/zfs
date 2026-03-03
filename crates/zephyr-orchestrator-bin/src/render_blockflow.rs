@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
-use crate::components::tokens::{colors, font_size};
+use crate::components::tokens::colors;
 use crate::components::{overlay_frame, section_heading};
 use crate::state::{AppState, BlockStatus};
 
@@ -13,15 +13,18 @@ const BAR_MAX_WIDTH: f32 = 500.0;
 const BAR_WIDTH_PER_TX: f32 = 3.0;
 const ROW_HEIGHT: f32 = 28.0;
 const ROW_TOP_MARGIN: f32 = 36.0;
-const GLOW_OUTER_EXPAND: f32 = 6.0;
-const GLOW_INNER_EXPAND: f32 = 2.0;
-const GLOW_OUTER_ALPHA: f32 = 0.08;
-const GLOW_INNER_ALPHA: f32 = 0.20;
-const CORE_ALPHA: f32 = 0.70;
-const DOT_RADIUS: f32 = 1.5;
-const DOT_SPACING: f32 = 4.0;
+const BORDER_STROKE: f32 = 1.2;
+const SUBTLE_BG_ALPHA: f32 = 0.06;
+const GLOW_FILL_ALPHA: f32 = 0.35;
+const GLOW_TAIL_LENGTH: f32 = 80.0;
+const GLOW_TAIL_MIN_ALPHA: f32 = 0.04;
+const GLOW_FADE_IN_SECS: f32 = 0.3;
+const FADE_ZONE_FRAC: f32 = 0.25;
 const LABEL_WIDTH: f32 = 72.0;
-const SCROLL_SPEED: f32 = 60.0;
+const BLOCK_GAP: f32 = 6.0;
+const BASE_SCROLL_SPEED: f32 = 40.0;
+const TPS_SPEED_FACTOR: f32 = 12.0;
+const MAX_SCROLL_SPEED: f32 = 800.0;
 const MAX_BLOCKS_PER_ZONE: usize = 200;
 const ENTRANCE_DURATION_SECS: f32 = 0.1;
 
@@ -36,6 +39,7 @@ pub(crate) struct BlockflowVisualization {
 
 struct FlowBlock {
     zone_id: u32,
+    #[allow(dead_code)]
     height: u64,
     tx_count: usize,
     birth: Instant,
@@ -68,7 +72,7 @@ impl Default for BlockflowVisualization {
 }
 
 impl BlockflowVisualization {
-    pub fn ingest(&mut self, state: &AppState) {
+    pub fn ingest(&mut self, state: &AppState, speed: f32) {
         let now = Instant::now();
         let first_load = self.seen.is_empty() && !state.recent_blocks.is_empty();
 
@@ -92,8 +96,9 @@ impl BlockflowVisualization {
             for (_, zone_blocks) in &mut by_zone {
                 zone_blocks.sort_by(|a, b| b.height.cmp(&a.height));
                 for (i, block) in zone_blocks.iter().enumerate() {
-                    let stagger =
-                        Duration::from_secs_f32(i as f32 * (BAR_MIN_WIDTH + 14.0) / SCROLL_SPEED);
+                    let stagger = Duration::from_secs_f32(
+                        i as f32 * (BAR_MIN_WIDTH + BLOCK_GAP) / speed.max(1.0),
+                    );
                     self.blocks.push(FlowBlock {
                         zone_id: block.zone_id,
                         height: block.height,
@@ -131,17 +136,18 @@ impl BlockflowVisualization {
         });
     }
 
-    fn cull(&mut self, max_x: f32) {
+    fn cull(&mut self, max_x: f32, speed: f32) {
         let now = Instant::now();
         self.blocks.retain(|b| {
             let age = now.duration_since(b.birth).as_secs_f32();
-            let x = age * SCROLL_SPEED;
+            let x = age * speed;
             x < max_x + BAR_MAX_WIDTH * 2.0
         });
     }
 
     pub fn render(&mut self, ui: &mut egui::Ui, state: &AppState) {
-        self.ingest(state);
+        let speed = scroll_speed(state.network.actual_tps);
+        self.ingest(state, speed);
 
         let avail = ui.available_size();
         let (outer_rect, _) = ui.allocate_exact_size(avail, egui::Sense::hover());
@@ -157,7 +163,7 @@ impl BlockflowVisualization {
         let rect = resp.rect;
 
         self.handle_pan_zoom(&resp, ui);
-        self.cull(rect.width() / self.camera.zoom + 200.0);
+        self.cull(rect.width() / self.camera.zoom + 200.0, speed);
 
         painter.rect_filled(rect, 0.0, colors::PANEL_BG);
 
@@ -191,20 +197,24 @@ impl BlockflowVisualization {
                 egui::Color32::WHITE,
             );
 
-            let zone_blocks: Vec<&FlowBlock> = self
+            let mut zone_blocks: Vec<&FlowBlock> = self
                 .blocks
                 .iter()
                 .filter(|b| b.zone_id == zone_id)
                 .collect();
+            zone_blocks.sort_by(|a, b| b.birth.cmp(&a.birth));
 
             let mut prev_screen_right: Option<f32> = None;
+            let mut min_next_x: f32 = 0.0;
 
             for block in &zone_blocks {
                 let age = now.duration_since(block.birth).as_secs_f32();
-                let x_offset = age * SCROLL_SPEED;
+                let natural_x = age * speed;
+                let x_offset = natural_x.max(min_next_x);
                 let bar_w = (BAR_MIN_WIDTH + block.tx_count as f32 * BAR_WIDTH_PER_TX)
                     .min(BAR_MAX_WIDTH);
                 let scaled_w = bar_w * self.camera.zoom;
+                min_next_x = x_offset + bar_w + BLOCK_GAP;
 
                 let screen_x = rect.left()
                     + LABEL_WIDTH
@@ -240,58 +250,72 @@ impl BlockflowVisualization {
 
                 let status = block_status(block, now);
                 let status_color = status_to_color(status);
+                let age_ms = now.duration_since(block.birth).as_millis();
 
-                let outer_rect = bar_rect.expand2(egui::vec2(
-                    4.0 * self.camera.zoom,
-                    GLOW_OUTER_EXPAND * self.camera.zoom,
-                ));
+                let bg_alpha = (SUBTLE_BG_ALPHA * 255.0 * alpha_mul) as u8;
+                let solid_w = scaled_w * (1.0 - FADE_ZONE_FRAC);
+                let fade_w = scaled_w * FADE_ZONE_FRAC;
+
+                let solid_rect = egui::Rect::from_min_size(
+                    bar_rect.left_top(),
+                    egui::vec2(solid_w, scaled_bar_h),
+                );
                 painter.rect_filled(
-                    outer_rect,
-                    5.0,
-                    with_alpha(
-                        status_color,
-                        (GLOW_OUTER_ALPHA * 255.0 * alpha_mul) as u8,
-                    ),
+                    solid_rect,
+                    0.0,
+                    with_alpha(status_color, bg_alpha),
                 );
 
-                let inner_rect = bar_rect.expand2(egui::vec2(
-                    GLOW_INNER_EXPAND * self.camera.zoom,
-                    GLOW_INNER_EXPAND * self.camera.zoom,
-                ));
-                painter.rect_filled(
-                    inner_rect,
-                    3.0,
-                    with_alpha(
-                        status_color,
-                        (GLOW_INNER_ALPHA * 255.0 * alpha_mul) as u8,
-                    ),
+                let fade_rect = egui::Rect::from_min_size(
+                    egui::pos2(bar_rect.left() + solid_w, bar_rect.top()),
+                    egui::vec2(fade_w, scaled_bar_h),
+                );
+                draw_gradient_rect(
+                    &painter,
+                    fade_rect,
+                    with_alpha(status_color, bg_alpha),
+                    with_alpha(status_color, 0),
                 );
 
-                painter.rect_filled(
+                if status == BlockStatus::Certified {
+                    let certified_age = age_ms.saturating_sub(VOTING_THRESHOLD_MS);
+                    let glow_t =
+                        (certified_age as f32 / 1000.0 / GLOW_FADE_IN_SECS).min(1.0);
+
+                    let left_alpha =
+                        (GLOW_FILL_ALPHA * glow_t * 255.0 * alpha_mul) as u8;
+                    let right_alpha =
+                        (GLOW_TAIL_MIN_ALPHA * glow_t * 255.0 * alpha_mul) as u8;
+
+                    draw_gradient_rect(
+                        &painter,
+                        bar_rect,
+                        with_alpha(status_color, left_alpha),
+                        with_alpha(status_color, right_alpha),
+                    );
+
+                    let tail_w = GLOW_TAIL_LENGTH * self.camera.zoom;
+                    let tail_rect = egui::Rect::from_min_size(
+                        egui::pos2(bar_rect.right(), bar_rect.top()),
+                        egui::vec2(tail_w, scaled_bar_h),
+                    );
+                    draw_gradient_rect(
+                        &painter,
+                        tail_rect,
+                        with_alpha(status_color, right_alpha),
+                        with_alpha(status_color, 0),
+                    );
+                }
+
+                painter.rect_stroke(
                     bar_rect,
                     2.0,
-                    with_alpha(status_color, (CORE_ALPHA * 255.0 * alpha_mul) as u8),
+                    egui::Stroke::new(
+                        BORDER_STROKE,
+                        with_alpha(status_color, (255.0 * alpha_mul) as u8),
+                    ),
+                    egui::StrokeKind::Inside,
                 );
-
-                if self.camera.zoom > 0.6 {
-                    draw_tx_dots(&painter, bar_rect, block.tx_count, alpha_mul);
-                }
-
-                if scaled_w > 60.0 {
-                    let label_pos = egui::pos2(
-                        bar_rect.right() + 4.0,
-                        bar_rect.center().y,
-                    );
-                    painter.text(
-                        label_pos,
-                        egui::Align2::LEFT_CENTER,
-                        format!("#{}", block.height),
-                        egui::FontId::proportional(
-                            (font_size::TINY * self.camera.zoom.sqrt()).max(7.0),
-                        ),
-                        with_alpha(egui::Color32::WHITE, (180.0 * alpha_mul) as u8),
-                    );
-                }
 
                 prev_screen_right = Some(screen_x + scaled_w);
             }
@@ -349,6 +373,10 @@ impl BlockflowVisualization {
     }
 }
 
+fn scroll_speed(tps: f64) -> f32 {
+    (BASE_SCROLL_SPEED + (tps as f32).sqrt() * TPS_SPEED_FACTOR).min(MAX_SCROLL_SPEED)
+}
+
 fn block_status(block: &FlowBlock, now: Instant) -> BlockStatus {
     let age_ms = now.duration_since(block.birth).as_millis();
     if age_ms < PROPOSED_THRESHOLD_MS {
@@ -372,22 +400,19 @@ fn with_alpha(c: egui::Color32, a: u8) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
 }
 
-fn draw_tx_dots(painter: &egui::Painter, bar_rect: egui::Rect, tx_count: usize, alpha: f32) {
-    if tx_count == 0 {
-        return;
-    }
-
-    let inner = bar_rect.shrink2(egui::vec2(DOT_SPACING, 0.0));
-    let max_dots = ((inner.width() + DOT_SPACING) / (DOT_RADIUS * 2.0 + DOT_SPACING)).floor() as usize;
-    let draw_count = tx_count.min(max_dots);
-    let dot_color = with_alpha(egui::Color32::WHITE, (0.60 * 255.0 * alpha) as u8);
-    let center_y = bar_rect.center().y;
-
-    for i in 0..draw_count {
-        let cx = inner.left() + DOT_RADIUS + i as f32 * (DOT_RADIUS * 2.0 + DOT_SPACING);
-        if cx + DOT_RADIUS > inner.right() {
-            break;
-        }
-        painter.circle_filled(egui::pos2(cx, center_y), DOT_RADIUS, dot_color);
-    }
+fn draw_gradient_rect(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    color_left: egui::Color32,
+    color_right: egui::Color32,
+) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), color_left);
+    mesh.colored_vertex(rect.right_top(), color_right);
+    mesh.colored_vertex(rect.right_bottom(), color_right);
+    mesh.colored_vertex(rect.left_bottom(), color_left);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(egui::Shape::mesh(mesh));
 }
+
