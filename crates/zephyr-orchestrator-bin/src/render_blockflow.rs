@@ -51,7 +51,6 @@ const PULSE_BRIGHT_ALPHA: f32 = 0.90;
 pub(crate) struct BlockflowVisualization {
     blocks: Vec<FlowBlock>,
     seen: HashSet<(u32, u64)>,
-    camera: Camera,
     scroll_pos: f32,
     last_frame: Instant,
     smoothed_speed: f32,
@@ -71,26 +70,11 @@ struct FlowBlock {
     color_idx: u8,
 }
 
-struct Camera {
-    offset: egui::Vec2,
-    zoom: f32,
-}
-
-impl Default for Camera {
-    fn default() -> Self {
-        Self {
-            offset: egui::Vec2::ZERO,
-            zoom: 1.0,
-        }
-    }
-}
-
 impl Default for BlockflowVisualization {
     fn default() -> Self {
         Self {
             blocks: Vec::new(),
             seen: HashSet::new(),
-            camera: Camera::default(),
             scroll_pos: 0.0,
             last_frame: Instant::now(),
             smoothed_speed: MIN_SCROLL_SPEED,
@@ -277,11 +261,10 @@ impl BlockflowVisualization {
         );
         let ui = &mut child_ui;
 
-        let (resp, painter) = ui.allocate_painter(outer_rect.size(), egui::Sense::click_and_drag());
+        let (resp, painter) = ui.allocate_painter(outer_rect.size(), egui::Sense::hover());
         let rect = resp.rect;
 
-        self.handle_pan_zoom(&resp, ui);
-        self.cull(rect.width() / self.camera.zoom + 200.0);
+        self.cull(rect.width() + 200.0);
 
         painter.rect_filled(rect, 0.0, colors::PANEL_BG);
 
@@ -296,7 +279,7 @@ impl BlockflowVisualization {
         let tps_boost = ((total_tps as f32 / 1000.0).clamp(1.0, 2.0) - 1.0) * 0.5 + 1.0;
 
         let usable_scroll_width =
-            (rect.width() - LABEL_WIDTH - LABEL_FADE_WIDTH).max(1.0) / self.camera.zoom;
+            (rect.width() - LABEL_WIDTH - LABEL_FADE_WIDTH).max(1.0);
         let visible_secs = usable_scroll_width / self.smoothed_speed.max(1.0);
         let lifecycle_secs =
             VOTING_THRESHOLD_MS as f32 / 1000.0 + PULSE_FILL_SECS + PULSE_DRAIN_SECS;
@@ -306,13 +289,11 @@ impl BlockflowVisualization {
 
         for row_idx in 0..self.zone_buf.len() {
             let zone_id = self.zone_buf[row_idx];
-            let scaled_bar_h = BAR_HEIGHT * self.camera.zoom;
             let row_y = rect.top()
                 + ROW_TOP_MARGIN
-                + row_idx as f32 * ROW_HEIGHT * self.camera.zoom
-                + self.camera.offset.y * self.camera.zoom;
+                + row_idx as f32 * ROW_HEIGHT;
 
-            if row_y + scaled_bar_h < rect.top() || row_y > rect.bottom() {
+            if row_y + BAR_HEIGHT < rect.top() || row_y > rect.bottom() {
                 continue;
             }
 
@@ -338,17 +319,16 @@ impl BlockflowVisualization {
                 }
                 let x_offset = self.scroll_pos - block.birth_scroll_pos;
                 let bar_w = block_width(block.tx_count);
-                let scaled_w = bar_w * self.camera.zoom;
 
                 let screen_x = rect.left()
                     + LABEL_WIDTH
-                    + (x_offset + self.camera.offset.x) * self.camera.zoom;
+                    + x_offset;
 
                 if screen_x > rect.right() {
                     break;
                 }
-                if screen_x + scaled_w < rect.left() {
-                    prev_screen_right = Some(screen_x + scaled_w);
+                if screen_x + bar_w < rect.left() {
+                    prev_screen_right = Some(screen_x + bar_w);
                     continue;
                 }
 
@@ -366,11 +346,11 @@ impl BlockflowVisualization {
 
                 let bar_rect = egui::Rect::from_min_size(
                     egui::pos2(screen_x, row_y),
-                    egui::vec2(scaled_w, scaled_bar_h),
+                    egui::vec2(bar_w, BAR_HEIGHT),
                 );
 
                 if let Some(prev_right) = prev_screen_right {
-                    let conn_y = row_y + scaled_bar_h * 0.5;
+                    let conn_y = row_y + BAR_HEIGHT * 0.5;
                     let connector_alpha = (25.0 * alpha_mul) as u8;
                     painter.line_segment(
                         [
@@ -390,12 +370,12 @@ impl BlockflowVisualization {
                 let border_col = border_color_blended(age_ms);
 
                 let bg_alpha = (BLOCK_BG_ALPHA * 255.0 * alpha_mul) as u8;
-                let solid_w = scaled_w * (1.0 - FADE_ZONE_FRAC);
-                let fade_w = scaled_w * FADE_ZONE_FRAC;
+                let solid_w = bar_w * (1.0 - FADE_ZONE_FRAC);
+                let fade_w = bar_w * FADE_ZONE_FRAC;
 
                 let solid_rect = egui::Rect::from_min_size(
                     bar_rect.left_top(),
-                    egui::vec2(solid_w, scaled_bar_h),
+                    egui::vec2(solid_w, BAR_HEIGHT),
                 );
                 painter.rect_filled(
                     solid_rect,
@@ -405,7 +385,7 @@ impl BlockflowVisualization {
 
                 let fade_rect = egui::Rect::from_min_size(
                     egui::pos2(bar_rect.left() + solid_w, bar_rect.top()),
-                    egui::vec2(fade_w, scaled_bar_h),
+                    egui::vec2(fade_w, BAR_HEIGHT),
                 );
                 draw_gradient_rect(
                     &painter,
@@ -434,10 +414,10 @@ impl BlockflowVisualization {
                     );
 
                     if bar_rect.right() < rect.right() {
-                        let tail_w = GLOW_TAIL_LENGTH * self.camera.zoom;
+                        let tail_w = GLOW_TAIL_LENGTH;
                         let tail_rect = egui::Rect::from_min_size(
                             egui::pos2(bar_rect.right(), bar_rect.top()),
-                            egui::vec2(tail_w, scaled_bar_h),
+                            egui::vec2(tail_w, BAR_HEIGHT),
                         );
                         draw_gradient_rect(
                             &painter,
@@ -451,7 +431,7 @@ impl BlockflowVisualization {
                     let total_pulse = PULSE_FILL_SECS + PULSE_DRAIN_SECS;
                     if certified_secs < total_pulse {
                         let pulse_color = lerp_color(fill_color, egui::Color32::WHITE, 0.45);
-                        let edge_w = (scaled_w * PULSE_EDGE_FRAC).max(4.0);
+                        let edge_w = (bar_w * PULSE_EDGE_FRAC).max(4.0);
                         let boosted_pulse = (PULSE_BRIGHT_ALPHA * tps_boost).min(1.0);
                         let bright =
                             with_alpha(pulse_color, (boosted_pulse * 255.0 * alpha_mul) as u8);
@@ -459,7 +439,7 @@ impl BlockflowVisualization {
 
                         if certified_secs < PULSE_FILL_SECS {
                             let fill_t = (certified_secs / PULSE_FILL_SECS).clamp(0.0, 1.0);
-                            let lead_x = bar_rect.left() + fill_t * scaled_w;
+                            let lead_x = bar_rect.left() + fill_t * bar_w;
 
                             let solid_right = (lead_x - edge_w).max(bar_rect.left());
                             if solid_right > bar_rect.left() {
@@ -481,7 +461,7 @@ impl BlockflowVisualization {
                             let drain_t = ((certified_secs - PULSE_FILL_SECS)
                                 / PULSE_DRAIN_SECS)
                                 .clamp(0.0, 1.0);
-                            let trail_x = bar_rect.left() + drain_t * scaled_w;
+                            let trail_x = bar_rect.left() + drain_t * bar_w;
 
                             let solid_left = (trail_x + edge_w).min(bar_rect.right());
                             if solid_left < bar_rect.right() {
@@ -513,19 +493,19 @@ impl BlockflowVisualization {
                     egui::StrokeKind::Inside,
                 );
 
-                prev_screen_right = Some(screen_x + scaled_w);
+                prev_screen_right = Some(screen_x + bar_w);
             }
 
             let label_bg = egui::Rect::from_min_max(
                 egui::pos2(rect.left(), row_y - ROW_HEIGHT * 0.3),
-                egui::pos2(rect.left() + LABEL_WIDTH, row_y + scaled_bar_h + ROW_HEIGHT * 0.3),
+                egui::pos2(rect.left() + LABEL_WIDTH, row_y + BAR_HEIGHT + ROW_HEIGHT * 0.3),
             );
             painter.rect_filled(label_bg, 0.0, colors::PANEL_BG);
             painter.text(
-                egui::pos2(rect.left() + 20.0, row_y + scaled_bar_h * 0.5),
+                egui::pos2(rect.left() + 20.0, row_y + BAR_HEIGHT * 0.5),
                 egui::Align2::LEFT_CENTER,
                 format!("Z{zone_id}"),
-                egui::FontId::proportional(11.0 * self.camera.zoom.sqrt()),
+                egui::FontId::proportional(11.0),
                 egui::Color32::WHITE,
             );
         }
@@ -565,21 +545,6 @@ impl BlockflowVisualization {
                             .family(egui::FontFamily::Monospace),
                         );
                     });
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        overlay_frame()
-                            .inner_margin(egui::Margin::symmetric(6, 4))
-                            .show(ui, |ui| {
-                                if crate::components::icon_button(
-                                    ui,
-                                    egui_phosphor::regular::ARROWS_IN,
-                                )
-                                .clicked()
-                                {
-                                    self.camera = Camera::default();
-                                }
-                            });
-                    });
                 });
             });
 
@@ -590,11 +555,6 @@ impl BlockflowVisualization {
         }
     }
 
-    fn handle_pan_zoom(&mut self, resp: &egui::Response, _ui: &egui::Ui) {
-        if resp.dragged() {
-            self.camera.offset += resp.drag_delta() / self.camera.zoom;
-        }
-    }
 }
 
 fn border_color_blended(age_ms: u128) -> egui::Color32 {
