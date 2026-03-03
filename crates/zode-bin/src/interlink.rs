@@ -752,7 +752,7 @@ fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
     let available = ui.available_height() - 40.0;
     let mut load_history = false;
 
-    egui::ScrollArea::vertical()
+    let scroll_output = egui::ScrollArea::vertical()
         .max_height(available.max(100.0))
         .auto_shrink([false, false])
         .stick_to_bottom(true)
@@ -766,18 +766,14 @@ fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
                     ui.spinner();
                 });
                 ui.add_space(4.0);
-            } else if has_more_history {
+            } else if !has_more_history && !il.messages.is_empty() {
                 ui.vertical_centered(|ui| {
-                    if ui
-                        .link(
-                            egui::RichText::new("Load earlier messages")
-                                .weak()
-                                .italics(),
-                        )
-                        .clicked()
-                    {
-                        load_history = true;
-                    }
+                    ui.label(
+                        egui::RichText::new("Beginning of conversation")
+                            .weak()
+                            .italics()
+                            .small(),
+                    );
                 });
                 ui.add_space(4.0);
             }
@@ -806,6 +802,10 @@ fn render_interlink_messages(app: &mut ZodeApp, ui: &mut egui::Ui) {
             }
         });
     ui.separator();
+
+    if has_more_history && !history_loading && scroll_output.state.offset.y < 30.0 {
+        load_history = true;
+    }
 
     if load_history {
         do_load_history(app);
