@@ -138,13 +138,47 @@ fn finality_certificate_cbor_round_trip() {
 
 #[test]
 fn zone_message_cbor_round_trip() {
-    let msg = ZephyrZoneMessage::Reject(SpendReject {
+    let tx = SpendTransaction {
+        input_commitment: NoteCommitment([0; 32]),
+        nullifier: Nullifier([0x11; 32]),
+        outputs: vec![],
+        proof: vec![],
+        public_signals: vec![],
+    };
+    let msg = ZephyrZoneMessage::SubmitSpend(tx);
+    let bytes = grid_core::encode_canonical(&msg).unwrap();
+    let decoded: ZephyrZoneMessage = grid_core::decode_canonical(&bytes).unwrap();
+    assert_eq!(msg, decoded);
+}
+
+#[test]
+fn consensus_message_cbor_round_trip() {
+    let msg = ZephyrConsensusMessage::Reject(SpendReject {
         nullifier: Nullifier([0x11; 32]),
         reason: RejectReason::DuplicateNullifier,
     });
     let bytes = grid_core::encode_canonical(&msg).unwrap();
-    let decoded: ZephyrZoneMessage = grid_core::decode_canonical(&bytes).unwrap();
+    let decoded: ZephyrConsensusMessage = grid_core::decode_canonical(&bytes).unwrap();
     assert_eq!(msg, decoded);
+}
+
+#[test]
+fn consensus_descriptor_cbor_round_trip() {
+    let original = ZephyrConsensusDescriptor::new(42);
+    let bytes = original.encode_canonical().unwrap();
+    let decoded = ZephyrConsensusDescriptor::decode_canonical(&bytes).unwrap();
+    assert_eq!(original, decoded);
+}
+
+#[test]
+fn consensus_descriptor_distinct_from_zone() {
+    let zone = ZephyrZoneDescriptor::new(0);
+    let consensus = ZephyrConsensusDescriptor::new(0);
+    assert_ne!(
+        zone.program_id().unwrap(),
+        consensus.program_id().unwrap(),
+        "zone and consensus descriptors for the same zone_id must have distinct program IDs"
+    );
 }
 
 #[test]

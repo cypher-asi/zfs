@@ -2,20 +2,21 @@ use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use grid_programs_zephyr::{ZephyrGlobalMessage, ZephyrZoneMessage};
+use grid_programs_zephyr::{ZephyrConsensusMessage, ZephyrGlobalMessage, ZephyrZoneMessage};
 use grid_service::ServiceGossipHandler;
 use tracing::{debug, warn};
 
-/// Gossip handler for Zephyr zone and global topics.
+/// Gossip handler for Zephyr zone, consensus, and global topics.
 ///
 /// Decodes incoming gossip messages and dispatches them to the appropriate
 /// handler. Invalid messages (decode failures, invalid proofs) are dropped
 /// and never re-gossiped.
 pub struct ZephyrGossipHandler {
     zone_topics: Arc<RwLock<HashSet<String>>>,
+    consensus_topics: Arc<RwLock<HashSet<String>>>,
     global_topic: String,
-    /// Proposals, votes, and rejects -- low-volume, latency-sensitive.
-    consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
+    /// Proposals, votes, and rejects on dedicated consensus topics.
+    consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
     /// Spend submissions only -- high-volume, loss-tolerant.
     zone_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
     global_message_tx: tokio::sync::mpsc::Sender<ZephyrGlobalMessage>,
@@ -24,12 +25,13 @@ pub struct ZephyrGossipHandler {
 impl ZephyrGossipHandler {
     pub fn new(
         global_topic: String,
-        consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
+        consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
         zone_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
         global_message_tx: tokio::sync::mpsc::Sender<ZephyrGlobalMessage>,
     ) -> Self {
         Self {
             zone_topics: Arc::new(RwLock::new(HashSet::new())),
+            consensus_topics: Arc::new(RwLock::new(HashSet::new())),
             global_topic,
             consensus_message_tx,
             zone_message_tx,
@@ -37,14 +39,21 @@ impl ZephyrGossipHandler {
         }
     }
 
-    /// Register a zone topic for handling.
+    /// Register a zone spend topic for handling.
     pub fn add_zone_topic(&self, topic: String) {
         if let Ok(mut topics) = self.zone_topics.write() {
             topics.insert(topic);
         }
     }
 
-    /// Unregister a zone topic.
+    /// Register a zone consensus topic for handling.
+    pub fn add_consensus_topic(&self, topic: String) {
+        if let Ok(mut topics) = self.consensus_topics.write() {
+            topics.insert(topic);
+        }
+    }
+
+    /// Unregister a zone spend topic.
     pub fn remove_zone_topic(&self, topic: &str) {
         if let Ok(mut topics) = self.zone_topics.write() {
             topics.remove(topic);
@@ -57,12 +66,19 @@ impl ZephyrGossipHandler {
             .map(|t| t.contains(topic))
             .unwrap_or(false)
     }
+
+    fn is_consensus_topic(&self, topic: &str) -> bool {
+        self.consensus_topics
+            .read()
+            .map(|t| t.contains(topic))
+            .unwrap_or(false)
+    }
 }
 
 #[async_trait]
 impl ServiceGossipHandler for ZephyrGossipHandler {
     fn handles_topic(&self, topic: &str) -> bool {
-        topic == self.global_topic || self.is_zone_topic(topic)
+        topic == self.global_topic || self.is_zone_topic(topic) || self.is_consensus_topic(topic)
     }
 
     async fn on_gossip(&self, topic: &str, data: &[u8], sender: Option<String>) {
@@ -80,29 +96,33 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
                     warn!(%topic, %sender_label, error = %e, "failed to decode global gossip");
                 }
             }
+        } else if self.is_consensus_topic(topic) {
+            match grid_core::decode_canonical::<ZephyrConsensusMessage>(data) {
+                Ok(msg) => {
+                    let msg_type = match &msg {
+                        ZephyrConsensusMessage::Proposal(_) => "Proposal",
+                        ZephyrConsensusMessage::Vote(_) => "Vote",
+                        ZephyrConsensusMessage::Reject(_) => "Reject",
+                    };
+                    debug!(%topic, %sender_label, msg_type, "received consensus message");
+                    if let Err(e) = self.consensus_message_tx.try_send((topic.to_owned(), msg)) {
+                        warn!("consensus_tx full, dropping message: {e}");
+                    }
+                }
+                Err(e) => {
+                    warn!(%topic, %sender_label, error = %e, "failed to decode consensus gossip");
+                }
+            }
         } else if self.is_zone_topic(topic) {
             match grid_core::decode_canonical::<ZephyrZoneMessage>(data) {
                 Ok(msg) => {
                     let msg_type = match &msg {
-                        ZephyrZoneMessage::Proposal(_) => "Proposal",
-                        ZephyrZoneMessage::Vote(_) => "Vote",
-                        ZephyrZoneMessage::Reject(_) => "Reject",
                         ZephyrZoneMessage::SubmitSpend(_) => "SubmitSpend",
                         ZephyrZoneMessage::SubmitSpendBatch(_) => "SubmitSpendBatch",
                     };
                     debug!(%topic, %sender_label, msg_type, "received zone message");
-                    match msg {
-                        ZephyrZoneMessage::SubmitSpend(_)
-                        | ZephyrZoneMessage::SubmitSpendBatch(_) => {
-                            if let Err(e) = self.zone_message_tx.try_send((topic.to_owned(), msg)) {
-                                warn!("zone_tx full, dropping spend: {e}");
-                            }
-                        }
-                        _ => {
-                            if let Err(e) = self.consensus_message_tx.try_send((topic.to_owned(), msg)) {
-                                warn!("consensus_tx full, dropping message: {e}");
-                            }
-                        }
+                    if let Err(e) = self.zone_message_tx.try_send((topic.to_owned(), msg)) {
+                        warn!("zone_tx full, dropping spend: {e}");
                     }
                 }
                 Err(e) => {
@@ -122,7 +142,7 @@ mod tests {
 
     fn make_handler() -> (
         ZephyrGossipHandler,
-        tokio::sync::mpsc::Receiver<(String, ZephyrZoneMessage)>,
+        tokio::sync::mpsc::Receiver<(String, ZephyrConsensusMessage)>,
         tokio::sync::mpsc::Receiver<(String, ZephyrZoneMessage)>,
         tokio::sync::mpsc::Receiver<ZephyrGlobalMessage>,
     ) {
@@ -147,8 +167,12 @@ mod tests {
         handler.add_zone_topic("prog/zone_0".to_owned());
         assert!(handler.handles_topic("prog/zone_0"));
 
+        handler.add_consensus_topic("prog/cons_0".to_owned());
+        assert!(handler.handles_topic("prog/cons_0"));
+
         handler.remove_zone_topic("prog/zone_0");
         assert!(!handler.handles_topic("prog/zone_0"));
+        assert!(handler.handles_topic("prog/cons_0"));
     }
 
     #[tokio::test]
@@ -170,20 +194,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatches_zone_message() {
+    async fn dispatches_consensus_message() {
         let (handler, mut consensus_rx, _, _) = make_handler();
-        handler.add_zone_topic("prog/zone_5".to_owned());
+        handler.add_consensus_topic("prog/cons_5".to_owned());
 
-        let msg = ZephyrZoneMessage::Reject(SpendReject {
+        let msg = ZephyrConsensusMessage::Reject(SpendReject {
             nullifier: Nullifier([1; 32]),
             reason: RejectReason::DuplicateNullifier,
         });
         let data = grid_core::encode_canonical(&msg).unwrap();
 
-        handler.on_gossip("prog/zone_5", &data, None).await;
+        handler.on_gossip("prog/cons_5", &data, None).await;
 
         let (topic, received) = consensus_rx.try_recv().unwrap();
-        assert_eq!(topic, "prog/zone_5");
+        assert_eq!(topic, "prog/cons_5");
         assert_eq!(received, msg);
     }
 
@@ -191,8 +215,10 @@ mod tests {
     async fn invalid_data_dropped() {
         let (handler, mut consensus_rx, mut zone_rx, _) = make_handler();
         handler.add_zone_topic("prog/zone_0".to_owned());
+        handler.add_consensus_topic("prog/cons_0".to_owned());
 
         handler.on_gossip("prog/zone_0", &[0xFF, 0xFF], None).await;
+        handler.on_gossip("prog/cons_0", &[0xFF, 0xFF], None).await;
 
         assert!(consensus_rx.try_recv().is_err());
         assert!(zone_rx.try_recv().is_err());

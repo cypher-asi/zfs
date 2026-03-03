@@ -9,8 +9,9 @@ use axum::routing::get;
 use axum::{Json, Router};
 use grid_core::ProgramId;
 use grid_programs_zephyr::{
-    FinalityCertificate, Nullifier, ValidatorInfo, ZephyrGlobalDescriptor, ZephyrGlobalMessage,
-    ZephyrSpendDescriptor, ZephyrValidatorDescriptor, ZephyrZoneDescriptor, ZephyrZoneMessage,
+    FinalityCertificate, Nullifier, ValidatorInfo, ZephyrConsensusDescriptor,
+    ZephyrConsensusMessage, ZephyrGlobalDescriptor, ZephyrGlobalMessage, ZephyrSpendDescriptor,
+    ZephyrValidatorDescriptor, ZephyrZoneDescriptor, ZephyrZoneMessage,
 };
 use grid_service::{
     ConfigField, ConfigFieldType, OwnedProgram, RouteInfo, Service, ServiceContext,
@@ -75,9 +76,10 @@ pub struct ZephyrService {
     config: ZephyrConfig,
     global_program_id: ProgramId,
     zone_program_ids: Vec<ProgramId>,
+    consensus_program_ids: Vec<ProgramId>,
     runtime: Arc<parking_lot::RwLock<ZephyrRuntime>>,
     gossip_handler: Arc<ZephyrGossipHandler>,
-    consensus_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrZoneMessage)>>>,
+    consensus_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrConsensusMessage)>>>,
     zone_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrZoneMessage)>>>,
     global_rx: std::sync::Mutex<Option<mpsc::Receiver<ZephyrGlobalMessage>>>,
 }
@@ -89,11 +91,16 @@ impl ZephyrService {
             .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
 
         let mut zone_pids = Vec::with_capacity(config.total_zones as usize);
+        let mut consensus_pids = Vec::with_capacity(config.total_zones as usize);
         for zone_id in 0..config.total_zones {
             let pid = ZephyrZoneDescriptor::new(zone_id)
                 .program_id()
                 .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
             zone_pids.push(pid);
+            let cpid = ZephyrConsensusDescriptor::new(zone_id)
+                .program_id()
+                .map_err(|e| ServiceError::Descriptor(e.to_string()))?;
+            consensus_pids.push(cpid);
         }
 
         let spend_pid = ZephyrSpendDescriptor::new()
@@ -127,6 +134,13 @@ impl ZephyrService {
                 program_id: *pid,
             });
         }
+        for (i, cpid) in consensus_pids.iter().enumerate() {
+            owned_programs.push(OwnedProgram {
+                name: format!("zephyr/zone_consensus-{i}"),
+                version: "1".into(),
+                program_id: *cpid,
+            });
+        }
 
         let global_topic = grid_core::program_topic(&global_pid);
         let (consensus_tx, consensus_rx) = mpsc::channel(4096);
@@ -150,6 +164,7 @@ impl ZephyrService {
             config,
             global_program_id: global_pid,
             zone_program_ids: zone_pids,
+            consensus_program_ids: consensus_pids,
             runtime: Arc::new(parking_lot::RwLock::new(ZephyrRuntime {
                 zone_heads: HashMap::new(),
                 current_epoch: 0,
@@ -189,6 +204,10 @@ impl ZephyrService {
 
     fn zone_topic(&self, zone_id: u32) -> String {
         grid_core::program_topic(&self.zone_program_ids[zone_id as usize])
+    }
+
+    fn consensus_topic(&self, zone_id: u32) -> String {
+        grid_core::program_topic(&self.consensus_program_ids[zone_id as usize])
     }
 }
 
@@ -286,15 +305,24 @@ impl Service for ZephyrService {
             self.config.committee_size,
         );
 
-        // Subscribe to ALL zone topics up-front so that epoch transitions
-        // (which may reassign zones) don't require dynamic topic management.
+        // Subscribe to ALL zone + consensus topics up-front so that epoch
+        // transitions (which may reassign zones) don't require dynamic topic
+        // management. Zone topics carry spends; consensus topics carry
+        // proposals/votes/rejects on a separate GossipSub channel.
         let mut topic_to_zone: HashMap<String, u32> = HashMap::new();
+        let mut consensus_topic_to_zone: HashMap<String, u32> = HashMap::new();
         for zone_id in 0..self.config.total_zones {
             let topic = self.zone_topic(zone_id);
             self.gossip_handler.add_zone_topic(topic.clone());
             ctx.subscribe_topic(&topic)?;
             topic_to_zone.insert(topic.clone(), zone_id);
-            info!(zone_id, %topic, "subscribed to zone topic");
+
+            let ctopic = self.consensus_topic(zone_id);
+            self.gossip_handler.add_consensus_topic(ctopic.clone());
+            ctx.subscribe_topic(&ctopic)?;
+            consensus_topic_to_zone.insert(ctopic.clone(), zone_id);
+
+            info!(zone_id, %topic, %ctopic, "subscribed to zone + consensus topics");
         }
 
         // Take channel receivers (one-time)
@@ -365,6 +393,7 @@ impl Service for ZephyrService {
 
             let is_assigned = assigned_zones.contains(&zone_id);
             let zt = self.zone_topic(zone_id);
+            let ct = self.consensus_topic(zone_id);
 
             tokio::spawn(zone_consensus_task(
                 zone_id,
@@ -377,6 +406,7 @@ impl Service for ZephyrService {
                 glob_rx,
                 publish_tx.clone(),
                 zt,
+                ct,
                 global_topic_for_task.clone(),
                 shutdown.clone(),
                 epoch_mgr.clone(),
@@ -389,7 +419,7 @@ impl Service for ZephyrService {
         tokio::spawn(consensus_dispatcher(
             consensus_rx,
             global_rx,
-            topic_to_zone,
+            consensus_topic_to_zone,
             zone_consensus_txs,
             zone_global_txs,
             shutdown.clone(),
@@ -530,7 +560,6 @@ async fn ingest_loop(
                         ZephyrZoneMessage::SubmitSpendBatch(txs) => {
                             zone_buckets.entry(zone_id).or_default().extend(txs);
                         }
-                        _ => {}
                     }
                 }
                 for (zone_id, txs) in zone_buckets {
@@ -546,10 +575,10 @@ async fn ingest_loop(
 /// channel based on topic → zone_id mapping (consensus) or cert.zone_id
 /// (global certificates).
 async fn consensus_dispatcher(
-    mut consensus_rx: mpsc::Receiver<(String, ZephyrZoneMessage)>,
+    mut consensus_rx: mpsc::Receiver<(String, ZephyrConsensusMessage)>,
     mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
-    topic_to_zone: HashMap<String, u32>,
-    zone_consensus_txs: HashMap<u32, mpsc::Sender<ZephyrZoneMessage>>,
+    consensus_topic_to_zone: HashMap<String, u32>,
+    zone_consensus_txs: HashMap<u32, mpsc::Sender<ZephyrConsensusMessage>>,
     zone_global_txs: HashMap<u32, mpsc::Sender<ZephyrGlobalMessage>>,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
@@ -561,20 +590,18 @@ async fn consensus_dispatcher(
             }
 
             msg = consensus_rx.recv() => {
-                let Some((topic, zmsg)) = msg else { break };
-                let Some(&zone_id) = topic_to_zone.get(&topic) else {
-                    warn!(%topic, "dispatcher: unknown zone topic");
+                let Some((topic, cmsg)) = msg else { break };
+                let Some(&zone_id) = consensus_topic_to_zone.get(&topic) else {
+                    warn!(%topic, "dispatcher: unknown consensus topic");
                     continue;
                 };
                 if let Some(tx) = zone_consensus_txs.get(&zone_id) {
-                    let msg_type = match &zmsg {
-                        ZephyrZoneMessage::Proposal(_) => "Proposal",
-                        ZephyrZoneMessage::Vote(_) => "Vote",
-                        ZephyrZoneMessage::Reject(_) => "Reject",
-                        ZephyrZoneMessage::SubmitSpend(_) => "SubmitSpend",
-                        ZephyrZoneMessage::SubmitSpendBatch(_) => "SubmitSpendBatch",
+                    let msg_type = match &cmsg {
+                        ZephyrConsensusMessage::Proposal(_) => "Proposal",
+                        ZephyrConsensusMessage::Vote(_) => "Vote",
+                        ZephyrConsensusMessage::Reject(_) => "Reject",
                     };
-                    if let Err(_) = tx.try_send(zmsg) {
+                    if let Err(_) = tx.try_send(cmsg) {
                         warn!(
                             zone_id,
                             msg_type,
@@ -624,10 +651,11 @@ async fn zone_consensus_task(
     validators: Vec<ValidatorInfo>,
     config: ZephyrConfig,
     runtime: Arc<parking_lot::RwLock<ZephyrRuntime>>,
-    mut consensus_rx: mpsc::Receiver<ZephyrZoneMessage>,
+    mut consensus_rx: mpsc::Receiver<ZephyrConsensusMessage>,
     mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
     publish_tx: mpsc::Sender<(String, Vec<u8>)>,
-    zone_topic: String,
+    _zone_topic: String,
+    consensus_topic: String,
     global_topic: String,
     shutdown: tokio_util::sync::CancellationToken,
     epoch_mgr: Arc<tokio::sync::Mutex<EpochManager>>,
@@ -687,9 +715,9 @@ async fn zone_consensus_task(
                     }
                 }
 
-                for zmsg in batch {
-                    match zmsg {
-                        ZephyrZoneMessage::Proposal(proposal) => {
+                for cmsg in batch {
+                    match cmsg {
+                        ZephyrConsensusMessage::Proposal(proposal) => {
                             info!(
                                 zone_id,
                                 proposer = %hex::encode(&proposal.header.proposer_id[..8]),
@@ -720,7 +748,7 @@ async fn zone_consensus_task(
                                     }
                                     publish_action(
                                         &action,
-                                        &zone_topic,
+                                        &consensus_topic,
                                         &global_topic,
                                         &publish_tx,
                                         &block_tx_cache,
@@ -750,7 +778,7 @@ async fn zone_consensus_task(
                                             }
                                             publish_action(
                                                 &cert_action,
-                                                &zone_topic,
+                                                &consensus_topic,
                                                 &global_topic,
                                                 &publish_tx,
                                                 &block_tx_cache,
@@ -760,7 +788,7 @@ async fn zone_consensus_task(
                                 }
                             }
                         }
-                        ZephyrZoneMessage::Vote(vote) => {
+                        ZephyrConsensusMessage::Vote(vote) => {
                             let mut cert_produced = false;
                             if let Some(ref mut eng) = engine {
                                 if let Some(action) = eng.receive_vote(vote) {
@@ -786,7 +814,7 @@ async fn zone_consensus_task(
                                     }
                                     publish_action(
                                         &action,
-                                        &zone_topic,
+                                        &consensus_topic,
                                         &global_topic,
                                         &publish_tx,
                                         &block_tx_cache,
@@ -803,7 +831,7 @@ async fn zone_consensus_task(
                                         &config,
                                         &mut block_tx_cache,
                                         &mut block_nullifiers,
-                                        &zone_topic,
+                                        &consensus_topic,
                                         &global_topic,
                                         &publish_tx,
                                         &zone_head_store,
@@ -814,7 +842,7 @@ async fn zone_consensus_task(
                                 }
                             }
                         }
-                        _ => {}
+                        ZephyrConsensusMessage::Reject(_) => {}
                     }
                 }
 
@@ -1018,7 +1046,7 @@ async fn zone_consensus_task(
                                         &config,
                                         &mut block_tx_cache,
                                         &mut block_nullifiers,
-                                        &zone_topic,
+                                        &consensus_topic,
                                         &global_topic,
                                         &publish_tx,
                                         &zone_head_store,
@@ -1270,7 +1298,7 @@ async fn zone_consensus_task(
                         &config,
                         &mut block_tx_cache,
                         &mut block_nullifiers,
-                        &zone_topic,
+                        &consensus_topic,
                         &global_topic,
                         &publish_tx,
                         &zone_head_store,
@@ -1374,14 +1402,14 @@ fn apply_certificate_locally(
 
 fn publish_action(
     action: &ConsensusAction,
-    zone_topic: &str,
+    consensus_topic: &str,
     global_topic: &str,
     publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
     block_tx_cache: &HashMap<[u8; 32], (u32, Vec<String>)>,
 ) {
     let (topic, data) = match action {
         ConsensusAction::BroadcastProposal(p) => {
-            let msg = ZephyrZoneMessage::Proposal(p.clone());
+            let msg = ZephyrConsensusMessage::Proposal(p.clone());
             let data = match grid_core::encode_canonical(&msg) {
                 Ok(d) => d,
                 Err(e) => {
@@ -1389,10 +1417,10 @@ fn publish_action(
                     return;
                 }
             };
-            (zone_topic.to_owned(), data)
+            (consensus_topic.to_owned(), data)
         }
         ConsensusAction::BroadcastVote(v) => {
-            let msg = ZephyrZoneMessage::Vote(v.clone());
+            let msg = ZephyrConsensusMessage::Vote(v.clone());
             let data = match grid_core::encode_canonical(&msg) {
                 Ok(d) => d,
                 Err(e) => {
@@ -1400,7 +1428,7 @@ fn publish_action(
                     return;
                 }
             };
-            (zone_topic.to_owned(), data)
+            (consensus_topic.to_owned(), data)
         }
         ConsensusAction::BroadcastCertificate(c) => {
             let tx_nullifiers = block_tx_cache
@@ -1440,7 +1468,7 @@ async fn try_propose_for_zone(
     config: &ZephyrConfig,
     block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
     block_nullifiers: &mut HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
-    zone_topic: &str,
+    consensus_topic: &str,
     global_topic: &str,
     publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
     zone_head_store: &Arc<tokio::sync::Mutex<ZoneHead>>,
@@ -1466,7 +1494,7 @@ async fn try_propose_for_zone(
             );
             cache_block_txs(block_tx_cache, block_nullifiers, zone_id, block);
 
-            publish_action(&action, zone_topic, global_topic, publish_tx, block_tx_cache);
+            publish_action(&action, consensus_topic, global_topic, publish_tx, block_tx_cache);
 
             let vid2 = my_validator_id;
             if let Some(vote_action) =
@@ -1474,7 +1502,7 @@ async fn try_propose_for_zone(
             {
                 publish_action(
                     &vote_action,
-                    zone_topic,
+                    consensus_topic,
                     global_topic,
                     publish_tx,
                     block_tx_cache,
@@ -1500,7 +1528,7 @@ async fn try_propose_for_zone(
                         }
                         publish_action(
                             &cert_action,
-                            zone_topic,
+                            consensus_topic,
                             global_topic,
                             publish_tx,
                             block_tx_cache,

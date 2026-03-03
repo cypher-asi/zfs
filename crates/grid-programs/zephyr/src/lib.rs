@@ -5,10 +5,12 @@ mod messages;
 mod types;
 
 pub use descriptors::{
-    ZephyrGlobalDescriptor, ZephyrSpendDescriptor, ZephyrValidatorDescriptor, ZephyrZoneDescriptor,
+    ZephyrConsensusDescriptor, ZephyrGlobalDescriptor, ZephyrSpendDescriptor,
+    ZephyrValidatorDescriptor, ZephyrZoneDescriptor,
 };
 pub use messages::{
-    EpochAnnouncement, RejectReason, SpendReject, ZephyrGlobalMessage, ZephyrZoneMessage,
+    EpochAnnouncement, RejectReason, SpendReject, ZephyrConsensusMessage, ZephyrGlobalMessage,
+    ZephyrZoneMessage,
 };
 pub use types::{
     Block, BlockHeader, BlockVote, CertSignature, EpochId, FinalityCertificate, NoteCommitment,

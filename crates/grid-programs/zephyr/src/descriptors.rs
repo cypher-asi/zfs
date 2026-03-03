@@ -47,6 +47,51 @@ impl ZephyrZoneDescriptor {
     }
 }
 
+/// Per-zone consensus gossip: proposals, votes, rejects.
+///
+/// Each `zone_id` produces a distinct `ProgramId`, giving each zone its own
+/// dedicated GossipSub topic for latency-sensitive consensus messages,
+/// separate from the high-volume spend traffic on `ZephyrZoneDescriptor`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZephyrConsensusDescriptor {
+    pub name: String,
+    pub version: u32,
+    pub zone_id: u32,
+}
+
+impl ZephyrConsensusDescriptor {
+    pub fn new(zone_id: u32) -> Self {
+        Self {
+            name: "zephyr/zone_consensus".to_owned(),
+            version: 1,
+            zone_id,
+        }
+    }
+
+    pub fn program_id(&self) -> Result<ProgramId, GridError> {
+        let canonical = self.encode_canonical()?;
+        Ok(ProgramId::from_descriptor_bytes(&canonical))
+    }
+
+    pub fn topic(&self) -> Result<String, GridError> {
+        Ok(grid_core::program_topic(&self.program_id()?))
+    }
+
+    pub fn encode_canonical(&self) -> Result<Vec<u8>, GridError> {
+        grid_core::encode_canonical(self)
+    }
+
+    pub fn decode_canonical(bytes: &[u8]) -> Result<Self, GridError> {
+        if bytes.len() > MAX_INPUT_SIZE {
+            return Err(GridError::InvalidPayload(format!(
+                "ZephyrConsensusDescriptor input too large: {} > {MAX_INPUT_SIZE}",
+                bytes.len(),
+            )));
+        }
+        grid_core::decode_canonical(bytes)
+    }
+}
+
 /// Global coordination: certificates, epoch announcements.
 ///
 /// All Zephyr validators subscribe to the single global topic derived
