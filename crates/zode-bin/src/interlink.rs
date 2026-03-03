@@ -850,7 +850,7 @@ fn do_load_history(app: &mut ZodeApp) {
 fn render_day_separator(ui: &mut egui::Ui, label: &str) {
     ui.add_space(4.0);
     ui.vertical_centered(|ui| {
-        ui.label(egui::RichText::new(format!("── {label} ──")).weak().small());
+        ui.label(egui::RichText::new(format!("--- {label} ---")).weak().small());
     });
     ui.add_space(2.0);
 }
