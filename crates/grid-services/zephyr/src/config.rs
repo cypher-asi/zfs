@@ -36,7 +36,7 @@ pub struct ZephyrConfig {
     /// Maximum number of out-of-order certificates buffered per zone while
     /// waiting for their parent to arrive.  At ~7 blocks/sec, 64 entries
     /// cover ~9 seconds of lag.  Stale certs from dead forks are purged
-    /// when the buffer exceeds `PENDING_CERTS_PURGE_THRESHOLD`.
+    /// when the buffer exceeds 75% of this cap.
     #[serde(default = "default_max_pending_certs")]
     pub max_pending_certs: usize,
     /// Genesis randomness seed (R_0).

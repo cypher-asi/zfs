@@ -912,15 +912,15 @@ async fn zone_consensus_task(
                                         }
                                     }
 
-                                    const PENDING_CERTS_PURGE_THRESHOLD: usize = 32;
-                                    if pending_certs.len() > PENDING_CERTS_PURGE_THRESHOLD {
+                                    let purge_at = config.max_pending_certs * 3 / 4;
+                                    if pending_certs.len() > purge_at {
                                         let drop_count =
-                                            pending_certs.len() - PENDING_CERTS_PURGE_THRESHOLD;
-                                        warn!(
+                                            pending_certs.len() - purge_at;
+                                        debug!(
                                             zone_id,
                                             dropped = drop_count,
-                                            remaining = PENDING_CERTS_PURGE_THRESHOLD,
-                                            "purging oldest buffered certs (likely stale forks)"
+                                            remaining = purge_at,
+                                            "purging oldest buffered certs"
                                         );
                                         pending_certs.drain(..drop_count);
                                     }
