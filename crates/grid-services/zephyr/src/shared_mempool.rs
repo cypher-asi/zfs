@@ -53,12 +53,31 @@ impl SharedMempool {
         }
     }
 
+    /// Drain up to `max` spends for a block proposal (zero-copy move).
+    /// On round timeout, call `reinsert_batch` to return un-finalized txs.
+    pub async fn drain_proposal(&self, zone_id: ZoneId, max: usize) -> Vec<SpendTransaction> {
+        let map = self.inner.read().await;
+        if let Some(mp) = map.get(&zone_id) {
+            mp.lock().await.drain_proposal(max)
+        } else {
+            vec![]
+        }
+    }
+
     pub async fn peek(&self, zone_id: ZoneId, max: usize) -> Vec<SpendTransaction> {
         let map = self.inner.read().await;
         if let Some(mp) = map.get(&zone_id) {
             mp.lock().await.peek(max)
         } else {
             vec![]
+        }
+    }
+
+    /// Re-insert transactions from a proposal that never finalized.
+    pub async fn reinsert_batch(&self, zone_id: ZoneId, txs: Vec<SpendTransaction>) {
+        let map = self.inner.read().await;
+        if let Some(mp) = map.get(&zone_id) {
+            mp.lock().await.reinsert_batch(txs);
         }
     }
 

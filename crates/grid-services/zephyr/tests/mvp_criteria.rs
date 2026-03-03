@@ -198,7 +198,7 @@ fn criterion_3_double_spend_rejection() {
     let committee = sample_committee(&seed, zone, &validators, config.committee_size);
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
-    let spends = mempool.drain(64);
+    let spends = mempool.drain_proposal(64);
     let mut consensus = ZoneConsensus::new(
         zone,
         0,
@@ -353,7 +353,7 @@ fn criterion_5_invalid_proof_containment() {
     let committee = sample_committee(&seed, 0, &validators, config.committee_size);
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
-    let spends = mempool.drain(64);
+    let spends = mempool.drain_proposal(64);
     let mut consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
 
     let block = match consensus.propose(spends, identity_sign).unwrap() {

@@ -102,13 +102,19 @@ impl ZoneConsensus {
 
     /// Advance to the next round without a finalized block.  Rotates the
     /// leader while preserving `parent_hash` and `height` (no block was
-    /// committed).
-    pub fn timeout_round(&mut self) {
+    /// committed).  Returns the transactions from the abandoned proposal so the
+    /// caller can re-insert them into the mempool.
+    pub fn timeout_round(&mut self) -> Vec<SpendTransaction> {
+        let txs = self
+            .pending_proposal
+            .take()
+            .map(|b| b.transactions)
+            .unwrap_or_default();
         self.round += 1;
-        self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
         self.cert_builder.clear_votes();
+        txs
     }
 
     /// Called by the leader when the round timer fires.

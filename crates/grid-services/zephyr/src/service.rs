@@ -650,10 +650,10 @@ async fn zone_consensus_task(
                 let expected_epoch = elapsed.as_millis() as u64 / config.epoch_duration_ms;
 
                 // --- Epoch boundary check ---
-                // The first zone task to detect a new epoch acquires the lock
-                // and calls advance_epoch; subsequent tasks see the updated
-                // state and skip the advance.
-                {
+                // Only acquire the epoch lock when a transition may have
+                // occurred (~once per 120s). On every other tick the lock is
+                // skipped entirely, saving ~1-2ms of contention per tick.
+                if expected_epoch > last_known_epoch {
                     let mut em = epoch_mgr.lock().await;
                     while em.current_epoch() < expected_epoch {
                         em.advance_epoch(&my_validator_id);
@@ -706,9 +706,6 @@ async fn zone_consensus_task(
                             }
                         }
                     }
-                    // If no epoch change the lock is dropped here at the end
-                    // of the block (the `drop(em)` calls above handle the
-                    // early-exit paths).
                 }
 
                 if let Ok(mut rt) = runtime.write() {
@@ -724,7 +721,10 @@ async fn zone_consensus_task(
                             round = eng.round(),
                             "round timed out without quorum, rotating leader"
                         );
-                        eng.timeout_round();
+                        let abandoned_txs = eng.timeout_round();
+                        if !abandoned_txs.is_empty() {
+                            mempool.reinsert_batch(zone_id, abandoned_txs).await;
+                        }
                     }
 
                     try_propose_for_zone(
@@ -1108,11 +1108,15 @@ async fn try_propose_for_zone(
         return;
     }
 
-    let spends = mempool.peek(zone_id, config.max_block_size).await;
+    let spends = mempool.drain_proposal(zone_id, config.max_block_size).await;
     let vid = my_validator_id;
     if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
         if let ConsensusAction::BroadcastProposal(ref block) = action {
             cache_block_txs(block_tx_cache, block_nullifiers, zone_id, block);
+
+            publish_action(&action, zone_topic, global_topic, publish_tx, block_tx_cache)
+                .await;
+
             let vid2 = my_validator_id;
             if let Some(vote_action) =
                 engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
@@ -1157,14 +1161,6 @@ async fn try_propose_for_zone(
                 }
             }
         }
-        publish_action(
-            &action,
-            zone_topic,
-            global_topic,
-            publish_tx,
-            block_tx_cache,
-        )
-        .await;
     }
 }
 

@@ -51,8 +51,10 @@ impl Mempool {
         inserted
     }
 
-    /// Drain up to `max` spends from the mempool (FIFO order).
-    pub fn drain(&mut self, max: usize) -> Vec<SpendTransaction> {
+    /// Drain up to `max` spends from the mempool (FIFO order) for a block
+    /// proposal. Moves transactions out without cloning. On round timeout the
+    /// caller should call `reinsert_batch` to return un-finalized transactions.
+    pub fn drain_proposal(&mut self, max: usize) -> Vec<SpendTransaction> {
         let count = max.min(self.queue.len());
         let mut result = Vec::with_capacity(count);
         for _ in 0..count {
@@ -63,10 +65,19 @@ impl Mempool {
         result
     }
 
+    /// Re-insert transactions that were drained for a proposal that never
+    /// finalized (e.g. round timeout). Duplicates (by nullifier) are silently
+    /// skipped.
+    pub fn reinsert_batch(&mut self, txs: Vec<SpendTransaction>) {
+        for tx in txs {
+            if self.queue.len() >= self.max_size {
+                break;
+            }
+            self.queue.entry(tx.nullifier.clone()).or_insert(tx);
+        }
+    }
+
     /// Return clones of up to `max` spends without removing them.
-    ///
-    /// Used by the leader to build a proposal; the actual removal happens
-    /// later via `remove_nullifiers` once the block is certified.
     pub fn peek(&self, max: usize) -> Vec<SpendTransaction> {
         self.queue.values().take(max).cloned().collect()
     }
@@ -122,7 +133,7 @@ mod tests {
         assert!(mp.insert(dummy_spend(2)));
         assert_eq!(mp.len(), 2);
 
-        let drained = mp.drain(1);
+        let drained = mp.drain_proposal(1);
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0].nullifier, Nullifier([1; 32]));
         assert_eq!(mp.len(), 1);
@@ -157,7 +168,7 @@ mod tests {
     fn drain_more_than_available() {
         let mut mp = Mempool::new(0, 100);
         mp.insert(dummy_spend(1));
-        let drained = mp.drain(10);
+        let drained = mp.drain_proposal(10);
         assert_eq!(drained.len(), 1);
         assert!(mp.is_empty());
     }
@@ -182,7 +193,7 @@ mod tests {
         for i in 0..5 {
             mp.insert(dummy_spend(i));
         }
-        let drained = mp.drain(5);
+        let drained = mp.drain_proposal(5);
         for (i, spend) in drained.iter().enumerate() {
             assert_eq!(spend.nullifier, Nullifier([i as u8; 32]));
         }
