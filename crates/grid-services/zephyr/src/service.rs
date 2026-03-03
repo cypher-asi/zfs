@@ -858,11 +858,20 @@ async fn zone_consensus_task(
                                     debug!(zone_id, "applied certificate from global topic");
                                     round_advanced = true;
 
-                                    // Drain buffered certs that may now be applicable
+                                    // Drain buffered certs that may now be applicable,
+                                    // and discard any that are now stale.
                                     while !pending_certs.is_empty() {
                                         let before = pending_certs.len();
                                         let mut still_pending = Vec::new();
                                         for pc in pending_certs.drain(..) {
+                                            if pc.block_hash == *eng.parent_hash() {
+                                                debug!(
+                                                    zone_id,
+                                                    cert_block = %hex::encode(&pc.block_hash[..8]),
+                                                    "purging stale buffered certificate"
+                                                );
+                                                continue;
+                                            }
                                             if eng.apply_certificate(&pc) {
                                                 {
                                                     let mut zhs =
@@ -889,11 +898,23 @@ async fn zone_consensus_task(
                                             }
                                         }
                                         pending_certs = still_pending;
-                                        if pending_certs.len() == before {
+                                        if pending_certs.len() >= before {
                                             break;
                                         }
                                     }
-                                } else if pending_certs.len() < 32 {
+                                } else if cert.block_hash == *eng.parent_hash() {
+                                    debug!(
+                                        zone_id,
+                                        cert_block = %hex::encode(&cert.block_hash[..8]),
+                                        "ignoring stale certificate (already applied)"
+                                    );
+                                } else if pending_certs.iter().any(|pc| pc.block_hash == cert.block_hash) {
+                                    debug!(
+                                        zone_id,
+                                        cert_block = %hex::encode(&cert.block_hash[..8]),
+                                        "ignoring duplicate buffered certificate"
+                                    );
+                                } else if pending_certs.len() < 64 {
                                     debug!(
                                         zone_id,
                                         cert_block = %hex::encode(&cert.block_hash[..8]),
