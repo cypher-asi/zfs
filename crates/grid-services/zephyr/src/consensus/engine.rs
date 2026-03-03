@@ -31,6 +31,7 @@ pub struct ZoneConsensus {
     ticks_in_round: u32,
     consecutive_timeouts: u32,
     proposal_seen: bool,
+    force_adopt_next_cert: bool,
 }
 
 /// Actions the consensus engine requests the caller to perform.
@@ -65,6 +66,7 @@ impl ZoneConsensus {
             ticks_in_round: 0,
             consecutive_timeouts: 0,
             proposal_seen: false,
+            force_adopt_next_cert: false,
         }
     }
 
@@ -313,20 +315,42 @@ impl ZoneConsensus {
     }
 
     /// Apply a received certificate (e.g. from the global topic).
+    ///
+    /// Accepts certs from the current epoch or the immediately previous epoch
+    /// to handle the epoch-boundary race where some nodes transition before
+    /// applying a late cert.
     pub fn apply_certificate(&mut self, cert: &FinalityCertificate) -> bool {
-        if cert.zone_id != self.zone_id || cert.epoch != self.epoch {
+        if cert.zone_id != self.zone_id {
+            return false;
+        }
+        if cert.epoch != self.epoch && cert.epoch + 1 != self.epoch {
             debug!(
                 zone_id = self.zone_id,
                 round = self.round,
                 cert_zone = cert.zone_id,
                 cert_epoch = cert.epoch,
                 local_epoch = self.epoch,
-                "skipping certificate: zone/epoch mismatch"
+                "skipping certificate: epoch too old"
             );
             return false;
         }
 
         if cert.parent_hash != self.parent_hash {
+            if self.force_adopt_next_cert {
+                warn!(
+                    zone_id = self.zone_id,
+                    round = self.round,
+                    cert_parent = %hex::encode(&cert.parent_hash[..8]),
+                    local_parent = %hex::encode(&self.parent_hash[..8]),
+                    cert_block = %hex::encode(&cert.block_hash[..8]),
+                    height = self.height,
+                    "fork recovery: adopting cert chain despite parent_hash mismatch"
+                );
+                self.parent_hash = cert.parent_hash;
+                self.force_adopt_next_cert = false;
+                self.advance_round(cert.block_hash);
+                return true;
+            }
             debug!(
                 zone_id = self.zone_id,
                 round = self.round,
@@ -355,20 +379,19 @@ impl ZoneConsensus {
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
-        self.consecutive_timeouts = 0;
+        // consecutive_timeouts intentionally preserved across epochs so the
+        // stall-recovery threshold can accumulate even when epoch boundaries
+        // intervene.
         self.proposal_seen = false;
         self.cert_builder =
             CertificateBuilder::new(self.zone_id, new_epoch, self.config.quorum_threshold);
     }
 
-    /// Reset consensus state to genesis, discarding the current chain tip.
-    ///
-    /// Used as a last-resort recovery when a zone is permanently stalled
-    /// (e.g. after a fork where neither side can reach quorum). Sacrifices
-    /// uncommitted chain state to restore liveness.
-    pub fn reset_to_genesis(&mut self) {
-        self.parent_hash = [0u8; 32];
-        self.height = 0;
+    /// Arm fork recovery: the next incoming certificate will be adopted even
+    /// if its `parent_hash` doesn't match ours. This allows a stalled node to
+    /// jump onto whatever chain the majority is producing.
+    pub fn enable_fork_recovery(&mut self) {
+        self.force_adopt_next_cert = true;
     }
 
     pub fn parent_hash(&self) -> &[u8; 32] {
@@ -676,16 +699,88 @@ mod tests {
     }
 
     #[test]
-    fn reset_to_genesis_clears_chain_state() {
+    fn apply_cert_from_previous_epoch() {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xFF; 32], test_config());
-        assert_eq!(zc.parent_hash(), &[0xFF; 32]);
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
 
-        zc.reset_to_genesis();
-        assert_eq!(zc.parent_hash(), &[0u8; 32]);
-        assert_eq!(zc.height(), 0);
+        zc.advance_to_epoch(1, committee.clone());
+        assert_eq!(zc.epoch(), 1);
+
+        let cert = FinalityCertificate {
+            zone_id: 0,
+            epoch: 0, // previous epoch
+            block_hash: [0xBB; 32],
+            parent_hash: [0xAA; 32],
+            signatures: vec![],
+        };
+        assert!(
+            zc.apply_certificate(&cert),
+            "cert from epoch N-1 should be accepted when engine is at epoch N"
+        );
+        assert_eq!(zc.parent_hash(), &[0xBB; 32]);
+    }
+
+    #[test]
+    fn fork_recovery_adopts_mismatched_cert() {
+        let committee = make_committee(3);
+        let leader_id = leader_for_round(&committee, 0, 0).validator_id;
+
+        let mut zc =
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+
+        let cert = FinalityCertificate {
+            zone_id: 0,
+            epoch: 0,
+            block_hash: [0xCC; 32],
+            parent_hash: [0xBB; 32], // doesn't match our [0xAA; 32]
+            signatures: vec![],
+        };
+        assert!(
+            !zc.apply_certificate(&cert),
+            "cert with mismatched parent should be rejected normally"
+        );
+
+        zc.enable_fork_recovery();
+        assert!(
+            zc.apply_certificate(&cert),
+            "cert should be adopted after fork recovery is enabled"
+        );
+        assert_eq!(zc.parent_hash(), &[0xCC; 32]);
+
+        let cert2 = FinalityCertificate {
+            zone_id: 0,
+            epoch: 0,
+            block_hash: [0xDD; 32],
+            parent_hash: [0xFF; 32],
+            signatures: vec![],
+        };
+        assert!(
+            !zc.apply_certificate(&cert2),
+            "force_adopt flag should be consumed after one use"
+        );
+    }
+
+    #[test]
+    fn consecutive_timeouts_persist_across_epochs() {
+        let committee = make_committee(3);
+        let leader_id = leader_for_round(&committee, 0, 0).validator_id;
+
+        let mut zc =
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+
+        zc.timeout_round();
+        zc.timeout_round();
+        zc.timeout_round();
+        assert_eq!(zc.consecutive_timeouts(), 3);
+
+        zc.advance_to_epoch(1, committee.clone());
+        assert_eq!(
+            zc.consecutive_timeouts(),
+            3,
+            "consecutive_timeouts must survive epoch transitions"
+        );
     }
 }

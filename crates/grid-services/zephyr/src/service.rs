@@ -1031,18 +1031,18 @@ async fn zone_consensus_task(
                             );
                             drop(em);
                             if let Some(ref mut eng) = engine {
-                                if eng.consecutive_timeouts() >= 10 {
+                                if eng.consecutive_timeouts() >= 3 {
                                     warn!(
                                         zone_id,
                                         consecutive_timeouts = eng.consecutive_timeouts(),
                                         height = eng.height(),
                                         parent_hash = %eng.parent_hash_hex(),
-                                        "zone stalled at epoch boundary, resetting to genesis"
+                                        "zone stalled at epoch boundary, enabling fork recovery"
                                     );
-                                    eng.reset_to_genesis();
+                                    eng.enable_fork_recovery();
                                 }
                                 eng.advance_to_epoch(current_epoch, committee);
-                                pending_certs.clear();
+                                pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
                             } else {
                                 let prev_head =
                                     zone_head_store.lock().await.get_or_genesis(zone_id);
@@ -1055,7 +1055,7 @@ async fn zone_consensus_task(
                                     config.clone(),
                                 ));
                                 mempool.add_zone(zone_id, 65_536);
-                                pending_certs.clear();
+                                pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
                             }
                         } else {
                             drop(em);
