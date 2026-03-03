@@ -205,11 +205,10 @@ fn render_activity_feed(ui: &mut egui::Ui, state: &AppState) {
         let avail_w = ui.available_width();
         let col_w =
             (avail_w / state.network.total_zones.max(1) as f32 - spacing::SM).clamp(180.0, 320.0);
-        let feed_h = 320.0;
 
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             for zone_id in 0..state.network.total_zones {
-                render_zone_activity_column(ui, zone_id, state, col_w, feed_h);
+                render_zone_activity_column(ui, zone_id, state, col_w);
                 if zone_id + 1 < state.network.total_zones {
                     ui.add_space(spacing::SM);
                 }
@@ -223,10 +222,7 @@ fn render_zone_activity_column(
     zone_id: u32,
     state: &AppState,
     col_w: f32,
-    feed_h: f32,
 ) {
-    let header_h = 22.0;
-
     ui.vertical(|ui| {
         ui.set_width(col_w);
 
@@ -238,25 +234,14 @@ fn render_zone_activity_column(
 
         ui.add_space(spacing::XS);
 
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(col_w, feed_h - header_h), egui::Sense::hover());
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::same(spacing::SM as i8))
+            .fill(colors::SURFACE_DARK)
+            .stroke(egui::Stroke::new(tokens::STROKE_DEFAULT, colors::BORDER))
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.set_width(col_w - spacing::SM * 2.0);
 
-        let painter = ui.painter_at(rect);
-        painter.rect(
-            rect,
-            4.0,
-            colors::SURFACE_DARK,
-            egui::Stroke::new(tokens::STROKE_DEFAULT, colors::BORDER),
-            egui::StrokeKind::Inside,
-        );
-
-        let inner = rect.shrink(spacing::SM);
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-        egui::ScrollArea::vertical()
-            .id_salt(format!("zone_blocks_{zone_id}"))
-            .max_height(inner.height())
-            .stick_to_bottom(true)
-            .show(&mut child, |ui| {
                 let zone_blocks: Vec<_> = state
                     .recent_blocks
                     .iter()
