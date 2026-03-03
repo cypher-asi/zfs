@@ -5,6 +5,7 @@ mod app;
 mod components;
 mod helpers;
 mod node_manager;
+mod render_blockflow;
 mod render_dashboard;
 mod render_launch;
 mod render_log;

@@ -13,6 +13,7 @@ use crate::render_dashboard;
 use crate::render_launch;
 use crate::render_log;
 use crate::render_nodes;
+use crate::render_blockflow::BlockflowVisualization;
 use crate::render_topology::TopologyVisualization;
 use crate::state::{AppPhase, AppState, LogLevel, NetworkPreset, RecentBlock, Tab};
 
@@ -35,6 +36,7 @@ pub(crate) struct OrchestratorApp {
     pub launch_instant: Option<Instant>,
 
     pub topology: TopologyVisualization,
+    pub blockflow: BlockflowVisualization,
     pub icon_texture: Option<egui::TextureHandle>,
     pub log_level_filter: Option<LogLevel>,
 
@@ -74,6 +76,7 @@ impl OrchestratorApp {
             launch_instant: None,
 
             topology: TopologyVisualization::default(),
+            blockflow: BlockflowVisualization::default(),
             icon_texture: None,
             log_level_filter: None,
 
@@ -228,13 +231,9 @@ impl eframe::App for OrchestratorApp {
             false
         };
 
-        let tab = self.tab;
-        let state_snapshot = self.rt.block_on(async {
-            let s = self.shared.lock().await;
-            snapshot(&s, tab)
-        });
+        let state_snapshot = self.snapshot_rx.borrow().clone();
 
-        if self.phase == AppPhase::Running {
+        if self.phase == AppPhase::Running && self.tab == Tab::Topology {
             self.topology.reconcile(&state_snapshot);
         }
 
@@ -459,6 +458,17 @@ impl OrchestratorApp {
                         self.topology.render(ui);
                     });
             }
+            Tab::Blockflow => {
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::default()
+                            .fill(colors::PANEL_BG)
+                            .inner_margin(0.0),
+                    )
+                    .show_inside(ui, |ui| {
+                        self.blockflow.render(ui, state);
+                    });
+            }
             Tab::Log => {
                 render_log::render_log(ui, state, &mut self.log_level_filter);
             }
@@ -506,14 +516,10 @@ impl OrchestratorApp {
     }
 }
 
-/// Build a lightweight snapshot of the shared state, only cloning data that
-/// the current `tab` actually needs.  The biggest win is skipping the
-/// potentially-10k `log_entries` clone when on Dashboard and the
-/// `recent_blocks`/`traffic_stats` clone when on Log.
-fn snapshot(state: &AppState, tab: Tab) -> AppState {
-    let need_logs = matches!(tab, Tab::Log);
-    let need_blocks = matches!(tab, Tab::Dashboard);
-
+/// Build a snapshot of the shared state for the UI.  Runs on a background
+/// tokio task (the snapshot publisher), so the clone cost never blocks the
+/// UI thread.
+fn snapshot(state: &AppState) -> AppState {
     AppState {
         phase: state.phase,
         nodes: state
@@ -539,59 +545,45 @@ fn snapshot(state: &AppState, tab: Tab) -> AppState {
             total_peers: state.network.total_peers,
             actual_tps: state.tps_sampler.tps(),
         },
-        log_entries: if need_logs {
-            state
-                .log_entries
-                .iter()
-                .map(|e| crate::state::AggregatedLogEntry {
-                    node_id: e.node_id,
-                    line: e.line.clone(),
-                    level: e.level,
-                    timestamp: e.timestamp,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
+        log_entries: state
+            .log_entries
+            .iter()
+            .map(|e| crate::state::AggregatedLogEntry {
+                node_id: e.node_id,
+                line: e.line.clone(),
+                level: e.level,
+                timestamp: e.timestamp,
+            })
+            .collect(),
         launch_start: state.launch_start,
         auto_traffic: state.auto_traffic,
         traffic_rate: state.traffic_rate,
-        traffic_stats: if need_blocks {
-            crate::state::TrafficStats {
-                total_submitted: state.traffic_stats.total_submitted,
-                recent: state
-                    .traffic_stats
-                    .recent
-                    .iter()
-                    .map(|r| crate::state::RecentTransaction {
-                        nullifier_hex: r.nullifier_hex.clone(),
-                        zone_id: r.zone_id,
-                        timestamp: r.timestamp,
-                    })
-                    .collect(),
-            }
-        } else {
-            crate::state::TrafficStats {
-                total_submitted: state.traffic_stats.total_submitted,
-                recent: VecDeque::new(),
-            }
+        traffic_stats: crate::state::TrafficStats {
+            total_submitted: state.traffic_stats.total_submitted,
+            recent: state
+                .traffic_stats
+                .recent
+                .iter()
+                .map(|r| crate::state::RecentTransaction {
+                    nullifier_hex: r.nullifier_hex.clone(),
+                    zone_id: r.zone_id,
+                    timestamp: r.timestamp,
+                })
+                .collect(),
         },
         tps_sampler: crate::state::TpsSampler::default(),
-        recent_blocks: if need_blocks {
-            state
-                .recent_blocks
-                .iter()
-                .map(|b| crate::state::RecentBlock {
-                    zone_id: b.zone_id,
-                    block_hash_hex: b.block_hash_hex.clone(),
-                    height: b.height,
-                    timestamp: b.timestamp,
-                    tx_nullifiers: b.tx_nullifiers.clone(),
-                })
-                .collect()
-        } else {
-            VecDeque::new()
-        },
+        recent_blocks: state
+            .recent_blocks
+            .iter()
+            .map(|b| crate::state::RecentBlock {
+                zone_id: b.zone_id,
+                block_hash_hex: b.block_hash_hex.clone(),
+                height: b.height,
+                timestamp: b.timestamp,
+                tx_nullifiers: b.tx_nullifiers.clone(),
+                tx_count: b.tx_count,
+            })
+            .collect(),
         blocks_seen: state.blocks_seen,
     }
 }

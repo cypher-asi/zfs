@@ -15,11 +15,18 @@ pub(crate) enum Tab {
     Dashboard,
     Nodes,
     Topology,
+    Blockflow,
     Log,
 }
 
 impl Tab {
-    pub const ALL: &[Tab] = &[Tab::Dashboard, Tab::Nodes, Tab::Topology, Tab::Log];
+    pub const ALL: &[Tab] = &[
+        Tab::Dashboard,
+        Tab::Nodes,
+        Tab::Topology,
+        Tab::Blockflow,
+        Tab::Log,
+    ];
 
     #[allow(dead_code)]
     pub fn label(self) -> &'static str {
@@ -27,6 +34,7 @@ impl Tab {
             Self::Dashboard => "Dashboard",
             Self::Nodes => "Nodes",
             Self::Topology => "Topology",
+            Self::Blockflow => "Blockflow",
             Self::Log => "Log",
         }
     }
@@ -36,9 +44,18 @@ impl Tab {
             Self::Dashboard => egui_phosphor::regular::CHART_BAR,
             Self::Nodes => egui_phosphor::regular::COMPUTER_TOWER,
             Self::Topology => egui_phosphor::regular::GRAPH,
+            Self::Blockflow => egui_phosphor::regular::CUBE,
             Self::Log => egui_phosphor::regular::TERMINAL,
         }
     }
+}
+
+/// Block consensus status, derived from age for visualization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockStatus {
+    Proposed,
+    Voting,
+    Certified,
 }
 
 /// Network preset for launching.
@@ -188,6 +205,9 @@ pub(crate) struct RecentTransaction {
     pub timestamp: Instant,
 }
 
+/// Max nullifier strings kept per block for display purposes.
+pub(crate) const MAX_DISPLAY_NULLIFIERS: usize = 5;
+
 /// A finalized block for the activity feed.
 #[derive(Clone)]
 pub(crate) struct RecentBlock {
@@ -195,7 +215,10 @@ pub(crate) struct RecentBlock {
     pub block_hash_hex: String,
     pub height: u64,
     pub timestamp: Instant,
+    /// Only the first [`MAX_DISPLAY_NULLIFIERS`] are stored; see `tx_count`
+    /// for the true total.
     pub tx_nullifiers: Vec<String>,
+    pub tx_count: usize,
 }
 
 /// Traffic generator statistics.

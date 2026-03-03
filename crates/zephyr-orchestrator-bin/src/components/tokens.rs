@@ -40,6 +40,11 @@ pub mod colors {
     pub const VIZ_OVERLAY_BG: Color32 = Color32::from_rgba_premultiplied(8, 8, 9, 200);
     pub const VIZ_GRID_LINE: Color32 = Color32::from_rgb(48, 48, 54);
     pub const VIZ_GRID_DOT: Color32 = Color32::from_rgb(72, 72, 80);
+
+    pub const NEON_CYAN: Color32 = Color32::from_rgb(0, 229, 255);
+    pub const NEON_AMBER: Color32 = Color32::from_rgb(255, 179, 0);
+    pub const NEON_GREEN: Color32 = Color32::from_rgb(0, 230, 118);
+    pub const NEON_CONNECTOR: Color32 = Color32::from_rgb(64, 64, 80);
 }
 
 #[allow(dead_code)]
