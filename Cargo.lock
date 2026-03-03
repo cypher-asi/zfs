@@ -2894,6 +2894,7 @@ dependencies = [
  "grid-service",
  "hex",
  "indexmap",
+ "parking_lot",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",

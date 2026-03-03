@@ -31,7 +31,7 @@ pub(crate) fn build_swarm(
     };
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-        .heartbeat_interval(Duration::from_secs(10))
+        .heartbeat_interval(Duration::from_secs(1))
         .validation_mode(gossipsub::ValidationMode::Permissive)
         .max_transmit_size(2 * 1024 * 1024)
         .connection_handler_queue_len(25_000)

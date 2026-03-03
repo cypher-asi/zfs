@@ -299,6 +299,41 @@ pub(crate) fn spawn_status_pollers(
                                 }
                             }
 
+                            if let Some(timeouts) =
+                                zephyr.get("zone_consecutive_timeouts").and_then(|v| v.as_object())
+                            {
+                                for (k, v) in timeouts {
+                                    if let (Ok(zone_id), Some(ct)) =
+                                        (k.parse::<u32>(), v.as_u64())
+                                    {
+                                        state.network.zone_consecutive_timeouts.insert(zone_id, ct as u32);
+                                    }
+                                }
+                            }
+                            if let Some(stalls) =
+                                zephyr.get("zone_stall_durations_ms").and_then(|v| v.as_object())
+                            {
+                                for (k, v) in stalls {
+                                    if let (Ok(zone_id), Some(dur)) =
+                                        (k.parse::<u32>(), v.as_u64())
+                                    {
+                                        state.network.zone_stall_durations_ms.insert(zone_id, dur);
+                                    }
+                                }
+                            }
+
+                            if let Some(heights) =
+                                zephyr.get("zone_heights").and_then(|v| v.as_object())
+                            {
+                                for (k, v) in heights {
+                                    if let (Ok(zone_id), Some(h)) =
+                                        (k.parse::<u32>(), v.as_u64())
+                                    {
+                                        state.network.zone_heights.insert(zone_id, h);
+                                    }
+                                }
+                            }
+
                             let total_produced = zephyr
                                 .get("blocks_produced")
                                 .and_then(|v| v.as_u64())

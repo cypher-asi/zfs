@@ -92,13 +92,8 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
                             }
                         }
                         _ => {
-                            if self
-                                .consensus_message_tx
-                                .send((topic.to_owned(), msg))
-                                .await
-                                .is_err()
-                            {
-                                warn!("consensus message channel closed");
+                            if let Err(e) = self.consensus_message_tx.try_send((topic.to_owned(), msg)) {
+                                warn!("consensus_tx full, dropping message: {e}");
                             }
                         }
                     }

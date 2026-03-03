@@ -28,6 +28,7 @@ pub struct ZoneConsensus {
     pending_proposal: Option<Block>,
     rebroadcast_count: u32,
     ticks_in_round: u32,
+    consecutive_timeouts: u32,
 }
 
 /// Actions the consensus engine requests the caller to perform.
@@ -60,6 +61,7 @@ impl ZoneConsensus {
             pending_proposal: None,
             rebroadcast_count: 0,
             ticks_in_round: 0,
+            consecutive_timeouts: 0,
         }
     }
 
@@ -91,7 +93,8 @@ impl ZoneConsensus {
 
     /// Whether the current round has exceeded the timeout threshold.
     pub fn is_round_timed_out(&self, timeout_ticks: u32) -> bool {
-        self.ticks_in_round >= timeout_ticks
+        let effective_timeout = timeout_ticks * (1 + self.consecutive_timeouts.min(3));
+        self.ticks_in_round >= effective_timeout
     }
 
     /// Reset the round timeout counter (called when consensus activity is
@@ -113,6 +116,7 @@ impl ZoneConsensus {
         self.round += 1;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
+        self.consecutive_timeouts += 1;
         self.cert_builder.clear_votes();
         txs
     }
@@ -218,10 +222,9 @@ impl ZoneConsensus {
             return None;
         }
 
-        // A committee member produced a vote — consensus is progressing.
-        // Reset the timeout so we don't discard accumulated votes while
-        // quorum is still being assembled.
-        self.ticks_in_round = 0;
+        if self.pending_proposal.as_ref().is_some_and(|p| p.block_hash == vote.block_hash) {
+            self.ticks_in_round = 0;
+        }
 
         if let Some(cert) = self.cert_builder.add_vote(vote, self.parent_hash) {
             // Guard against double-advancement: if apply_certificate already
@@ -262,12 +265,17 @@ impl ZoneConsensus {
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
+        self.consecutive_timeouts = 0;
         self.cert_builder =
             CertificateBuilder::new(self.zone_id, new_epoch, self.config.quorum_threshold);
     }
 
     pub fn parent_hash(&self) -> &[u8; 32] {
         &self.parent_hash
+    }
+
+    pub fn consecutive_timeouts(&self) -> u32 {
+        self.consecutive_timeouts
     }
 
     fn advance_round(&mut self, new_parent_hash: [u8; 32]) {
@@ -277,6 +285,7 @@ impl ZoneConsensus {
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
+        self.consecutive_timeouts = 0;
         self.cert_builder.clear_votes();
     }
 }

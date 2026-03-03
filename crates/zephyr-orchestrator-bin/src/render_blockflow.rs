@@ -29,10 +29,14 @@ const MAX_BLOCKS_PER_ZONE: usize = 200;
 const ENTRANCE_DURATION_SECS: f32 = 0.35;
 const BATCH_STAGGER_SECS: f32 = 0.06;
 const COLOR_BLEND_MS: f32 = 150.0;
-const SMOOTH_MAX_K: f32 = 0.3;
 
 const PROPOSED_THRESHOLD_MS: u128 = 300;
 const VOTING_THRESHOLD_MS: u128 = 600;
+
+const PULSE_FILL_SECS: f32 = 0.35;
+const PULSE_DRAIN_SECS: f32 = 0.35;
+const PULSE_EDGE_FRAC: f32 = 0.10;
+const PULSE_BRIGHT_ALPHA: f32 = 0.80;
 
 pub(crate) struct BlockflowVisualization {
     blocks: Vec<FlowBlock>,
@@ -98,6 +102,14 @@ impl BlockflowVisualization {
             return;
         }
 
+        let mut zone_head: HashMap<u32, f32> = HashMap::new();
+        for b in &self.blocks {
+            let entry = zone_head.entry(b.zone_id).or_insert(f32::NEG_INFINITY);
+            if b.birth_scroll_pos > *entry {
+                *entry = b.birth_scroll_pos;
+            }
+        }
+
         if first_load {
             let speed = self.smoothed_speed.max(1.0);
             let mut by_zone: HashMap<u32, Vec<_>> = HashMap::new();
@@ -106,30 +118,50 @@ impl BlockflowVisualization {
             }
             for (_, zone_blocks) in &mut by_zone {
                 zone_blocks.sort_by(|a, b| b.height.cmp(&a.height));
-                for (i, block) in zone_blocks.iter().enumerate() {
-                    let stagger_secs =
-                        i as f32 * (BAR_MIN_WIDTH + BLOCK_GAP) / speed;
-                    let stagger = Duration::from_secs_f32(stagger_secs);
+                let mut prev_bsp: Option<f32> = None;
+                let mut prev_width: f32 = 0.0;
+                for block in zone_blocks.iter() {
+                    let bar_w = block_width(block.tx_count);
+                    let bsp = match prev_bsp {
+                        None => self.scroll_pos,
+                        Some(prev) => prev - prev_width - BLOCK_GAP,
+                    };
+                    let age_secs = (self.scroll_pos - bsp).max(0.0) / speed;
                     self.blocks.push(FlowBlock {
                         zone_id: block.zone_id,
                         height: block.height,
                         tx_count: block.tx_count,
-                        birth: now.checked_sub(stagger).unwrap_or(now),
-                        birth_scroll_pos: self.scroll_pos - stagger_secs * speed,
+                        birth: now
+                            .checked_sub(Duration::from_secs_f32(age_secs))
+                            .unwrap_or(now),
+                        birth_scroll_pos: bsp,
                         block_hash_hex: block.block_hash_hex.clone(),
                     });
+                    prev_bsp = Some(bsp);
+                    prev_width = bar_w;
                 }
             }
         } else {
             for (i, block) in new_blocks.iter().enumerate() {
                 let stagger_secs = i as f32 * BATCH_STAGGER_SECS;
+                let bar_w = block_width(block.tx_count);
+                let desired_bsp =
+                    self.scroll_pos + self.smoothed_speed * stagger_secs;
+                let min_bsp = zone_head
+                    .get(&block.zone_id)
+                    .map(|&prev| prev + bar_w + BLOCK_GAP)
+                    .unwrap_or(desired_bsp);
+                let actual_bsp = desired_bsp.max(min_bsp);
+                zone_head.insert(block.zone_id, actual_bsp);
+
+                let time_to_enter =
+                    (actual_bsp - self.scroll_pos) / self.smoothed_speed.max(1.0);
                 self.blocks.push(FlowBlock {
                     zone_id: block.zone_id,
                     height: block.height,
                     tx_count: block.tx_count,
-                    birth: now + Duration::from_secs_f32(stagger_secs),
-                    birth_scroll_pos: self.scroll_pos
-                        + self.smoothed_speed * stagger_secs,
+                    birth: now + Duration::from_secs_f32(time_to_enter),
+                    birth_scroll_pos: actual_bsp,
                     block_hash_hex: block.block_hash_hex.clone(),
                 });
             }
@@ -139,15 +171,29 @@ impl BlockflowVisualization {
     }
 
     fn enforce_limits(&mut self) {
-        let mut keep_counts = HashMap::<u32, usize>::new();
-        self.blocks.retain(|b| {
-            let count = keep_counts.entry(b.zone_id).or_default();
-            if *count < MAX_BLOCKS_PER_ZONE {
-                *count += 1;
-                true
-            } else {
-                false
+        let mut zone_counts = HashMap::<u32, usize>::new();
+        for b in &self.blocks {
+            *zone_counts.entry(b.zone_id).or_default() += 1;
+        }
+        let mut to_skip = HashMap::<u32, usize>::new();
+        for (&zone, &count) in &zone_counts {
+            if count > MAX_BLOCKS_PER_ZONE {
+                to_skip.insert(zone, count - MAX_BLOCKS_PER_ZONE);
             }
+        }
+        if to_skip.is_empty() {
+            return;
+        }
+        let mut skipped = HashMap::<u32, usize>::new();
+        self.blocks.retain(|b| {
+            if let Some(&skip_count) = to_skip.get(&b.zone_id) {
+                let s = skipped.entry(b.zone_id).or_default();
+                if *s < skip_count {
+                    *s += 1;
+                    return false;
+                }
+            }
+            true
         });
     }
 
@@ -222,21 +268,20 @@ impl BlockflowVisualization {
                 .iter()
                 .filter(|b| b.zone_id == zone_id)
                 .collect();
-            zone_blocks.sort_by(|a, b| a.birth_scroll_pos.total_cmp(&b.birth_scroll_pos));
+            zone_blocks.sort_by(|a, b| b.birth_scroll_pos.total_cmp(&a.birth_scroll_pos));
 
             let mut prev_screen_right: Option<f32> = None;
-            let mut min_next_x: f32 = 0.0;
 
             for block in &zone_blocks {
+                if self.scroll_pos < block.birth_scroll_pos {
+                    continue;
+                }
                 let age = now
                     .checked_duration_since(block.birth)
                     .map_or(0.0, |d| d.as_secs_f32());
-                let natural_x = (self.scroll_pos - block.birth_scroll_pos).max(0.0);
-                let x_offset = smooth_max(natural_x, min_next_x, SMOOTH_MAX_K);
-                let bar_w = (BAR_MIN_WIDTH + block.tx_count as f32 * BAR_WIDTH_PER_TX)
-                    .min(BAR_MAX_WIDTH);
+                let x_offset = self.scroll_pos - block.birth_scroll_pos;
+                let bar_w = block_width(block.tx_count);
                 let scaled_w = bar_w * self.camera.zoom;
-                min_next_x = x_offset + bar_w + BLOCK_GAP;
 
                 let screen_x = rect.left()
                     + LABEL_WIDTH
@@ -329,6 +374,60 @@ impl BlockflowVisualization {
                         with_alpha(glow_color, right_alpha),
                         with_alpha(glow_color, 0),
                     );
+
+                    let certified_secs = certified_age as f32 / 1000.0;
+                    let total_pulse = PULSE_FILL_SECS + PULSE_DRAIN_SECS;
+                    if certified_secs < total_pulse {
+                        let pulse_color = lerp_color(glow_color, egui::Color32::WHITE, 0.5);
+                        let edge_w = (scaled_w * PULSE_EDGE_FRAC).max(4.0);
+                        let bright =
+                            with_alpha(pulse_color, (PULSE_BRIGHT_ALPHA * 255.0 * alpha_mul) as u8);
+                        let transparent = with_alpha(pulse_color, 0);
+
+                        if certified_secs < PULSE_FILL_SECS {
+                            let fill_t = (certified_secs / PULSE_FILL_SECS).clamp(0.0, 1.0);
+                            let lead_x = bar_rect.left() + fill_t * scaled_w;
+
+                            let solid_right = (lead_x - edge_w).max(bar_rect.left());
+                            if solid_right > bar_rect.left() {
+                                let solid = egui::Rect::from_min_max(
+                                    bar_rect.left_top(),
+                                    egui::pos2(solid_right, bar_rect.bottom()),
+                                );
+                                painter.rect_filled(solid, 0.0, bright);
+                            }
+
+                            let fringe = egui::Rect::from_min_max(
+                                egui::pos2(solid_right, bar_rect.top()),
+                                egui::pos2(lead_x, bar_rect.bottom()),
+                            );
+                            draw_gradient_rect_clipped(
+                                &painter, fringe, bar_rect, bright, transparent,
+                            );
+                        } else {
+                            let drain_t = ((certified_secs - PULSE_FILL_SECS)
+                                / PULSE_DRAIN_SECS)
+                                .clamp(0.0, 1.0);
+                            let trail_x = bar_rect.left() + drain_t * scaled_w;
+
+                            let solid_left = (trail_x + edge_w).min(bar_rect.right());
+                            if solid_left < bar_rect.right() {
+                                let solid = egui::Rect::from_min_max(
+                                    egui::pos2(solid_left, bar_rect.top()),
+                                    bar_rect.right_bottom(),
+                                );
+                                painter.rect_filled(solid, 0.0, bright);
+                            }
+
+                            let fringe = egui::Rect::from_min_max(
+                                egui::pos2(trail_x, bar_rect.top()),
+                                egui::pos2(solid_left, bar_rect.bottom()),
+                            );
+                            draw_gradient_rect_clipped(
+                                &painter, fringe, bar_rect, transparent, bright,
+                            );
+                        }
+                    }
                 }
 
                 painter.rect_stroke(
@@ -431,10 +530,8 @@ fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
     )
 }
 
-fn smooth_max(a: f32, b: f32, k: f32) -> f32 {
-    let diff = ((a - b) * k).clamp(-20.0, 20.0);
-    let w = 1.0 / (1.0 + (-diff).exp());
-    a * w + b * (1.0 - w)
+fn block_width(tx_count: usize) -> f32 {
+    (BAR_MIN_WIDTH + tx_count as f32 * BAR_WIDTH_PER_TX).min(BAR_MAX_WIDTH)
 }
 
 fn with_alpha(c: egui::Color32, a: u8) -> egui::Color32 {
@@ -455,5 +552,30 @@ fn draw_gradient_rect(
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
     painter.add(egui::Shape::mesh(mesh));
+}
+
+/// Like `draw_gradient_rect` but clips the drawn region to `clip`.
+/// Interpolates colors so the visible portion matches what the full
+/// gradient would look like at those positions.
+fn draw_gradient_rect_clipped(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    clip: egui::Rect,
+    color_left: egui::Color32,
+    color_right: egui::Color32,
+) {
+    let clamped = egui::Rect::from_min_max(
+        egui::pos2(rect.left().max(clip.left()), rect.top().max(clip.top())),
+        egui::pos2(rect.right().min(clip.right()), rect.bottom().min(clip.bottom())),
+    );
+    if clamped.width() <= 0.0 || clamped.height() <= 0.0 {
+        return;
+    }
+    let full_w = rect.width().max(1e-6);
+    let t_left = ((clamped.left() - rect.left()) / full_w).clamp(0.0, 1.0);
+    let t_right = ((clamped.right() - rect.left()) / full_w).clamp(0.0, 1.0);
+    let cl = lerp_color(color_left, color_right, t_left);
+    let cr = lerp_color(color_left, color_right, t_right);
+    draw_gradient_rect(painter, clamped, cl, cr);
 }
 

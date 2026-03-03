@@ -79,7 +79,7 @@ fn render_traffic_controls(app: &mut OrchestratorApp, ui: &mut egui::Ui, _state:
             );
 
             let mut rate = app.traffic_rate;
-            let slider = egui::Slider::new(&mut rate, 0.1..=10_000.0)
+            let slider = egui::Slider::new(&mut rate, 0.1..=25_000.0)
                 .logarithmic(true)
                 .text("tx/s");
             if ui.add(slider).changed() {
@@ -95,6 +95,28 @@ fn render_traffic_controls(app: &mut OrchestratorApp, ui: &mut egui::Ui, _state:
                     .color(colors::ACCENT)
                     .strong(),
             );
+
+            ui.add_space(spacing::LG);
+
+            for preset in [2_500.0_f32, 5_000.0, 10_000.0, 15_000.0, 20_000.0] {
+                let label = if preset >= 1_000.0 {
+                    format!("{}k", preset as u32 / 1_000)
+                } else {
+                    format!("{}", preset as u32)
+                };
+                let active = (app.traffic_rate - preset).abs() < 0.5;
+                let btn = egui::Button::new(
+                    egui::RichText::new(label)
+                        .size(font_size::TINY)
+                        .color(if active { colors::ACCENT } else { colors::TEXT_SECONDARY }),
+                )
+                .fill(if active { colors::SURFACE_RAISED } else { colors::SURFACE_DARK })
+                .corner_radius(3.0);
+                if ui.add(btn).clicked() {
+                    app.traffic_rate = preset;
+                    app.sync_traffic_to_shared();
+                }
+            }
         });
 
         ui.add_space(spacing::SM);
@@ -177,6 +199,27 @@ fn render_zone_card(ui: &mut egui::Ui, zone_id: u32, state: &AppState, card_w: f
             format!("head: {hex}..."),
             egui::FontId::proportional(font_size::SMALL),
             colors::TEXT_MUTED,
+        );
+    }
+
+    let height = state.network.zone_heights.get(&zone_id).copied().unwrap_or(0);
+    painter.text(
+        egui::pos2(inner.right(), inner.top()),
+        egui::Align2::RIGHT_TOP,
+        format!("#{height}"),
+        egui::FontId::proportional(font_size::SUBTITLE),
+        if height > 0 { colors::ACCENT } else { colors::TEXT_MUTED },
+    );
+
+    let consecutive_timeouts = state.network.zone_consecutive_timeouts.get(&zone_id).copied().unwrap_or(0);
+    if consecutive_timeouts > 0 {
+        let stall_color = egui::Color32::from_rgb(255, 165, 0);
+        painter.text(
+            egui::pos2(inner.right(), inner.top() + 18.0),
+            egui::Align2::RIGHT_TOP,
+            format!("stall \u{00d7}{consecutive_timeouts}"),
+            egui::FontId::proportional(font_size::SMALL),
+            stall_color,
         );
     }
 
@@ -278,7 +321,7 @@ fn render_activity_feed(app: &mut OrchestratorApp, ui: &mut egui::Ui, state: &Ap
 
             let inner = ui.horizontal_top(|ui| {
                 for zone_id in 0..state.network.total_zones {
-                    render_zone_activity_column(ui, zone_id, blocks, col_w);
+                    render_zone_activity_column(ui, zone_id, blocks, col_w, state);
                     if zone_id + 1 < state.network.total_zones {
                         ui.add_space(spacing::SM);
                     }
@@ -315,15 +358,24 @@ fn render_zone_activity_column(
     zone_id: u32,
     blocks: &VecDeque<RecentBlock>,
     col_w: f32,
+    state: &AppState,
 ) {
     ui.vertical(|ui| {
         ui.set_width(col_w);
 
-        ui.label(
-            egui::RichText::new(format!("ZONE {zone_id}"))
-                .size(font_size::SUBTITLE)
-                .color(colors::TEXT_HEADING),
-        );
+        let height = state.network.zone_heights.get(&zone_id).copied().unwrap_or(0);
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!("ZONE {zone_id}"))
+                    .size(font_size::SUBTITLE)
+                    .color(colors::TEXT_HEADING),
+            );
+            ui.label(
+                egui::RichText::new(format!("#{height}"))
+                    .size(font_size::SMALL)
+                    .color(if height > 0 { colors::ACCENT } else { colors::TEXT_MUTED }),
+            );
+        });
 
         ui.add_space(spacing::XS);
 

@@ -80,8 +80,8 @@ impl OrchestratorApp {
             icon_texture: None,
             log_level_filter: None,
 
-            auto_traffic: false,
-            traffic_rate: 1.0,
+            auto_traffic: true,
+            traffic_rate: 100.0,
 
             max_block_size: 512,
             round_interval_ms: 100,
@@ -544,6 +544,9 @@ fn snapshot(state: &AppState) -> AppState {
             spends_processed: state.network.spends_processed,
             total_peers: state.network.total_peers,
             actual_tps: state.tps_sampler.tps(),
+            zone_heights: state.network.zone_heights.clone(),
+            zone_consecutive_timeouts: state.network.zone_consecutive_timeouts.clone(),
+            zone_stall_durations_ms: state.network.zone_stall_durations_ms.clone(),
         },
         log_entries: state
             .log_entries

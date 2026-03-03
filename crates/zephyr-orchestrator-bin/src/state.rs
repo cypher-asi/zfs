@@ -155,6 +155,10 @@ pub(crate) struct NetworkSnapshot {
     pub total_peers: usize,
     /// Rolling actual TPS computed from committed spends.
     pub actual_tps: f64,
+    /// Per-zone monotonic block heights (not subject to rolling window eviction).
+    pub zone_heights: HashMap<u32, u64>,
+    pub zone_consecutive_timeouts: HashMap<u32, u32>,
+    pub zone_stall_durations_ms: HashMap<u32, u64>,
 }
 
 impl Default for NetworkSnapshot {
@@ -168,6 +172,9 @@ impl Default for NetworkSnapshot {
             spends_processed: 0,
             total_peers: 0,
             actual_tps: 0.0,
+            zone_heights: HashMap::new(),
+            zone_consecutive_timeouts: HashMap::new(),
+            zone_stall_durations_ms: HashMap::new(),
         }
     }
 }
@@ -297,8 +304,8 @@ impl Default for AppState {
             network: NetworkSnapshot::default(),
             log_entries: Vec::new(),
             launch_start: None,
-            auto_traffic: false,
-            traffic_rate: 1.0,
+            auto_traffic: true,
+            traffic_rate: 100.0,
             traffic_stats: TrafficStats::default(),
             tps_sampler: TpsSampler::default(),
             recent_blocks: VecDeque::new(),
