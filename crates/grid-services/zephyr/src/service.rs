@@ -443,7 +443,7 @@ async fn consensus_loop(
     }
 
     for &zone_id in &assigned_zones {
-        mempools.insert(zone_id, Mempool::new(zone_id, 4096));
+        mempools.insert(zone_id, Mempool::new(zone_id, 65_536));
 
         let committee = sample_committee(
             epoch_mgr.randomness_seed(),
@@ -473,6 +473,8 @@ async fn consensus_loop(
 
     loop {
         tokio::select! {
+            biased;
+
             _ = shutdown.cancelled() => {
                 info!("consensus loop shutting down");
                 break;
@@ -530,7 +532,7 @@ async fn consensus_loop(
                                 config.clone(),
                             ),
                         );
-                        mempools.entry(zone_id).or_insert_with(|| Mempool::new(zone_id, 4096));
+                        mempools.entry(zone_id).or_insert_with(|| Mempool::new(zone_id, 65_536));
                     }
 
                     for &zone_id in &transition.lost_zones {
@@ -550,73 +552,20 @@ async fn consensus_loop(
                     rt.current_epoch = epoch_mgr.current_epoch();
                 }
 
-                // Leader proposes for assigned zones.
-                // On the first tick of a round the engine builds a new block
-                // and we drain the mempool.  On subsequent ticks it
-                // re-broadcasts the cached block (same hash) and we skip
-                // draining so transactions are not lost.
-                for &zone_id in &assigned_zones {
-                    let Some(engine) = consensus_engines.get_mut(&zone_id) else {
-                        continue;
-                    };
-                    if !engine.is_leader() {
-                        continue;
-                    }
-                    let spends = if engine.has_pending_proposal() {
-                        vec![]
-                    } else {
-                        mempools
-                            .get_mut(&zone_id)
-                            .map(|mp| mp.drain(config.max_block_size))
-                            .unwrap_or_default()
-                    };
-                    let vid = my_validator_id;
-                    if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
-                        if let ConsensusAction::BroadcastProposal(ref block) = action {
-                            cache_block_txs(&mut block_tx_cache, zone_id, block);
-                            // Leader self-votes; without this, quorum is unreachable
-                            // when GossipSub doesn't deliver self-published messages.
-                            let vid2 = my_validator_id;
-                            if let Some(vote_action) =
-                                engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
-                            {
-                                publish_action(
-                                    &vote_action,
-                                    &zone_to_topic,
-                                    zone_id,
-                                    &global_topic,
-                                    &publish_tx,
-                                    &block_tx_cache,
-                                )
-                                .await;
-                                if let ConsensusAction::BroadcastVote(vote) = vote_action {
-                                    if let Some(cert_action) = engine.receive_vote(vote) {
-                                        if let ConsensusAction::BroadcastCertificate(ref cert) =
-                                            cert_action
-                                        {
-                                            apply_certificate_locally(
-                                                cert,
-                                                &mut zone_head_store,
-                                                &mut block_tx_cache,
-                                                &runtime,
-                                            );
-                                        }
-                                        publish_action(
-                                            &cert_action,
-                                            &zone_to_topic,
-                                            zone_id,
-                                            &global_topic,
-                                            &publish_tx,
-                                            &block_tx_cache,
-                                        )
-                                        .await;
-                                    }
-                                }
-                            }
-                        }
-                        publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx, &block_tx_cache).await;
-                    }
-                }
+                try_propose_for_zones(
+                    &assigned_zones,
+                    &mut consensus_engines,
+                    &mut mempools,
+                    my_validator_id,
+                    &config,
+                    &mut block_tx_cache,
+                    &zone_to_topic,
+                    &global_topic,
+                    &publish_tx,
+                    &mut zone_head_store,
+                    &runtime,
+                )
+                .await;
 
                 // Update mempool sizes in runtime
                 if let Ok(mut rt) = runtime.write() {
@@ -627,48 +576,84 @@ async fn consensus_loop(
             }
 
             msg = zone_rx.recv() => {
-                let Some((topic, msg)) = msg else { break };
-                let Some(&zone_id) = topic_to_zone.get(&topic) else {
-                    warn!(%topic, "received message for unknown zone topic");
-                    continue;
-                };
+                let Some(first) = msg else { break };
 
-                match msg {
-                    ZephyrZoneMessage::SubmitSpend(tx) => {
-                        if let Some(mp) = mempools.get_mut(&zone_id) {
-                            if mp.insert(tx) {
-                                debug!(zone_id, "spend inserted into mempool");
+                // Batch-drain: collect up to 256 pending messages per
+                // select iteration so the round timer isn't starved.
+                let mut batch = Vec::with_capacity(257);
+                batch.push(first);
+                while batch.len() < 256 {
+                    match zone_rx.try_recv() {
+                        Ok(m) => batch.push(m),
+                        Err(_) => break,
+                    }
+                }
+
+                // Process consensus messages (Proposal/Vote) before
+                // spends so that quorum isn't delayed by mempool inserts.
+                batch.sort_by_key(|(_, m)| match m {
+                    ZephyrZoneMessage::Proposal(_) => 0,
+                    ZephyrZoneMessage::Vote(_) => 1,
+                    ZephyrZoneMessage::Reject(_) => 2,
+                    ZephyrZoneMessage::SubmitSpend(_) => 3,
+                });
+
+                for (topic, msg) in batch {
+                    let Some(&zone_id) = topic_to_zone.get(&topic) else {
+                        warn!(%topic, "received message for unknown zone topic");
+                        continue;
+                    };
+
+                    match msg {
+                        ZephyrZoneMessage::SubmitSpend(tx) => {
+                            if let Some(mp) = mempools.get_mut(&zone_id) {
+                                mp.insert(tx);
                             }
                         }
-                    }
-                    ZephyrZoneMessage::Proposal(proposal) => {
-                        cache_block_txs(&mut block_tx_cache, zone_id, &proposal);
-                        let Some(engine) = consensus_engines.get(&zone_id) else {
-                            continue;
-                        };
-                        let vid = my_validator_id;
-                        if let Some(action) = engine.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data)) {
-                            publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx, &block_tx_cache).await;
+                        ZephyrZoneMessage::Proposal(proposal) => {
+                            cache_block_txs(&mut block_tx_cache, zone_id, &proposal);
+                            let Some(engine) = consensus_engines.get(&zone_id) else {
+                                continue;
+                            };
+                            let vid = my_validator_id;
+                            if let Some(action) = engine.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data)) {
+                                publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx, &block_tx_cache).await;
+                            }
                         }
-                    }
-                    ZephyrZoneMessage::Vote(vote) => {
-                        let Some(engine) = consensus_engines.get_mut(&zone_id) else {
-                            continue;
-                        };
-                        if let Some(action) = engine.receive_vote(vote) {
-                            if let ConsensusAction::BroadcastCertificate(ref cert) = action {
-                                apply_certificate_locally(
-                                    cert,
-                                    &mut zone_head_store,
+                        ZephyrZoneMessage::Vote(vote) => {
+                            let mut cert_produced = false;
+                            if let Some(engine) = consensus_engines.get_mut(&zone_id) {
+                                if let Some(action) = engine.receive_vote(vote) {
+                                    if let ConsensusAction::BroadcastCertificate(ref cert) = action {
+                                        apply_certificate_locally(
+                                            cert,
+                                            &mut zone_head_store,
+                                            &mut block_tx_cache,
+                                            &runtime,
+                                        );
+                                        cert_produced = true;
+                                    }
+                                    publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx, &block_tx_cache).await;
+                                }
+                            }
+                            if cert_produced {
+                                try_propose_for_zones(
+                                    &assigned_zones,
+                                    &mut consensus_engines,
+                                    &mut mempools,
+                                    my_validator_id,
+                                    &config,
                                     &mut block_tx_cache,
+                                    &zone_to_topic,
+                                    &global_topic,
+                                    &publish_tx,
+                                    &mut zone_head_store,
                                     &runtime,
-                                );
+                                )
+                                .await;
                             }
-                            publish_action(&action, &zone_to_topic, zone_id, &global_topic, &publish_tx, &block_tx_cache).await;
                         }
-                    }
-                    ZephyrZoneMessage::Reject(_) => {
-                        debug!(zone_id, "received reject message (ignored)");
+                        ZephyrZoneMessage::Reject(_) => {}
                     }
                 }
             }
@@ -687,6 +672,7 @@ async fn consensus_loop(
                         }
 
                         let cz = cert.zone_id;
+                        let mut round_advanced = false;
                         if let Some(engine) = consensus_engines.get_mut(&cz) {
                             if engine.apply_certificate(&cert) {
                                 apply_certificate_locally(
@@ -696,6 +682,7 @@ async fn consensus_loop(
                                     &runtime,
                                 );
                                 debug!(zone_id = cz, "applied certificate from global topic");
+                                round_advanced = true;
                             }
                         } else {
                             apply_certificate_locally(
@@ -704,6 +691,22 @@ async fn consensus_loop(
                                 &mut block_tx_cache,
                                 &runtime,
                             );
+                        }
+                        if round_advanced {
+                            try_propose_for_zones(
+                                &assigned_zones,
+                                &mut consensus_engines,
+                                &mut mempools,
+                                my_validator_id,
+                                &config,
+                                &mut block_tx_cache,
+                                &zone_to_topic,
+                                &global_topic,
+                                &publish_tx,
+                                &mut zone_head_store,
+                                &runtime,
+                            )
+                            .await;
                         }
                     }
                     ZephyrGlobalMessage::EpochAnnounce(ann) => {
@@ -823,6 +826,84 @@ async fn publish_action(
 
     if publish_tx.try_send((topic, data)).is_err() {
         warn!("publish channel full or closed");
+    }
+}
+
+/// Attempt to propose blocks for all assigned zones where this node is leader.
+///
+/// Called on every round timer tick **and** immediately after a round advances
+/// (certificate produced or applied) to eliminate dead time between rounds.
+#[allow(clippy::too_many_arguments)]
+async fn try_propose_for_zones(
+    assigned_zones: &[u32],
+    consensus_engines: &mut HashMap<u32, ZoneConsensus>,
+    mempools: &mut HashMap<u32, Mempool>,
+    my_validator_id: [u8; 32],
+    config: &ZephyrConfig,
+    block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
+    zone_to_topic: &HashMap<u32, String>,
+    global_topic: &str,
+    publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
+    zone_head_store: &mut ZoneHead,
+    runtime: &Arc<std::sync::RwLock<ZephyrRuntime>>,
+) {
+    for &zone_id in assigned_zones {
+        let Some(engine) = consensus_engines.get_mut(&zone_id) else {
+            continue;
+        };
+        if !engine.is_leader() {
+            continue;
+        }
+        let spends = if engine.has_pending_proposal() {
+            vec![]
+        } else {
+            mempools
+                .get_mut(&zone_id)
+                .map(|mp| mp.drain(config.max_block_size))
+                .unwrap_or_default()
+        };
+        let vid = my_validator_id;
+        if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
+            if let ConsensusAction::BroadcastProposal(ref block) = action {
+                cache_block_txs(block_tx_cache, zone_id, block);
+                let vid2 = my_validator_id;
+                if let Some(vote_action) =
+                    engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
+                {
+                    publish_action(
+                        &vote_action,
+                        zone_to_topic,
+                        zone_id,
+                        global_topic,
+                        publish_tx,
+                        block_tx_cache,
+                    )
+                    .await;
+                    if let ConsensusAction::BroadcastVote(vote) = vote_action {
+                        if let Some(cert_action) = engine.receive_vote(vote) {
+                            if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
+                                apply_certificate_locally(
+                                    cert,
+                                    zone_head_store,
+                                    block_tx_cache,
+                                    runtime,
+                                );
+                            }
+                            publish_action(
+                                &cert_action,
+                                zone_to_topic,
+                                zone_id,
+                                global_topic,
+                                publish_tx,
+                                block_tx_cache,
+                            )
+                            .await;
+                        }
+                    }
+                }
+            }
+            publish_action(&action, zone_to_topic, zone_id, global_topic, publish_tx, block_tx_cache).await;
+        }
     }
 }
 

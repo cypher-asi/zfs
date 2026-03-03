@@ -199,7 +199,7 @@ fn criterion_3_double_spend_rejection() {
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
     let spends = mempool.drain(64);
-    let consensus = ZoneConsensus::new(
+    let mut consensus = ZoneConsensus::new(
         zone,
         0,
         committee.clone(),
@@ -280,7 +280,7 @@ fn criterion_4_rotation_continuity() {
     let committee_e1 = epoch_mgr.committee_for_zone(test_zone);
     let leader_e1 = leader_for_round(&committee_e1, 1, 0).validator_id;
 
-    let consensus_e1 = ZoneConsensus::new(
+    let mut consensus_e1 = ZoneConsensus::new(
         test_zone,
         1,
         committee_e1.clone(),
@@ -354,7 +354,7 @@ fn criterion_5_invalid_proof_containment() {
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
     let spends = mempool.drain(64);
-    let consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
+    let mut consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
 
     let block = match consensus.propose(spends, identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,

@@ -249,7 +249,7 @@ fn render_zone_activity_column(
         ui.set_width(col_w);
 
         ui.label(
-            egui::RichText::new(format!("Zone {zone_id}"))
+            egui::RichText::new(format!("ZONE {zone_id}"))
                 .size(font_size::SUBTITLE)
                 .color(colors::TEXT_HEADING),
         );

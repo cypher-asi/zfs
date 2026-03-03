@@ -50,7 +50,6 @@ impl Mempool {
                 result.push(spend);
             }
         }
-        self.reindex();
         result
     }
 

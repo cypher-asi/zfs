@@ -79,7 +79,13 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
             match grid_core::decode_canonical::<ZephyrZoneMessage>(data) {
                 Ok(msg) => {
                     debug!(%topic, %sender_label, "received zone message");
-                    if self
+                    let is_spend = matches!(msg, ZephyrZoneMessage::SubmitSpend(_));
+                    if is_spend {
+                        // Drop excess spends rather than blocking the gossip
+                        // task — blocking here would stall Proposal/Vote
+                        // delivery and kill consensus.
+                        let _ = self.zone_message_tx.try_send((topic.to_owned(), msg));
+                    } else if self
                         .zone_message_tx
                         .send((topic.to_owned(), msg))
                         .await
