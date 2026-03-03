@@ -23,7 +23,11 @@ const GLOW_FADE_IN_SECS: f32 = 0.3;
 const FADE_ZONE_FRAC: f32 = 0.25;
 const LABEL_WIDTH: f32 = 72.0;
 const BLOCK_GAP: f32 = 6.0;
-const SCROLL_SPEED: f32 = 700.0;
+const BASE_SCROLL_SPEED: f32 = 700.0;
+const MAX_SCROLL_SPEED: f32 = 7000.0;
+const TARGET_LEAD_SECS: f32 = 0.8;
+const SPEED_UP_RATE: f32 = 6.0;
+const SLOW_DOWN_RATE: f32 = 2.0;
 const MAX_BLOCKS_PER_ZONE: usize = 200;
 const BATCH_STAGGER_SECS: f32 = 0.06;
 const ZONE_PHASE_MAX_SECS: f32 = 0.25;
@@ -57,6 +61,7 @@ struct FlowBlock {
     tx_count: usize,
     birth_scroll_pos: f32,
     birth_time: Instant,
+    first_visible_time: Option<Instant>,
     #[allow(dead_code)]
     block_hash_hex: String,
     color_idx: u8,
@@ -84,7 +89,7 @@ impl Default for BlockflowVisualization {
             camera: Camera::default(),
             scroll_pos: 0.0,
             last_frame: Instant::now(),
-            smoothed_speed: SCROLL_SPEED,
+            smoothed_speed: BASE_SCROLL_SPEED,
             zone_buf: Vec::new(),
         }
     }
@@ -142,6 +147,7 @@ impl BlockflowVisualization {
                         tx_count: block.tx_count,
                         birth_scroll_pos: bsp,
                         birth_time: Instant::now(),
+                        first_visible_time: None,
                         block_hash_hex: block.block_hash_hex.clone(),
                         color_idx: cidx,
                     });
@@ -183,6 +189,7 @@ impl BlockflowVisualization {
                     tx_count: block.tx_count,
                     birth_scroll_pos: actual_bsp,
                     birth_time: Instant::now(),
+                    first_visible_time: None,
                     block_hash_hex: block.block_hash_hex.clone(),
                     color_idx: cidx,
                 });
@@ -238,10 +245,23 @@ impl BlockflowVisualization {
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        self.smoothed_speed = SCROLL_SPEED;
-        self.scroll_pos += SCROLL_SPEED * dt;
-
         let has_new_blocks = self.ingest(state);
+
+        let max_lead = self.blocks.iter()
+            .map(|b| (b.birth_scroll_pos - self.scroll_pos).max(0.0))
+            .fold(0.0f32, f32::max);
+        let target_speed = (max_lead / TARGET_LEAD_SECS)
+            .max(BASE_SCROLL_SPEED)
+            .min(MAX_SCROLL_SPEED);
+        let rate = if target_speed > self.smoothed_speed {
+            SPEED_UP_RATE
+        } else {
+            SLOW_DOWN_RATE
+        };
+        let alpha = (1.0 - (-rate * dt).exp()).clamp(0.0, 1.0);
+        self.smoothed_speed += (target_speed - self.smoothed_speed) * alpha;
+        self.smoothed_speed = self.smoothed_speed.clamp(BASE_SCROLL_SPEED, MAX_SCROLL_SPEED);
+        self.scroll_pos += self.smoothed_speed * dt;
 
         let avail = ui.available_size();
         let (outer_rect, _) = ui.allocate_exact_size(avail, egui::Sense::hover());
@@ -269,6 +289,7 @@ impl BlockflowVisualization {
         let zone_count = self.zone_buf.len();
         let total_blocks = self.blocks.len();
         let total_tps = state.network.actual_tps;
+        let tps_boost = ((total_tps as f32 / 1000.0).clamp(1.0, 2.0) - 1.0) * 0.5 + 1.0;
 
         let entry_lead = self.smoothed_speed * ENTRY_LEAD_SECS;
 
@@ -300,7 +321,7 @@ impl BlockflowVisualization {
             let mut prev_screen_right: Option<f32> = None;
 
             for &bi in &zone_indices {
-                let block = &self.blocks[bi];
+                let block = &mut self.blocks[bi];
                 if block.birth_scroll_pos > self.scroll_pos + entry_lead {
                     continue;
                 }
@@ -323,6 +344,14 @@ impl BlockflowVisualization {
                 let scroll_frac =
                     ((x_offset + entry_lead) / entry_lead.max(1.0)).clamp(0.0, 1.0);
                 let alpha_mul = 1.0 - (1.0 - scroll_frac).powi(2);
+
+                if alpha_mul > 0.0 && block.first_visible_time.is_none() {
+                    block.first_visible_time = Some(now);
+                }
+
+                let effect_age_ms = block.first_visible_time
+                    .map(|t| now.duration_since(t).as_millis())
+                    .unwrap_or(0);
 
                 let bar_rect = egui::Rect::from_min_size(
                     egui::pos2(screen_x, row_y),
@@ -373,14 +402,15 @@ impl BlockflowVisualization {
                     with_alpha(fill_color, 0),
                 );
 
-                if age_ms >= VOTING_THRESHOLD_MS {
+                if effect_age_ms >= VOTING_THRESHOLD_MS {
                     let glow_color = fill_color;
-                    let certified_age = age_ms.saturating_sub(VOTING_THRESHOLD_MS);
+                    let certified_age = effect_age_ms.saturating_sub(VOTING_THRESHOLD_MS);
                     let glow_t =
                         (certified_age as f32 / 1000.0 / GLOW_FADE_IN_SECS).min(1.0);
 
+                    let boosted_glow = (GLOW_FILL_ALPHA * tps_boost).min(0.65);
                     let left_alpha =
-                        (GLOW_FILL_ALPHA * glow_t * 255.0 * alpha_mul) as u8;
+                        (boosted_glow * glow_t * 255.0 * alpha_mul) as u8;
                     let right_alpha =
                         (GLOW_TAIL_MIN_ALPHA * glow_t * 255.0 * alpha_mul) as u8;
 
@@ -410,8 +440,9 @@ impl BlockflowVisualization {
                     if certified_secs < total_pulse {
                         let pulse_color = lerp_color(fill_color, egui::Color32::WHITE, 0.45);
                         let edge_w = (scaled_w * PULSE_EDGE_FRAC).max(4.0);
+                        let boosted_pulse = (PULSE_BRIGHT_ALPHA * tps_boost).min(1.0);
                         let bright =
-                            with_alpha(pulse_color, (PULSE_BRIGHT_ALPHA * 255.0 * alpha_mul) as u8);
+                            with_alpha(pulse_color, (boosted_pulse * 255.0 * alpha_mul) as u8);
                         let transparent = with_alpha(pulse_color, 0);
 
                         if certified_secs < PULSE_FILL_SECS {
