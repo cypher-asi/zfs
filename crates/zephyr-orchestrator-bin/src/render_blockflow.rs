@@ -11,7 +11,7 @@ const BAR_HEIGHT: f32 = 10.0;
 const BAR_MIN_WIDTH: f32 = 80.0;
 const BAR_MAX_WIDTH: f32 = 500.0;
 const BAR_WIDTH_PER_TX: f32 = 3.0;
-const ROW_HEIGHT: f32 = 28.0;
+const ROW_HEIGHT: f32 = 14.0;
 const ROW_TOP_MARGIN: f32 = 36.0;
 const BORDER_STROKE: f32 = 1.2;
 const BORDER_ALPHA: f32 = 0.50;
@@ -24,11 +24,14 @@ const FADE_ZONE_FRAC: f32 = 0.25;
 const LABEL_WIDTH: f32 = 36.0;
 const LABEL_FADE_WIDTH: f32 = 28.0;
 const BLOCK_GAP: f32 = 6.0;
-const BASE_SCROLL_SPEED: f32 = 700.0;
-const MAX_SCROLL_SPEED: f32 = 4000.0;
+const MIN_SCROLL_SPEED: f32 = 600.0;
+const MAX_SCROLL_SPEED: f32 = 3500.0;
 const TARGET_LEAD_SECS: f32 = 1.5;
 const SPEED_UP_RATE: f32 = 4.0;
 const SLOW_DOWN_RATE: f32 = 2.0;
+/// Fraction of on-screen time the full lifecycle (threshold + pulse) must fit within.
+/// The remaining fraction lets the glow linger before the block exits.
+const EFFECT_VISIBLE_FRAC: f32 = 0.75;
 const MAX_BLOCKS_PER_ZONE: usize = 200;
 const BATCH_STAGGER_SECS: f32 = 0.06;
 const ZONE_PHASE_MAX_SECS: f32 = 0.25;
@@ -90,7 +93,7 @@ impl Default for BlockflowVisualization {
             camera: Camera::default(),
             scroll_pos: 0.0,
             last_frame: Instant::now(),
-            smoothed_speed: BASE_SCROLL_SPEED,
+            smoothed_speed: MIN_SCROLL_SPEED,
             zone_buf: Vec::new(),
         }
     }
@@ -252,7 +255,7 @@ impl BlockflowVisualization {
             .map(|b| (b.birth_scroll_pos - self.scroll_pos).max(0.0))
             .fold(0.0f32, f32::max);
         let target_speed = (max_lead / TARGET_LEAD_SECS)
-            .max(BASE_SCROLL_SPEED)
+            .max(MIN_SCROLL_SPEED)
             .min(MAX_SCROLL_SPEED);
         let rate = if target_speed > self.smoothed_speed {
             SPEED_UP_RATE
@@ -261,7 +264,7 @@ impl BlockflowVisualization {
         };
         let alpha = (1.0 - (-rate * dt).exp()).clamp(0.0, 1.0);
         self.smoothed_speed += (target_speed - self.smoothed_speed) * alpha;
-        self.smoothed_speed = self.smoothed_speed.clamp(BASE_SCROLL_SPEED, MAX_SCROLL_SPEED);
+        self.smoothed_speed = self.smoothed_speed.clamp(MIN_SCROLL_SPEED, MAX_SCROLL_SPEED);
         self.scroll_pos += self.smoothed_speed * dt;
 
         let avail = ui.available_size();
@@ -291,7 +294,13 @@ impl BlockflowVisualization {
         let total_blocks = self.blocks.len();
         let total_tps = state.network.actual_tps;
         let tps_boost = ((total_tps as f32 / 1000.0).clamp(1.0, 2.0) - 1.0) * 0.5 + 1.0;
-        let speed_scale = (self.smoothed_speed / BASE_SCROLL_SPEED).max(1.0);
+
+        let usable_scroll_width =
+            (rect.width() - LABEL_WIDTH - LABEL_FADE_WIDTH).max(1.0) / self.camera.zoom;
+        let visible_secs = usable_scroll_width / self.smoothed_speed.max(1.0);
+        let lifecycle_secs =
+            VOTING_THRESHOLD_MS as f32 / 1000.0 + PULSE_FILL_SECS + PULSE_DRAIN_SECS;
+        let speed_scale = (lifecycle_secs / (visible_secs * EFFECT_VISIBLE_FRAC)).max(1.0);
 
         let entry_lead = self.smoothed_speed * ENTRY_LEAD_SECS;
 
