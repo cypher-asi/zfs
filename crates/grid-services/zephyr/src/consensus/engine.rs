@@ -32,6 +32,7 @@ pub struct ZoneConsensus {
     consecutive_timeouts: u32,
     proposal_seen: bool,
     force_adopt_next_cert: bool,
+    fork_recovery_used: bool,
 }
 
 /// Actions the consensus engine requests the caller to perform.
@@ -67,6 +68,7 @@ impl ZoneConsensus {
             consecutive_timeouts: 0,
             proposal_seen: false,
             force_adopt_next_cert: false,
+            fork_recovery_used: false,
         }
     }
 
@@ -234,6 +236,7 @@ impl ZoneConsensus {
                 self.parent_hash = proposal.header.parent_hash;
                 self.height = proposal.header.height;
                 self.force_adopt_next_cert = false;
+                self.fork_recovery_used = true;
             } else {
                 warn!(
                     zone_id = self.zone_id,
@@ -304,7 +307,7 @@ impl ZoneConsensus {
             self.ticks_in_round = 0;
         }
 
-        if let Some(cert) = self.cert_builder.add_vote(vote, self.parent_hash) {
+        if let Some(cert) = self.cert_builder.add_vote(vote, self.parent_hash, self.height) {
             if cert.block_hash == self.parent_hash {
                 debug!(
                     zone_id = self.zone_id,
@@ -352,18 +355,32 @@ impl ZoneConsensus {
 
         if cert.parent_hash != self.parent_hash {
             if self.force_adopt_next_cert {
+                if cert.height < self.height {
+                    warn!(
+                        zone_id = self.zone_id,
+                        round = self.round,
+                        cert_height = cert.height,
+                        local_height = self.height,
+                        cert_block = %hex::encode(&cert.block_hash[..8]),
+                        "fork recovery: rejecting cert with height < local height"
+                    );
+                    return false;
+                }
                 warn!(
                     zone_id = self.zone_id,
                     round = self.round,
                     cert_parent = %hex::encode(&cert.parent_hash[..8]),
                     local_parent = %hex::encode(&self.parent_hash[..8]),
                     cert_block = %hex::encode(&cert.block_hash[..8]),
-                    height = self.height,
+                    cert_height = cert.height,
+                    local_height = self.height,
                     "fork recovery: adopting cert chain despite parent_hash mismatch"
                 );
                 self.parent_hash = cert.parent_hash;
+                self.height = cert.height;
                 self.force_adopt_next_cert = false;
-                self.advance_round(cert.block_hash);
+                self.fork_recovery_used = true;
+                self.advance_round_inner(cert.block_hash, false);
                 return true;
             }
             debug!(
@@ -405,8 +422,21 @@ impl ZoneConsensus {
     /// Arm fork recovery: the next incoming certificate will be adopted even
     /// if its `parent_hash` doesn't match ours. This allows a stalled node to
     /// jump onto whatever chain the majority is producing.
-    pub fn enable_fork_recovery(&mut self) {
+    ///
+    /// Returns `true` if newly armed, `false` if already armed (avoids log spam).
+    pub fn enable_fork_recovery(&mut self) -> bool {
+        if self.force_adopt_next_cert {
+            return false;
+        }
         self.force_adopt_next_cert = true;
+        true
+    }
+
+    /// Returns `true` if fork recovery was used since the last call, and
+    /// clears the flag. The service layer uses this to clear pending_certs
+    /// after a fork-recovery adoption.
+    pub fn take_fork_recovery_used(&mut self) -> bool {
+        std::mem::take(&mut self.fork_recovery_used)
     }
 
     pub fn parent_hash(&self) -> &[u8; 32] {
@@ -462,13 +492,19 @@ impl ZoneConsensus {
     }
 
     fn advance_round(&mut self, new_parent_hash: [u8; 32]) {
+        self.advance_round_inner(new_parent_hash, true);
+    }
+
+    fn advance_round_inner(&mut self, new_parent_hash: [u8; 32], is_genuine_progress: bool) {
         self.parent_hash = new_parent_hash;
         self.round += 1;
         self.height += 1;
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
-        self.consecutive_timeouts = self.consecutive_timeouts.saturating_sub(1);
+        if is_genuine_progress {
+            self.consecutive_timeouts = self.consecutive_timeouts.saturating_sub(1);
+        }
         self.proposal_seen = false;
         self.cert_builder.clear_votes();
     }
@@ -727,6 +763,7 @@ mod tests {
         let cert = FinalityCertificate {
             zone_id: 0,
             epoch: 0, // previous epoch
+            height: 0,
             block_hash: [0xBB; 32],
             parent_hash: [0xAA; 32],
             signatures: vec![],
@@ -749,6 +786,7 @@ mod tests {
         let cert = FinalityCertificate {
             zone_id: 0,
             epoch: 0,
+            height: 0,
             block_hash: [0xCC; 32],
             parent_hash: [0xBB; 32], // doesn't match our [0xAA; 32]
             signatures: vec![],
@@ -768,6 +806,7 @@ mod tests {
         let cert2 = FinalityCertificate {
             zone_id: 0,
             epoch: 0,
+            height: 1,
             block_hash: [0xDD; 32],
             parent_hash: [0xFF; 32],
             signatures: vec![],
@@ -860,6 +899,7 @@ mod tests {
         let cert = FinalityCertificate {
             zone_id: 0,
             epoch: 0,
+            height: 0,
             block_hash: [0xBB; 32],
             parent_hash: [0xAA; 32],
             signatures: vec![],
@@ -874,6 +914,7 @@ mod tests {
         let cert2 = FinalityCertificate {
             zone_id: 0,
             epoch: 0,
+            height: 1,
             block_hash: [0xCC; 32],
             parent_hash: [0xBB; 32],
             signatures: vec![],
@@ -883,6 +924,45 @@ mod tests {
             zc.consecutive_timeouts(),
             3,
             "second advance_round should decrement to 3"
+        );
+    }
+
+    #[test]
+    fn fork_recovery_does_not_decrement_consecutive_timeouts() {
+        let committee = make_committee(3);
+        let leader_id = leader_for_round(&committee, 0, 0).validator_id;
+
+        let mut zc =
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+
+        for _ in 0..4 {
+            zc.timeout_round();
+        }
+        assert_eq!(zc.consecutive_timeouts(), 4);
+
+        zc.enable_fork_recovery();
+
+        let cert = FinalityCertificate {
+            zone_id: 0,
+            epoch: 0,
+            height: 5,
+            block_hash: [0xCC; 32],
+            parent_hash: [0xBB; 32],
+            signatures: vec![],
+        };
+        assert!(zc.apply_certificate(&cert));
+        assert_eq!(
+            zc.consecutive_timeouts(),
+            4,
+            "fork recovery should NOT decrement consecutive_timeouts"
+        );
+        assert!(
+            zc.take_fork_recovery_used(),
+            "fork_recovery_used flag should be set"
+        );
+        assert!(
+            !zc.take_fork_recovery_used(),
+            "flag should be cleared after take"
         );
     }
 }

@@ -123,6 +123,7 @@ fn finality_certificate_cbor_round_trip() {
     let cert = FinalityCertificate {
         zone_id: 10,
         epoch: 5,
+        height: 0,
         parent_hash: [0xAA; 32],
         block_hash: [0xCC; 32],
         signatures: vec![CertSignature {

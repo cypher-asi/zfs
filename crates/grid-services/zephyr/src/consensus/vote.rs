@@ -34,6 +34,7 @@ impl CertificateBuilder {
         &mut self,
         vote: BlockVote,
         parent_hash: [u8; 32],
+        height: u64,
     ) -> Option<FinalityCertificate> {
         if vote.zone_id != self.zone_id || vote.epoch != self.epoch {
             debug!(
@@ -86,6 +87,7 @@ impl CertificateBuilder {
             Some(FinalityCertificate {
                 zone_id: self.zone_id,
                 epoch: self.epoch,
+                height,
                 parent_hash,
                 block_hash: vote.block_hash,
                 signatures,
@@ -154,15 +156,16 @@ mod tests {
         let hash = [0xAA; 32];
         let parent = [0; 32];
 
-        assert!(builder.add_vote(make_vote(hash, 1), parent).is_none());
-        assert!(builder.add_vote(make_vote(hash, 2), parent).is_none());
+        assert!(builder.add_vote(make_vote(hash, 1), parent, 0).is_none());
+        assert!(builder.add_vote(make_vote(hash, 2), parent, 0).is_none());
 
-        let cert = builder.add_vote(make_vote(hash, 3), parent);
+        let cert = builder.add_vote(make_vote(hash, 3), parent, 0);
         assert!(cert.is_some());
 
         let cert = cert.unwrap();
         assert_eq!(cert.zone_id, 0);
         assert_eq!(cert.epoch, 1);
+        assert_eq!(cert.height, 0);
         assert_eq!(cert.block_hash, hash);
         assert_eq!(cert.signatures.len(), 3);
         assert_eq!(cert.parent_hash, parent);
@@ -174,8 +177,8 @@ mod tests {
         let hash = [0xBB; 32];
         let parent = [0; 32];
 
-        builder.add_vote(make_vote(hash, 1), parent);
-        builder.add_vote(make_vote(hash, 1), parent);
+        builder.add_vote(make_vote(hash, 1), parent, 0);
+        builder.add_vote(make_vote(hash, 1), parent, 0);
         assert_eq!(builder.vote_count(&hash), 1);
     }
 
@@ -186,7 +189,7 @@ mod tests {
 
         let mut vote = make_vote(hash, 1);
         vote.zone_id = 99;
-        assert!(builder.add_vote(vote, [0; 32]).is_none());
+        assert!(builder.add_vote(vote, [0; 32], 0).is_none());
         assert_eq!(builder.vote_count(&hash), 0);
     }
 
@@ -197,9 +200,9 @@ mod tests {
         let parent = [0; 32];
 
         assert!(!builder.has_quorum(&hash));
-        builder.add_vote(make_vote(hash, 1), parent);
+        builder.add_vote(make_vote(hash, 1), parent, 0);
         assert!(!builder.has_quorum(&hash));
-        builder.add_vote(make_vote(hash, 2), parent);
+        builder.add_vote(make_vote(hash, 2), parent, 0);
         assert!(builder.has_quorum(&hash));
     }
 }

@@ -711,6 +711,13 @@ async fn zone_consensus_task(
                                     eng.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data))
                                 {
                                     eng.reset_timeout();
+                                    if eng.take_fork_recovery_used() {
+                                        let dropped = pending_certs.len();
+                                        pending_certs.clear();
+                                        if dropped > 0 {
+                                            info!(zone_id, dropped, "cleared pending certs after fork recovery (proposal)");
+                                        }
+                                    }
                                     publish_action(
                                         &action,
                                         &zone_topic,
@@ -849,6 +856,7 @@ async fn zone_consensus_task(
                             let mut round_advanced = false;
                             if let Some(ref mut eng) = engine {
                                 if eng.apply_certificate(&cert) {
+                                    let fork_recovery_fired = eng.take_fork_recovery_used();
                                     {
                                         let mut zhs = zone_head_store.lock().await;
                                         apply_certificate_locally(
@@ -867,6 +875,14 @@ async fn zone_consensus_task(
                                     debug!(zone_id, "applied certificate from global topic");
                                     round_advanced = true;
 
+                                    if fork_recovery_fired {
+                                        let dropped = pending_certs.len();
+                                        pending_certs.clear();
+                                        if dropped > 0 {
+                                            info!(zone_id, dropped, "cleared pending certs after fork recovery (cert)");
+                                        }
+                                    }
+
                                     // Drain buffered certs that may now be applicable,
                                     // and discard any that are now stale.
                                     while !pending_certs.is_empty() {
@@ -881,7 +897,25 @@ async fn zone_consensus_task(
                                                 );
                                                 continue;
                                             }
+                                            if pc.height <= eng.height() {
+                                                debug!(
+                                                    zone_id,
+                                                    cert_height = pc.height,
+                                                    local_height = eng.height(),
+                                                    cert_block = %hex::encode(&pc.block_hash[..8]),
+                                                    "purging height-stale buffered certificate"
+                                                );
+                                                continue;
+                                            }
                                             if eng.apply_certificate(&pc) {
+                                                if eng.take_fork_recovery_used() {
+                                                    let dropped = still_pending.len();
+                                                    still_pending.clear();
+                                                    if dropped > 0 {
+                                                        info!(zone_id, dropped, "cleared pending certs after fork recovery mid-drain");
+                                                    }
+                                                    break;
+                                                }
                                                 {
                                                     let mut zhs =
                                                         zone_head_store.lock().await;
@@ -1052,7 +1086,13 @@ async fn zone_consensus_task(
                                         parent_hash = %eng.parent_hash_hex(),
                                         "zone stalled at epoch boundary, enabling fork recovery"
                                     );
-                                    eng.enable_fork_recovery();
+                                    if eng.enable_fork_recovery() {
+                                        let dropped = pending_certs.len();
+                                        pending_certs.clear();
+                                        if dropped > 0 {
+                                            info!(zone_id, dropped, "cleared pending certs for fork recovery");
+                                        }
+                                    }
                                 }
                                 eng.advance_to_epoch(current_epoch, committee);
                                 pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
@@ -1117,15 +1157,22 @@ async fn zone_consensus_task(
                             mempool.reinsert_batch(zone_id, abandoned_txs);
                         }
                         if eng.consecutive_timeouts() >= 2 || pending_certs.len() >= 8 {
-                            warn!(
-                                zone_id,
-                                consecutive_timeouts = eng.consecutive_timeouts(),
-                                pending_certs = pending_certs.len(),
-                                height = eng.height(),
-                                parent_hash = %eng.parent_hash_hex(),
-                                "zone stalled, enabling fork recovery"
-                            );
-                            eng.enable_fork_recovery();
+                            if eng.enable_fork_recovery() {
+                                warn!(
+                                    zone_id,
+                                    consecutive_timeouts = eng.consecutive_timeouts(),
+                                    pending_certs = pending_certs.len(),
+                                    height = eng.height(),
+                                    parent_hash = %eng.parent_hash_hex(),
+                                    mempool = mempool.len(zone_id),
+                                    "zone stalled, enabling fork recovery"
+                                );
+                                let dropped = pending_certs.len();
+                                pending_certs.clear();
+                                if dropped > 0 {
+                                    info!(zone_id, dropped, "cleared pending certs for fork recovery");
+                                }
+                            }
                         }
                         {
                             let mut rt = runtime.write();
@@ -1145,7 +1192,25 @@ async fn zone_consensus_task(
                                 if pc.block_hash == *eng.parent_hash() {
                                     continue;
                                 }
+                                if pc.height <= eng.height() {
+                                    debug!(
+                                        zone_id,
+                                        cert_height = pc.height,
+                                        local_height = eng.height(),
+                                        cert_block = %hex::encode(&pc.block_hash[..8]),
+                                        "periodic drain: purging height-stale certificate"
+                                    );
+                                    continue;
+                                }
                                 if eng.apply_certificate(&pc) {
+                                    if eng.take_fork_recovery_used() {
+                                        let dropped = still_pending.len();
+                                        still_pending.clear();
+                                        if dropped > 0 {
+                                            info!(zone_id, dropped, "cleared pending certs after fork recovery in periodic drain");
+                                        }
+                                        break;
+                                    }
                                     {
                                         let mut zhs = zone_head_store.lock().await;
                                         apply_certificate_locally(
@@ -1174,6 +1239,7 @@ async fn zone_consensus_task(
                     // Periodic health summary during stalls (every ~10s at default 100ms tick)
                     if eng.consecutive_timeouts() > 0 && eng.ticks_in_round() % 100 == 0 {
                         let (vote_blocks, max_votes) = eng.vote_summary();
+                        let distinct_parents: std::collections::HashSet<[u8; 32]> = pending_certs.iter().map(|c| c.parent_hash).collect();
                         info!(
                             zone_id,
                             round = eng.round(),
@@ -1190,6 +1256,7 @@ async fn zone_consensus_task(
                             max_votes,
                             parent_hash = %eng.parent_hash_hex(),
                             pending_certs = pending_certs.len(),
+                            pending_cert_distinct_parents = distinct_parents.len(),
                             mempool_len = mempool.len(zone_id),
                             "zone stall health check"
                         );

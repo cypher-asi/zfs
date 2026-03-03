@@ -99,6 +99,7 @@ pub struct BlockVote {
 pub struct FinalityCertificate {
     pub zone_id: ZoneId,
     pub epoch: EpochId,
+    pub height: u64,
     #[serde(with = "serde_bytes")]
     pub parent_hash: [u8; 32],
     #[serde(with = "serde_bytes")]
