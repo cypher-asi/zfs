@@ -279,6 +279,7 @@ pub(crate) fn spawn_status_pollers(
                                 zephyr.get("spends_processed").and_then(|v| v.as_u64())
                             {
                                 state.network.spends_processed = spends;
+                                state.tps_sampler.record(spends);
                             }
                             if let Some(heads) =
                                 zephyr.get("zone_heads").and_then(|v| v.as_object())

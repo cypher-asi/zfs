@@ -45,8 +45,12 @@ fn render_stats_bar(ui: &mut egui::Ui, state: &AppState, launch_instant: Option<
                 ui.label(format!("{}", state.network.certificates_produced));
                 field_label(ui, "Spends Processed");
                 ui.label(format!("{}", state.network.spends_processed));
-                field_label(ui, "Tx Submitted");
-                ui.label(format!("{}", state.traffic_stats.total_submitted));
+                field_label(ui, "Actual TPS");
+                ui.label(
+                    egui::RichText::new(format!("{:.0}", state.network.actual_tps))
+                        .color(colors::ACCENT)
+                        .strong(),
+                );
                 if let Some(started) = launch_instant {
                     field_label(ui, "Uptime");
                     ui.label(format_uptime(started.elapsed().as_secs()));
@@ -81,6 +85,15 @@ fn render_traffic_controls(app: &mut OrchestratorApp, ui: &mut egui::Ui, _state:
                 app.traffic_rate = rate;
                 app.sync_traffic_to_shared();
             }
+
+            ui.add_space(spacing::LG);
+
+            ui.label(
+                egui::RichText::new(format!("Actual: {:.0} tx/s", _state.network.actual_tps))
+                    .size(font_size::SMALL)
+                    .color(colors::ACCENT)
+                    .strong(),
+            );
         });
 
         ui.add_space(spacing::SM);

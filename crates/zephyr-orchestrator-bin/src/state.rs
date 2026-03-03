@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Top-level application phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +135,8 @@ pub(crate) struct NetworkSnapshot {
     pub certificates_produced: u64,
     pub spends_processed: u64,
     pub total_peers: usize,
+    /// Rolling actual TPS computed from committed spends.
+    pub actual_tps: f64,
 }
 
 impl Default for NetworkSnapshot {
@@ -147,6 +149,7 @@ impl Default for NetworkSnapshot {
             certificates_produced: 0,
             spends_processed: 0,
             total_peers: 0,
+            actual_tps: 0.0,
         }
     }
 }
@@ -201,6 +204,49 @@ pub(crate) struct TrafficStats {
     pub recent: VecDeque<RecentTransaction>,
 }
 
+/// Rolling-window TPS computed from committed `spends_processed`.
+pub(crate) struct TpsSampler {
+    samples: VecDeque<(Instant, u64)>,
+    window: Duration,
+}
+
+impl TpsSampler {
+    pub fn new(window: Duration) -> Self {
+        Self {
+            samples: VecDeque::new(),
+            window,
+        }
+    }
+
+    pub fn record(&mut self, spends_processed: u64) {
+        let now = Instant::now();
+        self.samples.push_back((now, spends_processed));
+        let cutoff = now.checked_sub(self.window).unwrap_or(now);
+        while self.samples.front().is_some_and(|(t, _)| *t < cutoff) {
+            self.samples.pop_front();
+        }
+    }
+
+    pub fn tps(&self) -> f64 {
+        if self.samples.len() < 2 {
+            return 0.0;
+        }
+        let (t0, v0) = *self.samples.front().unwrap();
+        let (t1, v1) = *self.samples.back().unwrap();
+        let elapsed = t1.duration_since(t0).as_secs_f64();
+        if elapsed < 0.1 {
+            return 0.0;
+        }
+        (v1 - v0) as f64 / elapsed
+    }
+}
+
+impl Default for TpsSampler {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(5))
+    }
+}
+
 /// Shared mutable state polled by the UI.
 pub(crate) struct AppState {
     pub phase: AppPhase,
@@ -211,6 +257,7 @@ pub(crate) struct AppState {
     pub auto_traffic: bool,
     pub traffic_rate: f32,
     pub traffic_stats: TrafficStats,
+    pub tps_sampler: TpsSampler,
     pub recent_blocks: VecDeque<RecentBlock>,
     /// Tracks how many blocks we have already consumed from the metrics
     /// so the poller only appends new ones.
@@ -228,6 +275,7 @@ impl Default for AppState {
             auto_traffic: false,
             traffic_rate: 1.0,
             traffic_stats: TrafficStats::default(),
+            tps_sampler: TpsSampler::default(),
             recent_blocks: VecDeque::new(),
             blocks_seen: 0,
         }

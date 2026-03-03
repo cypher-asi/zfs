@@ -484,6 +484,7 @@ fn snapshot(state: &AppState) -> AppState {
             certificates_produced: state.network.certificates_produced,
             spends_processed: state.network.spends_processed,
             total_peers: state.network.total_peers,
+            actual_tps: state.tps_sampler.tps(),
         },
         log_entries: state
             .log_entries
@@ -511,6 +512,7 @@ fn snapshot(state: &AppState) -> AppState {
                 })
                 .collect(),
         },
+        tps_sampler: crate::state::TpsSampler::default(),
         recent_blocks: state
             .recent_blocks
             .iter()
