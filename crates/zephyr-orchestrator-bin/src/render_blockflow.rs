@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 
-use crate::components::tokens::colors;
-use crate::components::{overlay_frame, section_heading};
+use crate::components::tokens::{colors, font_size};
+use crate::components::overlay_frame;
 use crate::state::AppState;
 
 const BAR_HEIGHT: f32 = 10.0;
@@ -23,9 +23,7 @@ const GLOW_FADE_IN_SECS: f32 = 0.3;
 const FADE_ZONE_FRAC: f32 = 0.25;
 const LABEL_WIDTH: f32 = 72.0;
 const BLOCK_GAP: f32 = 6.0;
-const BASE_SCROLL_SPEED: f32 = 40.0;
-const TPS_SPEED_FACTOR: f32 = 12.0;
-const MAX_SCROLL_SPEED: f32 = 800.0;
+const SCROLL_SPEED: f32 = 700.0;
 const MAX_BLOCKS_PER_ZONE: usize = 200;
 const BATCH_STAGGER_SECS: f32 = 0.06;
 const ZONE_PHASE_MAX_SECS: f32 = 0.25;
@@ -34,8 +32,8 @@ const MICRO_JITTER_SECS: f32 = 0.06;
 const ENTRY_LEAD_SECS: f32 = 0.5;
 const COLOR_BLEND_MS: f32 = 150.0;
 
-const PROPOSED_THRESHOLD_MS: u128 = 2000;
-const VOTING_THRESHOLD_MS: u128 = 4000;
+const PROPOSED_THRESHOLD_MS: u128 = 400;
+const VOTING_THRESHOLD_MS: u128 = 900;
 
 const PULSE_FILL_SECS: f32 = 0.35;
 const PULSE_DRAIN_SECS: f32 = 0.35;
@@ -85,7 +83,7 @@ impl Default for BlockflowVisualization {
             camera: Camera::default(),
             scroll_pos: 0.0,
             last_frame: Instant::now(),
-            smoothed_speed: BASE_SCROLL_SPEED,
+            smoothed_speed: SCROLL_SPEED,
             zone_buf: Vec::new(),
         }
     }
@@ -235,10 +233,8 @@ impl BlockflowVisualization {
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        let target_speed = scroll_speed(state.network.actual_tps);
-        self.smoothed_speed +=
-            (target_speed - self.smoothed_speed) * (1.0 - (-dt * 4.0).exp());
-        self.scroll_pos += self.smoothed_speed * dt;
+        self.smoothed_speed = SCROLL_SPEED;
+        self.scroll_pos += SCROLL_SPEED * dt;
 
         let has_new_blocks = self.ingest(state);
 
@@ -495,11 +491,15 @@ impl BlockflowVisualization {
                 ui.set_width(overlay_w);
                 ui.horizontal(|ui| {
                     overlay_frame().show(ui, |ui| {
-                        section_heading(
-                            ui,
-                            &format!(
-                                "BLOCKFLOW  \u{2022}  {zone_count} zones  \u{2022}  {total_blocks} blocks  \u{2022}  {total_tps:.1} tps"
-                            ),
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "BLOCKFLOW  \u{2022}  {:>2} ZONES  \u{2022}  {:>5} BLOCKS  \u{2022}  {:>6.1} TPS",
+                                zone_count, total_blocks, total_tps,
+                            ))
+                            .strong()
+                            .size(font_size::HEADING)
+                            .color(colors::TEXT_HEADING)
+                            .family(egui::FontFamily::Monospace),
                         );
                     });
 
@@ -532,10 +532,6 @@ impl BlockflowVisualization {
             self.camera.offset += resp.drag_delta() / self.camera.zoom;
         }
     }
-}
-
-fn scroll_speed(tps: f64) -> f32 {
-    (BASE_SCROLL_SPEED + (tps as f32).sqrt() * TPS_SPEED_FACTOR).min(MAX_SCROLL_SPEED)
 }
 
 fn status_color_blended(age_ms: u128) -> egui::Color32 {
