@@ -1018,6 +1018,12 @@ impl ZodeApp {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         status_dot(ui, self.zode.is_some());
+                        ui.label(
+                            egui::RichText::new(concat!("v", env!("BUILD_VERSION")))
+                                .monospace()
+                                .size(font_size::SMALL)
+                                .color(colors::TEXT_SECONDARY),
+                        );
                     });
                 });
             });
