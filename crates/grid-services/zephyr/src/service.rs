@@ -575,11 +575,78 @@ async fn consensus_loop(
                 }
             }
 
+            // Global messages (certificates) are processed before zone
+            // messages so that round-advancing certificates are never
+            // starved by the high-volume spend/vote stream on zone_rx.
+            msg = global_rx.recv() => {
+                let Some(first) = msg else { break };
+
+                let mut global_batch = Vec::with_capacity(33);
+                global_batch.push(first);
+                while global_batch.len() < 32 {
+                    match global_rx.try_recv() {
+                        Ok(m) => global_batch.push(m),
+                        Err(_) => break,
+                    }
+                }
+
+                for msg in global_batch {
+                    match msg {
+                        ZephyrGlobalMessage::Certificate { cert, tx_nullifiers } => {
+                            if !tx_nullifiers.is_empty() {
+                                block_tx_cache
+                                    .entry(cert.block_hash)
+                                    .or_insert_with(|| (cert.zone_id, tx_nullifiers));
+                            }
+
+                            let cz = cert.zone_id;
+                            let mut round_advanced = false;
+                            if let Some(engine) = consensus_engines.get_mut(&cz) {
+                                if engine.apply_certificate(&cert) {
+                                    apply_certificate_locally(
+                                        &cert,
+                                        &mut zone_head_store,
+                                        &mut block_tx_cache,
+                                        &runtime,
+                                    );
+                                    debug!(zone_id = cz, "applied certificate from global topic");
+                                    round_advanced = true;
+                                }
+                            } else {
+                                apply_certificate_locally(
+                                    &cert,
+                                    &mut zone_head_store,
+                                    &mut block_tx_cache,
+                                    &runtime,
+                                );
+                            }
+                            if round_advanced {
+                                try_propose_for_zones(
+                                    &assigned_zones,
+                                    &mut consensus_engines,
+                                    &mut mempools,
+                                    my_validator_id,
+                                    &config,
+                                    &mut block_tx_cache,
+                                    &zone_to_topic,
+                                    &global_topic,
+                                    &publish_tx,
+                                    &mut zone_head_store,
+                                    &runtime,
+                                )
+                                .await;
+                            }
+                        }
+                        ZephyrGlobalMessage::EpochAnnounce(ann) => {
+                            debug!(epoch = ann.epoch, "received epoch announcement");
+                        }
+                    }
+                }
+            }
+
             msg = zone_rx.recv() => {
                 let Some(first) = msg else { break };
 
-                // Batch-drain: collect up to 256 pending messages per
-                // select iteration so the round timer isn't starved.
                 let mut batch = Vec::with_capacity(257);
                 batch.push(first);
                 while batch.len() < 256 {
@@ -589,8 +656,6 @@ async fn consensus_loop(
                     }
                 }
 
-                // Process consensus messages (Proposal/Vote) before
-                // spends so that quorum isn't delayed by mempool inserts.
                 batch.sort_by_key(|(_, m)| match m {
                     ZephyrZoneMessage::Proposal(_) => 0,
                     ZephyrZoneMessage::Vote(_) => 1,
@@ -654,63 +719,6 @@ async fn consensus_loop(
                             }
                         }
                         ZephyrZoneMessage::Reject(_) => {}
-                    }
-                }
-            }
-
-            msg = global_rx.recv() => {
-                let Some(msg) = msg else { break };
-                match msg {
-                    ZephyrGlobalMessage::Certificate { cert, tx_nullifiers } => {
-                        // Populate the block_tx_cache from the global broadcast
-                        // so nodes that never saw the zone-level proposal can
-                        // still display transaction data.
-                        if !tx_nullifiers.is_empty() {
-                            block_tx_cache
-                                .entry(cert.block_hash)
-                                .or_insert_with(|| (cert.zone_id, tx_nullifiers));
-                        }
-
-                        let cz = cert.zone_id;
-                        let mut round_advanced = false;
-                        if let Some(engine) = consensus_engines.get_mut(&cz) {
-                            if engine.apply_certificate(&cert) {
-                                apply_certificate_locally(
-                                    &cert,
-                                    &mut zone_head_store,
-                                    &mut block_tx_cache,
-                                    &runtime,
-                                );
-                                debug!(zone_id = cz, "applied certificate from global topic");
-                                round_advanced = true;
-                            }
-                        } else {
-                            apply_certificate_locally(
-                                &cert,
-                                &mut zone_head_store,
-                                &mut block_tx_cache,
-                                &runtime,
-                            );
-                        }
-                        if round_advanced {
-                            try_propose_for_zones(
-                                &assigned_zones,
-                                &mut consensus_engines,
-                                &mut mempools,
-                                my_validator_id,
-                                &config,
-                                &mut block_tx_cache,
-                                &zone_to_topic,
-                                &global_topic,
-                                &publish_tx,
-                                &mut zone_head_store,
-                                &runtime,
-                            )
-                            .await;
-                        }
-                    }
-                    ZephyrGlobalMessage::EpochAnnounce(ann) => {
-                        debug!(epoch = ann.epoch, "received epoch announcement");
                     }
                 }
             }

@@ -34,6 +34,7 @@ pub(crate) fn build_swarm(
         .heartbeat_interval(Duration::from_secs(10))
         .validation_mode(gossipsub::ValidationMode::Permissive)
         .max_transmit_size(2 * 1024 * 1024)
+        .connection_handler_queue_len(25_000)
         .message_id_fn(message_id_fn)
         .build()
         .map_err(|e| NetworkError::Config(format!("{e}")))?;
