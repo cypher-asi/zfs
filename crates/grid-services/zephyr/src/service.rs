@@ -695,8 +695,6 @@ async fn zone_consensus_task(
 
     let epoch_start = tokio::time::Instant::now();
 
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => {
@@ -1563,7 +1561,7 @@ async fn try_propose_for_zone(
     runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
     deferred_cleanups: &mut HashMap<[u8; 32], u32>,
 ) {
-    if !engine.is_leader() {
+    if !engine.is_leader() || engine.in_warmup() {
         return;
     }
 

@@ -16,6 +16,7 @@ use crate::config::ZephyrConfig;
 /// is not reset across epochs.
 const MAX_PROPOSAL_REBROADCASTS: u32 = 5;
 const STALL_DECAY_SUCCESSES: u32 = 2;
+const WARMUP_TICKS: u32 = 30;
 
 pub struct ZoneConsensus {
     zone_id: ZoneId,
@@ -34,6 +35,7 @@ pub struct ZoneConsensus {
     consecutive_successes: u32,
     proposal_seen: bool,
     voted_block_hash: Option<[u8; 32]>,
+    warmup_ticks: u32,
     force_adopt_next_cert: bool,
     fork_recovery_used: bool,
 }
@@ -72,6 +74,7 @@ impl ZoneConsensus {
             consecutive_successes: 0,
             proposal_seen: false,
             voted_block_hash: None,
+            warmup_ticks: WARMUP_TICKS,
             force_adopt_next_cert: false,
             fork_recovery_used: false,
         }
@@ -101,6 +104,14 @@ impl ZoneConsensus {
     /// Increment the per-round tick counter.  Called once per round-timer fire.
     pub fn tick(&mut self) {
         self.ticks_in_round += 1;
+        if self.warmup_ticks > 0 {
+            self.warmup_ticks -= 1;
+        }
+    }
+
+    /// Whether the node is still in the initial warmup period.
+    pub fn in_warmup(&self) -> bool {
+        self.warmup_ticks > 0
     }
 
     /// Whether the current round has exceeded the timeout threshold.
@@ -282,6 +293,7 @@ impl ZoneConsensus {
         }
 
         self.proposal_seen = true;
+        self.warmup_ticks = 0;
         self.voted_block_hash = Some(proposal.block_hash);
         self.cert_builder.retain_block(proposal.block_hash);
 
@@ -386,6 +398,8 @@ impl ZoneConsensus {
             );
             return false;
         }
+
+        self.warmup_ticks = 0;
 
         if cert.parent_hash != self.parent_hash {
             if self.force_adopt_next_cert {
