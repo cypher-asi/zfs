@@ -96,6 +96,19 @@ fn render_traffic_controls(app: &mut OrchestratorApp, ui: &mut egui::Ui, _state:
                     .strong(),
             );
 
+            if _state.traffic_stats.backpressure_active {
+                ui.add_space(spacing::LG);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} BACKPRESSURE",
+                        egui_phosphor::regular::WARNING
+                    ))
+                    .size(font_size::SMALL)
+                    .color(egui::Color32::from_rgb(255, 165, 0))
+                    .strong(),
+                );
+            }
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 const PRESETS: [f32; 10] = [1_000.0, 2_500.0, 5_000.0, 10_000.0, 15_000.0, 20_000.0, 50_000.0, 100_000.0, 500_000.0, 1_000_000.0];
                 for &preset in PRESETS.iter().rev() {

@@ -15,7 +15,7 @@ use crate::config::ZephyrConfig;
 /// proposal/certification. `height` is a monotonic per-zone counter that
 /// is not reset across epochs.
 const MAX_PROPOSAL_REBROADCASTS: u32 = 5;
-const STALL_DECAY_SUCCESSES: u32 = 2;
+const STALL_DECAY_SUCCESSES: u32 = 1;
 const WARMUP_TICKS: u32 = 30;
 /// Accept proposals from epoch N-1 during the first N ticks after transitioning
 /// to epoch N, tolerating clock skew between validators at epoch boundaries.
@@ -130,7 +130,7 @@ impl ZoneConsensus {
 
     /// Whether the current round has exceeded the timeout threshold.
     pub fn is_round_timed_out(&self, timeout_ticks: u32) -> bool {
-        let effective_timeout = timeout_ticks * (1 + self.consecutive_timeouts.min(3));
+        let effective_timeout = timeout_ticks * (1 + self.consecutive_timeouts.min(1));
         self.ticks_in_round >= effective_timeout
     }
 
@@ -461,6 +461,8 @@ impl ZoneConsensus {
         self.force_adopt_next_cert = false;
         self.fork_recovery_used = true;
         self.advance_round_inner(cert.block_hash, false);
+        self.consecutive_timeouts = 0;
+        self.consecutive_successes = 0;
         Some(true)
     }
 

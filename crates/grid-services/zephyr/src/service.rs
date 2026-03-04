@@ -404,7 +404,7 @@ impl Service for ZephyrService {
         let mut zone_global_txs = HashMap::new();
 
         for zone_id in 0..self.config.total_zones {
-            let (prop_tx, prop_rx) = mpsc::channel(256);
+            let (prop_tx, prop_rx) = mpsc::channel(512);
             let (vote_tx, vote_rx) = mpsc::channel(4096);
             let (glob_tx, glob_rx) = mpsc::channel(1024);
             zone_proposal_txs.insert(zone_id, prop_tx);

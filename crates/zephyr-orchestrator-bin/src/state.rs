@@ -234,6 +234,8 @@ pub(crate) struct RecentBlock {
 pub(crate) struct TrafficStats {
     pub total_submitted: u64,
     pub recent: VecDeque<RecentTransaction>,
+    /// True when the traffic generator is throttling due to high mempool occupancy.
+    pub backpressure_active: bool,
 }
 
 /// Rolling-window TPS computed from committed `spends_processed`.

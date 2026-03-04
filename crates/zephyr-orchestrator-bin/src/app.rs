@@ -618,6 +618,7 @@ fn snapshot(state: &AppState) -> AppState {
                     timestamp: r.timestamp,
                 })
                 .collect(),
+            backpressure_active: state.traffic_stats.backpressure_active,
         },
         tps_sampler: crate::state::TpsSampler::default(),
         recent_blocks: state

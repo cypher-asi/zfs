@@ -64,8 +64,8 @@ impl ZoneTaskState {
                 }
 
                 _ = round_timer.tick() => {
-                    Self::drain_consensus_channel(&mut self, &mut proposal_rx, 256);
-                    Self::drain_consensus_channel(&mut self, &mut vote_rx, 256);
+                    Self::drain_consensus_channel(&mut self, &mut proposal_rx, 512);
+                    Self::drain_consensus_channel(&mut self, &mut vote_rx, 512);
                     let elapsed = epoch_start.elapsed();
                     self.handle_tick(elapsed).await;
                 }

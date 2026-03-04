@@ -14,6 +14,9 @@ use crate::state::AppState;
 
 const TICK_MS: u64 = 50;
 const CONFIG_REFRESH_TICKS: u64 = 4;
+const MEMPOOL_CAP: f64 = 65_536.0;
+const BACKPRESSURE_LOW: f64 = 0.75;
+const BACKPRESSURE_HIGH: f64 = 0.90;
 
 /// Spawn a traffic generator that publishes random spend transactions to nodes.
 ///
@@ -38,6 +41,7 @@ pub(crate) fn spawn_traffic_generator(
         let mut cached_rate: f32 = 0.0;
         let mut ticks_since_refresh: u64 = CONFIG_REFRESH_TICKS;
         let mut fractional_carry: f64 = 0.0;
+        let mut backpressure_scale: f64 = 1.0;
 
         let tick = Duration::from_millis(TICK_MS);
 
@@ -49,6 +53,23 @@ pub(crate) fn spawn_traffic_generator(
                 let state = shared.lock().await;
                 cached_enabled = state.auto_traffic;
                 cached_rate = state.traffic_rate;
+
+                let max_occupancy_pct = state
+                    .nodes
+                    .iter()
+                    .flat_map(|ns| ns.mempool_sizes.values())
+                    .map(|&sz| sz as f64 / MEMPOOL_CAP)
+                    .fold(0.0_f64, f64::max);
+
+                backpressure_scale = if max_occupancy_pct >= BACKPRESSURE_HIGH {
+                    0.0
+                } else if max_occupancy_pct > BACKPRESSURE_LOW {
+                    let range = BACKPRESSURE_HIGH - BACKPRESSURE_LOW;
+                    ((BACKPRESSURE_HIGH - max_occupancy_pct) / range).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+
                 ticks_since_refresh = 0;
             }
 
@@ -57,7 +78,9 @@ pub(crate) fn spawn_traffic_generator(
                 continue;
             }
 
-            let exact = cached_rate as f64 * (TICK_MS as f64 / 1000.0) + fractional_carry;
+            let exact =
+                cached_rate as f64 * backpressure_scale * (TICK_MS as f64 / 1000.0)
+                    + fractional_carry;
             let batch_size = exact as u64;
             fractional_carry = exact - batch_size as f64;
 
@@ -92,10 +115,21 @@ pub(crate) fn spawn_traffic_generator(
                 submitted += count;
             }
 
-            debug!(submitted, rate = cached_rate, "traffic gen: batch sent");
+            let bp_active = backpressure_scale < 1.0;
+            if bp_active {
+                debug!(
+                    submitted,
+                    rate = cached_rate,
+                    scale = format!("{:.2}", backpressure_scale),
+                    "traffic gen: backpressure active"
+                );
+            } else {
+                debug!(submitted, rate = cached_rate, "traffic gen: batch sent");
+            }
 
             {
                 let mut state = shared.lock().await;
+                state.traffic_stats.backpressure_active = bp_active;
                 state.traffic_stats.total_submitted += submitted;
                 let now = std::time::Instant::now();
                 let start_seq = seq - submitted;

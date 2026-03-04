@@ -388,8 +388,8 @@ fn advance_round_decrements_consecutive_timeouts() {
     assert_eq!(zc.consecutive_timeouts(), 5);
     assert_eq!(zc.consecutive_successes(), 0);
 
-    // First success: consecutive_successes goes to 1, but threshold is 2
-    // so consecutive_timeouts stays at 5.
+    // First success: with STALL_DECAY_SUCCESSES=1, a single success
+    // decrements consecutive_timeouts from 5 to 4 and resets successes.
     let cert = FinalityCertificate {
         zone_id: 0,
         epoch: 0,
@@ -401,12 +401,16 @@ fn advance_round_decrements_consecutive_timeouts() {
     assert!(zc.apply_certificate(&cert));
     assert_eq!(
         zc.consecutive_timeouts(),
-        5,
-        "first success should NOT yet decrement (need 2 consecutive)"
+        4,
+        "first success should decrement timeouts to 4 (threshold is 1)"
     );
-    assert_eq!(zc.consecutive_successes(), 1);
+    assert_eq!(
+        zc.consecutive_successes(),
+        0,
+        "consecutive_successes should reset after decay"
+    );
 
-    // Second success: reaches threshold, decrements timeouts 5->4, resets successes.
+    // Second success: decrements again 4->3.
     let cert2 = FinalityCertificate {
         zone_id: 0,
         epoch: 0,
@@ -418,8 +422,8 @@ fn advance_round_decrements_consecutive_timeouts() {
     assert!(zc.apply_certificate(&cert2));
     assert_eq!(
         zc.consecutive_timeouts(),
-        4,
-        "second consecutive success should decrement timeouts to 4"
+        3,
+        "second success should decrement timeouts to 3"
     );
     assert_eq!(
         zc.consecutive_successes(),
@@ -429,7 +433,7 @@ fn advance_round_decrements_consecutive_timeouts() {
 }
 
 #[test]
-fn fork_recovery_does_not_decrement_consecutive_timeouts() {
+fn fork_recovery_resets_consecutive_timeouts() {
     let committee = make_committee(3);
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
@@ -454,8 +458,8 @@ fn fork_recovery_does_not_decrement_consecutive_timeouts() {
     assert!(zc.apply_certificate(&cert));
     assert_eq!(
         zc.consecutive_timeouts(),
-        4,
-        "fork recovery should NOT decrement consecutive_timeouts"
+        0,
+        "fork recovery should reset consecutive_timeouts to 0"
     );
     assert!(
         zc.take_fork_recovery_used(),
