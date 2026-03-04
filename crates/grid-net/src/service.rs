@@ -394,23 +394,43 @@ impl NetworkService {
             return;
         }
         let transport_only = crate::addr::strip_all_p2p(&addr);
-        if self.relay_transport_addrs.contains(&transport_only) {
-            let has_circuit = addr
+        let has_circuit = addr
+            .iter()
+            .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2pCircuit));
+        if self.relay_transport_addrs.contains(&transport_only) && !has_circuit {
+            return;
+        }
+
+        // Cross-peer dedup: the same transport address must not map to two
+        // different peers simultaneously.  The latest association wins.
+        if !has_circuit {
+            let peers_to_clean: Vec<PeerId> = self
+                .peer_addresses
                 .iter()
-                .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2pCircuit));
-            if !has_circuit {
-                return;
+                .filter(|(p, addrs)| {
+                    **p != peer
+                        && addrs
+                            .iter()
+                            .any(|a| crate::addr::strip_all_p2p(a) == transport_only)
+                })
+                .map(|(p, _)| *p)
+                .collect();
+            for other_peer in peers_to_clean {
+                if let Some(addrs) = self.peer_addresses.get_mut(&other_peer) {
+                    addrs.retain(|a| crate::addr::strip_all_p2p(a) != transport_only);
+                    if addrs.is_empty() {
+                        self.peer_addresses.remove(&other_peer);
+                    }
+                }
             }
         }
+
         let stored = self.peer_addresses.entry(peer).or_default();
         if stored.contains(&addr) {
             return;
         }
-        let new_ip = crate::addr::extract_ip(&addr);
-        let has_circuit = addr
-            .iter()
-            .any(|p| matches!(p, libp2p::multiaddr::Protocol::P2pCircuit));
         if !has_circuit {
+            let new_ip = crate::addr::extract_ip(&addr);
             if let Some(ref ip) = new_ip {
                 stored.retain(|existing| {
                     let is_circuit = existing
