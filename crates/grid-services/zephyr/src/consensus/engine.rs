@@ -14,7 +14,7 @@ use crate::config::ZephyrConfig;
 /// instance. It tracks the current round, collects votes, and coordinates
 /// proposal/certification. `height` is a monotonic per-zone counter that
 /// is not reset across epochs.
-const MAX_PROPOSAL_REBROADCASTS: u32 = 2;
+const MAX_PROPOSAL_REBROADCASTS: u32 = 5;
 const STALL_DECAY_SUCCESSES: u32 = 2;
 
 pub struct ZoneConsensus {

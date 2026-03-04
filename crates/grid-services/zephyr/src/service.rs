@@ -1563,64 +1563,80 @@ async fn try_propose_for_zone(
     runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
     deferred_cleanups: &mut HashMap<[u8; 32], u32>,
 ) {
-    if !engine.is_leader() || engine.has_pending_proposal() {
+    if !engine.is_leader() {
         return;
     }
 
-    let spends = mempool.drain_proposal(zone_id, config.max_block_size);
+    let is_rebroadcast = engine.has_pending_proposal();
+    let spends = if is_rebroadcast {
+        vec![]
+    } else {
+        mempool.drain_proposal(zone_id, config.max_block_size)
+    };
     let tx_count = spends.len();
     let vid = my_validator_id;
     if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
         if let ConsensusAction::BroadcastProposal(ref block) = action {
-            info!(
-                zone_id,
-                height = engine.height(),
-                round = engine.round(),
-                tx_count,
-                block_hash = %hex::encode(&block.block_hash[..8]),
-                "proposed new block"
-            );
-            cache_block_txs(block_tx_cache, block_nullifiers, zone_id, block);
+            if is_rebroadcast {
+                debug!(
+                    zone_id,
+                    round = engine.round(),
+                    block_hash = %hex::encode(&block.block_hash[..8]),
+                    "rebroadcasting proposal"
+                );
+            } else {
+                info!(
+                    zone_id,
+                    height = engine.height(),
+                    round = engine.round(),
+                    tx_count,
+                    block_hash = %hex::encode(&block.block_hash[..8]),
+                    "proposed new block"
+                );
+                cache_block_txs(block_tx_cache, block_nullifiers, zone_id, block);
+            }
 
             publish_action(&action, consensus_topic, global_topic, publish_tx, block_tx_cache);
 
-            let vid2 = my_validator_id;
-            if let Some(vote_action) =
-                engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
-            {
-                publish_action(
-                    &vote_action,
-                    consensus_topic,
-                    global_topic,
-                    publish_tx,
-                    block_tx_cache,
-                );
-                if let ConsensusAction::BroadcastVote(vote) = vote_action {
-                    if let Some(cert_action) = engine.receive_vote(vote) {
-                        if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
-                            {
-                                let mut zhs = zone_head_store.lock().await;
-                                apply_certificate_locally(
+            if !is_rebroadcast {
+                let vid2 = my_validator_id;
+                if let Some(vote_action) =
+                    engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
+                {
+                    publish_action(
+                        &vote_action,
+                        consensus_topic,
+                        global_topic,
+                        publish_tx,
+                        block_tx_cache,
+                    );
+                    if let ConsensusAction::BroadcastVote(vote) = vote_action {
+                        if let Some(cert_action) = engine.receive_vote(vote) {
+                            if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
+                                {
+                                    let mut zhs = zone_head_store.lock().await;
+                                    apply_certificate_locally(
+                                        cert,
+                                        &mut zhs,
+                                        block_tx_cache,
+                                        runtime,
+                                    );
+                                }
+                                cleanup_mempool_after_cert(
                                     cert,
-                                    &mut zhs,
-                                    block_tx_cache,
-                                    runtime,
+                                    mempool,
+                                    block_nullifiers,
+                                    deferred_cleanups,
                                 );
                             }
-                            cleanup_mempool_after_cert(
-                                cert,
-                                mempool,
-                                block_nullifiers,
-                                deferred_cleanups,
+                            publish_action(
+                                &cert_action,
+                                consensus_topic,
+                                global_topic,
+                                publish_tx,
+                                block_tx_cache,
                             );
                         }
-                        publish_action(
-                            &cert_action,
-                            consensus_topic,
-                            global_topic,
-                            publish_tx,
-                            block_tx_cache,
-                        );
                     }
                 }
             }
