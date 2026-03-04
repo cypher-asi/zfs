@@ -8,7 +8,6 @@ use crate::consensus::ConsensusAction;
 use crate::publishing::{
     apply_certificate_locally, cache_block_txs, cleanup_mempool_after_cert, publish_action,
 };
-use crate::service::hmac_sign;
 use crate::consensus::ZoneConsensus;
 use crate::zone_task::ZoneTaskState;
 
@@ -242,8 +241,8 @@ impl ZoneTaskState {
                 .drain_proposal(self.zone_id, self.config.max_block_size)
         };
         let tx_count = spends.len();
-        let vid = self.my_validator_id;
-        let Some(action) = eng.propose(spends, |data| hmac_sign(&vid, data)) else {
+        let identity = &self.identity;
+        let Some(action) = eng.propose(spends, |data| identity.sign(data)) else {
             return;
         };
         let ConsensusAction::BroadcastProposal(ref block) = action else {
@@ -280,9 +279,9 @@ impl ZoneTaskState {
             &self.block_tx_cache,
         );
         if !is_rebroadcast {
-            let vid2 = self.my_validator_id;
+            let identity2 = &self.identity;
             if let Some(vote_action) =
-                eng.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
+                eng.vote_on_proposal(block, |data| identity2.sign(data))
             {
                 self.publish_and_self_certify(vote_action);
             }

@@ -197,7 +197,12 @@ impl Zode {
         let node_identity = {
             let kp = network.keypair().clone();
             let zid = format_zode_id(&zode_id);
-            let pub_key = kp.public().encode_protobuf();
+            let pub_key = kp
+                .public()
+                .try_into_ed25519()
+                .expect("keypair is ed25519")
+                .to_bytes()
+                .to_vec();
             Arc::new(grid_service::NodeIdentity::new(
                 zid,
                 pub_key,

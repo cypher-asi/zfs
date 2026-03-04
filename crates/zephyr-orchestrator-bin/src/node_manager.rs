@@ -43,15 +43,11 @@ pub(crate) async fn launch_network(
     let validators: Vec<ValidatorInfo> = keypairs
         .iter()
         .map(|kp: &Keypair| {
-            let pk_bytes = kp.public().encode_protobuf();
-            let mut vid = [0u8; 32];
-            let len = pk_bytes.len().min(32);
-            vid[..len].copy_from_slice(&pk_bytes[..len]);
-            let mut pubkey = [0u8; 32];
-            pubkey[..len].copy_from_slice(&pk_bytes[..len]);
+            let ed_pk = kp.public().try_into_ed25519().expect("keypair is ed25519");
+            let vid: [u8; 32] = ed_pk.to_bytes();
             ValidatorInfo {
                 validator_id: vid,
-                pubkey,
+                pubkey: vid,
                 p2p_endpoint: String::new(),
             }
         })

@@ -5,7 +5,6 @@ use crate::consensus::ConsensusAction;
 use crate::publishing::{
     apply_certificate_locally, cache_block_txs, cleanup_mempool_after_cert, publish_action,
 };
-use crate::service::hmac_sign;
 use crate::zone_task::ZoneTaskState;
 
 impl ZoneTaskState {
@@ -41,8 +40,8 @@ impl ZoneTaskState {
             &proposal,
         );
         let Some(ref mut eng) = self.engine else { return };
-        let vid = self.my_validator_id;
-        if let Some(action) = eng.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data)) {
+        let identity = &self.identity;
+        if let Some(action) = eng.vote_on_proposal(&proposal, |data| identity.sign(data)) {
             eng.reset_timeout();
             let _ = eng.take_fork_recovery_used();
             self.publish_and_self_certify(action);
@@ -209,8 +208,8 @@ impl ZoneTaskState {
             height = proposal.header.height,
             "retrying buffered proposal after cert catch-up"
         );
-        let vid = self.my_validator_id;
-        if let Some(action) = eng.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data)) {
+        let identity = &self.identity;
+        if let Some(action) = eng.vote_on_proposal(&proposal, |data| identity.sign(data)) {
             eng.reset_timeout();
             let _ = eng.take_fork_recovery_used();
             self.publish_and_self_certify(action);

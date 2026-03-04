@@ -3,6 +3,7 @@
 pub mod committee;
 pub mod config;
 pub mod consensus;
+pub mod crypto;
 pub mod epoch;
 pub mod gossip;
 pub mod mempool;

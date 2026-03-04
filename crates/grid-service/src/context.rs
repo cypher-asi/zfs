@@ -85,6 +85,11 @@ impl ServiceContext {
         self.identity.as_deref()
     }
 
+    /// Get a shared reference to the node identity (for threading into tasks).
+    pub fn identity_arc(&self) -> Option<Arc<NodeIdentity>> {
+        self.identity.clone()
+    }
+
     /// Set the node identity. Called during startup.
     pub fn set_identity(&mut self, identity: Arc<NodeIdentity>) {
         self.identity = Some(identity);

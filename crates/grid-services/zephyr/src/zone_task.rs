@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use grid_programs_zephyr::{
     Block, Nullifier, ValidatorInfo, ZephyrConsensusMessage, ZephyrGlobalMessage,
 };
-use grid_service::TopicCommand;
+use grid_service::{NodeIdentity, TopicCommand};
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -27,6 +27,7 @@ pub(crate) struct ZoneTaskState {
     pub last_known_epoch: u64,
     pub validators: Vec<ValidatorInfo>,
     pub my_validator_id: [u8; 32],
+    pub identity: Arc<NodeIdentity>,
     pub config: ZephyrConfig,
     pub publish_tx: mpsc::Sender<(String, Vec<u8>)>,
     pub topic_tx: mpsc::Sender<TopicCommand>,

@@ -18,7 +18,6 @@ use grid_service::{
     ConfigField, ConfigFieldType, OwnedProgram, RouteInfo, Service, ServiceContext,
     ServiceDescriptor, ServiceError, ServiceGossipHandler,
 };
-use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -214,14 +213,6 @@ impl ZephyrService {
     }
 }
 
-/// HMAC-SHA256 signing using the validator ID as key (sufficient for local testbed).
-pub(crate) fn hmac_sign(validator_id: &[u8; 32], data: &[u8]) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(validator_id);
-    hasher.update(data);
-    hasher.finalize().to_vec()
-}
-
 #[async_trait]
 impl Service for ZephyrService {
     fn descriptor(&self) -> &ServiceDescriptor {
@@ -277,18 +268,20 @@ impl Service for ZephyrService {
             return Ok(());
         }
 
-        let my_validator_id = match ctx.identity() {
-            Some(id) => {
-                let mut vid = [0u8; 32];
-                let pk_bytes = id.public_key();
-                let copy_len = pk_bytes.len().min(32);
-                vid[..copy_len].copy_from_slice(&pk_bytes[..copy_len]);
-                vid
-            }
+        let node_identity = match ctx.identity_arc() {
+            Some(id) => id,
             None => {
                 warn!("no node identity; Zephyr running in observer mode");
                 return Ok(());
             }
+        };
+
+        let my_validator_id = {
+            let pk_bytes = node_identity.public_key();
+            let mut vid = [0u8; 32];
+            let copy_len = pk_bytes.len().min(32);
+            vid[..copy_len].copy_from_slice(&pk_bytes[..copy_len]);
+            vid
         };
 
         let epoch_mgr = EpochManager::new(
@@ -428,6 +421,7 @@ impl Service for ZephyrService {
                 last_known_epoch: 0,
                 validators: validators.clone(),
                 my_validator_id,
+                identity: Arc::clone(&node_identity),
                 config: config.clone(),
                 publish_tx: publish_tx.clone(),
                 topic_tx: topic_tx.clone(),
@@ -837,12 +831,4 @@ mod tests {
         assert_eq!(m["current_epoch"], 0);
     }
 
-    #[test]
-    fn hmac_sign_is_deterministic() {
-        let vid = [0xAB; 32];
-        let data = b"test-data";
-        let s1 = hmac_sign(&vid, data);
-        let s2 = hmac_sign(&vid, data);
-        assert_eq!(s1, s2);
-    }
 }

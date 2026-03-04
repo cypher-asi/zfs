@@ -2903,6 +2903,7 @@ dependencies = [
  "async-trait",
  "axum",
  "dashmap",
+ "ed25519-dalek",
  "grid-core",
  "grid-crypto",
  "grid-programs-zephyr",
