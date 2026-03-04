@@ -602,15 +602,34 @@ impl NetworkService {
                                 "corrected peer address after WrongPeerId"
                             );
                         }
-                        _ => {
-                            self.peer_addresses.remove(&failed_peer);
-                            if self.kademlia_enabled && !is_relay {
-                                self.swarm
-                                    .behaviour_mut()
-                                    .kademlia
-                                    .remove_peer(&failed_peer);
+                        DialError::Transport(ref transport_errors) => {
+                            for (addr, _) in transport_errors {
+                                let normalized = crate::addr::normalize_multiaddr(addr);
+                                if let Some(addrs) = self.peer_addresses.get_mut(&failed_peer) {
+                                    addrs.retain(|a| *a != normalized && *a != *addr);
+                                }
+                                if self.kademlia_enabled && !is_relay {
+                                    self.swarm
+                                        .behaviour_mut()
+                                        .kademlia
+                                        .remove_address(&failed_peer, &normalized);
+                                }
+                            }
+                            if self
+                                .peer_addresses
+                                .get(&failed_peer)
+                                .map_or(true, |a| a.is_empty())
+                            {
+                                self.peer_addresses.remove(&failed_peer);
+                                if self.kademlia_enabled && !is_relay {
+                                    self.swarm
+                                        .behaviour_mut()
+                                        .kademlia
+                                        .remove_peer(&failed_peer);
+                                }
                             }
                         }
+                        _ => {}
                     }
                 }
                 Some(NetworkEvent::ConnectionFailed {
