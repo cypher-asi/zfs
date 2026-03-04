@@ -449,6 +449,11 @@ impl NetworkService {
         }
     }
 
+    /// Returns all addresses the swarm is currently listening on.
+    pub fn listen_addresses(&self) -> Vec<Multiaddr> {
+        self.swarm.listeners().cloned().collect()
+    }
+
     /// Dial a peer at the given multiaddr.
     pub fn dial(&mut self, addr: Multiaddr) -> Result<(), NetworkError> {
         self.swarm
