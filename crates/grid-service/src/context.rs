@@ -126,6 +126,11 @@ impl ServiceContext {
         self.publish_tx.clone()
     }
 
+    /// Get a clone of the topic management channel sender for use in spawned tasks.
+    pub fn topic_sender(&self) -> Option<mpsc::Sender<TopicCommand>> {
+        self.topic_tx.clone()
+    }
+
     /// Publish a message to a GossipSub topic.
     ///
     /// Non-blocking; queues the message for the Zode event loop to send.

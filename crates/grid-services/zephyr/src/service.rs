@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
+use dashmap::DashMap;
 use grid_core::ProgramId;
 use grid_programs_zephyr::{
     Block, FinalityCertificate, Nullifier, ValidatorInfo, ZephyrConsensusDescriptor,
@@ -15,7 +16,7 @@ use grid_programs_zephyr::{
 };
 use grid_service::{
     ConfigField, ConfigFieldType, OwnedProgram, RouteInfo, Service, ServiceContext,
-    ServiceDescriptor, ServiceError, ServiceGossipHandler,
+    ServiceDescriptor, ServiceError, ServiceGossipHandler, TopicCommand,
 };
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
@@ -27,7 +28,6 @@ use crate::consensus::{ConsensusAction, ZoneConsensus};
 use crate::epoch::EpochManager;
 use crate::gossip::ZephyrGossipHandler;
 use crate::shared_mempool::SharedMempool;
-use crate::storage::zone_head::ZoneHead;
 
 /// Summary of a finalized block for the metrics / dashboard feed.
 struct BlockSummary {
@@ -305,24 +305,28 @@ impl Service for ZephyrService {
             self.config.committee_size,
         );
 
-        // Subscribe to ALL zone + consensus topics up-front so that epoch
-        // transitions (which may reassign zones) don't require dynamic topic
-        // management. Zone topics carry spends; consensus topics carry
-        // proposals/votes/rejects on a separate GossipSub channel.
+        // Register ALL zone + consensus topics in the gossip handler so it can
+        // decode messages for any zone, but only subscribe to GossipSub topics
+        // for zones this node is actually assigned to. Epoch transitions
+        // dynamically subscribe/unsubscribe as assignments change.
         let mut topic_to_zone: HashMap<String, u32> = HashMap::new();
         let mut consensus_topic_to_zone: HashMap<String, u32> = HashMap::new();
         for zone_id in 0..self.config.total_zones {
             let topic = self.zone_topic(zone_id);
             self.gossip_handler.add_zone_topic(topic.clone());
-            ctx.subscribe_topic(&topic)?;
             topic_to_zone.insert(topic.clone(), zone_id);
 
             let ctopic = self.consensus_topic(zone_id);
             self.gossip_handler.add_consensus_topic(ctopic.clone());
-            ctx.subscribe_topic(&ctopic)?;
             consensus_topic_to_zone.insert(ctopic.clone(), zone_id);
 
-            info!(zone_id, %topic, %ctopic, "subscribed to zone + consensus topics");
+            if assigned_zones.contains(&zone_id) {
+                ctx.subscribe_topic(&topic)?;
+                ctx.subscribe_topic(&ctopic)?;
+                info!(zone_id, %topic, %ctopic, "subscribed to zone + consensus topics (assigned)");
+            } else {
+                debug!(zone_id, %topic, %ctopic, "registered zone + consensus topics (not assigned)");
+            }
         }
 
         // Take channel receivers (one-time)
@@ -361,6 +365,9 @@ impl Service for ZephyrService {
         let publish_tx = ctx
             .publish_sender()
             .ok_or_else(|| ServiceError::NotInitialized("publish channel not set".into()))?;
+        let topic_tx = ctx
+            .topic_sender()
+            .ok_or_else(|| ServiceError::NotInitialized("topic channel not set".into()))?;
         let global_topic_for_task = self.global_topic();
 
         // Shared mempool between ingest and consensus tasks
@@ -377,8 +384,8 @@ impl Service for ZephyrService {
             shutdown.clone(),
         ));
 
-        // Shared cross-zone state protected by async mutexes
-        let zone_head_store = Arc::new(tokio::sync::Mutex::new(ZoneHead::new()));
+        // Per-zone heads: lock-free concurrent map replaces the old shared Mutex<ZoneHead>
+        let zone_head_store: Arc<DashMap<u32, [u8; 32]>> = Arc::new(DashMap::new());
         let epoch_mgr = Arc::new(tokio::sync::Mutex::new(epoch_mgr));
 
         // Per-zone channels and tasks
@@ -405,6 +412,7 @@ impl Service for ZephyrService {
                 cons_rx,
                 glob_rx,
                 publish_tx.clone(),
+                topic_tx.clone(),
                 zt,
                 ct,
                 global_topic_for_task.clone(),
@@ -654,13 +662,14 @@ async fn zone_consensus_task(
     mut consensus_rx: mpsc::Receiver<ZephyrConsensusMessage>,
     mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
     publish_tx: mpsc::Sender<(String, Vec<u8>)>,
-    _zone_topic: String,
+    topic_tx: mpsc::Sender<TopicCommand>,
+    zone_topic: String,
     consensus_topic: String,
     global_topic: String,
     shutdown: tokio_util::sync::CancellationToken,
     epoch_mgr: Arc<tokio::sync::Mutex<EpochManager>>,
     mempool: SharedMempool,
-    zone_head_store: Arc<tokio::sync::Mutex<ZoneHead>>,
+    zone_head_store: Arc<DashMap<u32, [u8; 32]>>,
 ) {
     let mut engine: Option<ZoneConsensus> = None;
     let mut block_tx_cache: HashMap<[u8; 32], (u32, Vec<String>)> = HashMap::new();
@@ -678,7 +687,10 @@ async fn zone_consensus_task(
             &validators,
             config.committee_size,
         );
-        let prev_head = zone_head_store.lock().await.get_or_genesis(zone_id);
+        let prev_head = zone_head_store
+            .get(&zone_id)
+            .map(|v| *v)
+            .unwrap_or([0u8; 32]);
         engine = Some(ZoneConsensus::new(
             zone_id,
             0,
@@ -758,22 +770,18 @@ async fn zone_consensus_task(
                                                 ref cert,
                                             ) = cert_action
                                             {
-                                                {
-                                                    let mut zhs =
-                                                        zone_head_store.lock().await;
-                                                    apply_certificate_locally(
-                                                        cert,
-                                                        &mut zhs,
-                                                        &mut block_tx_cache,
-                                                        &runtime,
-                                                    );
-                                                }
-                                                cleanup_mempool_after_cert(
-                                                    cert,
-                                                    &mempool,
-                                                    &mut block_nullifiers,
-                                                    &mut deferred_cleanups,
-                                                );
+                                                apply_certificate_locally(
+                                                cert,
+                                                &zone_head_store,
+                                                &mut block_tx_cache,
+                                                &runtime,
+                                            );
+                                            cleanup_mempool_after_cert(
+                                                cert,
+                                                &mempool,
+                                                &mut block_nullifiers,
+                                                &mut deferred_cleanups,
+                                            );
                                             }
                                             publish_action(
                                                 &cert_action,
@@ -806,15 +814,12 @@ async fn zone_consensus_task(
                                     if let ConsensusAction::BroadcastCertificate(ref cert) =
                                         action
                                     {
-                                        {
-                                            let mut zhs = zone_head_store.lock().await;
-                                            apply_certificate_locally(
-                                                cert,
-                                                &mut zhs,
-                                                &mut block_tx_cache,
-                                                &runtime,
-                                            );
-                                        }
+                                        apply_certificate_locally(
+                                            cert,
+                                            &zone_head_store,
+                                            &mut block_tx_cache,
+                                            &runtime,
+                                        );
                                         cleanup_mempool_after_cert(
                                             cert,
                                             &mempool,
@@ -878,15 +883,12 @@ async fn zone_consensus_task(
                             if let Some(ref mut eng) = engine {
                                 if eng.apply_certificate(&cert) {
                                     let fork_recovery_fired = eng.take_fork_recovery_used();
-                                    {
-                                        let mut zhs = zone_head_store.lock().await;
-                                        apply_certificate_locally(
-                                            &cert,
-                                            &mut zhs,
-                                            &mut block_tx_cache,
-                                            &runtime,
-                                        );
-                                    }
+                                    apply_certificate_locally(
+                                        &cert,
+                                        &zone_head_store,
+                                        &mut block_tx_cache,
+                                        &runtime,
+                                    );
                                     cleanup_mempool_after_cert(
                                         &cert,
                                         &mempool,
@@ -937,16 +939,12 @@ async fn zone_consensus_task(
                                                     }
                                                     break;
                                                 }
-                                                {
-                                                    let mut zhs =
-                                                        zone_head_store.lock().await;
-                                                    apply_certificate_locally(
-                                                        &pc,
-                                                        &mut zhs,
-                                                        &mut block_tx_cache,
-                                                        &runtime,
-                                                    );
-                                                }
+                                                apply_certificate_locally(
+                                                    &pc,
+                                                    &zone_head_store,
+                                                    &mut block_tx_cache,
+                                                    &runtime,
+                                                );
                                                 cleanup_mempool_after_cert(
                                                     &pc,
                                                     &mempool,
@@ -1012,15 +1010,12 @@ async fn zone_consensus_task(
                                     );
                                 }
                             } else {
-                                {
-                                    let mut zhs = zone_head_store.lock().await;
-                                    apply_certificate_locally(
-                                        &cert,
-                                        &mut zhs,
-                                        &mut block_tx_cache,
-                                        &runtime,
-                                    );
-                                }
+                                apply_certificate_locally(
+                                    &cert,
+                                    &zone_head_store,
+                                    &mut block_tx_cache,
+                                    &runtime,
+                                );
                                 cleanup_mempool_after_cert(
                                     &cert,
                                     &mempool,
@@ -1049,8 +1044,7 @@ async fn zone_consensus_task(
                                         &zone_head_store,
                                         &mempool,
                                         &runtime,
-                                    )
-                                    .await;
+                                    );
                                 }
                             }
                         }
@@ -1102,6 +1096,11 @@ async fn zone_consensus_task(
                                 config.committee_size,
                             );
                             drop(em);
+                            if !was_assigned {
+                                let _ = topic_tx.try_send(TopicCommand::Subscribe(zone_topic.clone()));
+                                let _ = topic_tx.try_send(TopicCommand::Subscribe(consensus_topic.clone()));
+                                info!(zone_id, "epoch transition: gained zone, subscribed to topics");
+                            }
                             if let Some(ref mut eng) = engine {
                                 if eng.consecutive_timeouts() >= 2 {
                                     warn!(
@@ -1122,8 +1121,10 @@ async fn zone_consensus_task(
                                 eng.advance_to_epoch(current_epoch, committee);
                                 pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
                             } else {
-                                let prev_head =
-                                    zone_head_store.lock().await.get_or_genesis(zone_id);
+                                let prev_head = zone_head_store
+                                    .get(&zone_id)
+                                    .map(|v| *v)
+                                    .unwrap_or([0u8; 32]);
                                 engine = Some(ZoneConsensus::new(
                                     zone_id,
                                     current_epoch,
@@ -1138,6 +1139,9 @@ async fn zone_consensus_task(
                         } else {
                             drop(em);
                             if was_assigned {
+                                let _ = topic_tx.try_send(TopicCommand::Unsubscribe(zone_topic.clone()));
+                                let _ = topic_tx.try_send(TopicCommand::Unsubscribe(consensus_topic.clone()));
+                                info!(zone_id, "epoch transition: lost zone, unsubscribed from topics");
                                 engine = None;
                                 mempool.remove_zone(zone_id);
                                 pending_certs.clear();
@@ -1236,15 +1240,12 @@ async fn zone_consensus_task(
                                         }
                                         break;
                                     }
-                                    {
-                                        let mut zhs = zone_head_store.lock().await;
-                                        apply_certificate_locally(
-                                            &pc,
-                                            &mut zhs,
-                                            &mut block_tx_cache,
-                                            &runtime,
-                                        );
-                                    }
+                                    apply_certificate_locally(
+                                        &pc,
+                                        &zone_head_store,
+                                        &mut block_tx_cache,
+                                        &runtime,
+                                    );
                                     cleanup_mempool_after_cert(
                                         &pc,
                                         &mempool,
@@ -1275,8 +1276,7 @@ async fn zone_consensus_task(
                             &zone_head_store,
                             &mempool,
                             &runtime,
-                        )
-                        .await;
+                        );
                     }
 
                     // Periodic health summary during stalls (every ~10s at default 100ms tick)
@@ -1320,8 +1320,7 @@ async fn zone_consensus_task(
                         &zone_head_store,
                         &runtime,
                         &mut deferred_cleanups,
-                    )
-                    .await;
+                    );
                 }
 
                 let zone_len = mempool.len(zone_id);
@@ -1375,11 +1374,11 @@ fn cleanup_mempool_after_cert(
 
 fn apply_certificate_locally(
     cert: &FinalityCertificate,
-    zone_head_store: &mut ZoneHead,
+    zone_head_store: &DashMap<u32, [u8; 32]>,
     block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
     runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
 ) {
-    zone_head_store.set(cert.zone_id, cert.block_hash);
+    zone_head_store.insert(cert.zone_id, cert.block_hash);
     let tx_nullifiers = block_tx_cache
         .get(&cert.block_hash)
         .map(|(_, n)| n.clone())
@@ -1417,7 +1416,7 @@ fn apply_certificate_locally(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn retry_buffered_proposal(
+fn retry_buffered_proposal(
     last_buffered_proposal: &mut Option<Block>,
     eng: &mut ZoneConsensus,
     zone_id: u32,
@@ -1429,7 +1428,7 @@ async fn retry_buffered_proposal(
     block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
     block_nullifiers: &mut HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
     deferred_cleanups: &mut HashMap<[u8; 32], u32>,
-    zone_head_store: &Arc<tokio::sync::Mutex<ZoneHead>>,
+    zone_head_store: &DashMap<u32, [u8; 32]>,
     mempool: &SharedMempool,
     runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
 ) {
@@ -1474,10 +1473,7 @@ async fn retry_buffered_proposal(
         if let ConsensusAction::BroadcastVote(vote) = action {
             if let Some(cert_action) = eng.receive_vote(vote) {
                 if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
-                    {
-                        let mut zhs = zone_head_store.lock().await;
-                        apply_certificate_locally(cert, &mut zhs, block_tx_cache, runtime);
-                    }
+                    apply_certificate_locally(cert, zone_head_store, block_tx_cache, runtime);
                     cleanup_mempool_after_cert(cert, mempool, block_nullifiers, deferred_cleanups);
                 }
                 publish_action(&cert_action, consensus_topic, global_topic, publish_tx, block_tx_cache);
@@ -1546,7 +1542,7 @@ fn publish_action(
 /// Called on every round timer tick. Proposals are paced to the timer to give
 /// certificates time to propagate before the next proposal goes out.
 #[allow(clippy::too_many_arguments)]
-async fn try_propose_for_zone(
+fn try_propose_for_zone(
     zone_id: u32,
     engine: &mut ZoneConsensus,
     mempool: &SharedMempool,
@@ -1557,7 +1553,7 @@ async fn try_propose_for_zone(
     consensus_topic: &str,
     global_topic: &str,
     publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
-    zone_head_store: &Arc<tokio::sync::Mutex<ZoneHead>>,
+    zone_head_store: &DashMap<u32, [u8; 32]>,
     runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
     deferred_cleanups: &mut HashMap<[u8; 32], u32>,
 ) {
@@ -1611,15 +1607,12 @@ async fn try_propose_for_zone(
                     if let ConsensusAction::BroadcastVote(vote) = vote_action {
                         if let Some(cert_action) = engine.receive_vote(vote) {
                             if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
-                                {
-                                    let mut zhs = zone_head_store.lock().await;
-                                    apply_certificate_locally(
-                                        cert,
-                                        &mut zhs,
-                                        block_tx_cache,
-                                        runtime,
-                                    );
-                                }
+                                apply_certificate_locally(
+                                    cert,
+                                    zone_head_store,
+                                    block_tx_cache,
+                                    runtime,
+                                );
                                 cleanup_mempool_after_cert(
                                     cert,
                                     mempool,
