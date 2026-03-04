@@ -142,10 +142,10 @@ impl ZephyrService {
         }
 
         let global_topic = grid_core::program_topic(&global_pid);
-        let (proposal_tx, consensus_proposal_rx) = mpsc::channel(512);
-        let (vote_tx, consensus_vote_rx) = mpsc::channel(4096);
+        let (proposal_tx, consensus_proposal_rx) = mpsc::channel(2048);
+        let (vote_tx, consensus_vote_rx) = mpsc::channel(16_384);
         let (zone_tx, zone_rx) = mpsc::channel(65_536);
-        let (global_tx, global_rx) = mpsc::channel(1024);
+        let (global_tx, global_rx) = mpsc::channel(4096);
         let gossip_handler = Arc::new(ZephyrGossipHandler::new(
             global_topic,
             proposal_tx,
@@ -397,9 +397,9 @@ impl Service for ZephyrService {
         let mut zone_global_txs = HashMap::new();
 
         for zone_id in 0..self.config.total_zones {
-            let (prop_tx, prop_rx) = mpsc::channel(512);
-            let (vote_tx, vote_rx) = mpsc::channel(4096);
-            let (glob_tx, glob_rx) = mpsc::channel(1024);
+            let (prop_tx, prop_rx) = mpsc::channel(2048);
+            let (vote_tx, vote_rx) = mpsc::channel(16_384);
+            let (glob_tx, glob_rx) = mpsc::channel(4096);
             zone_proposal_txs.insert(zone_id, prop_tx);
             zone_vote_txs.insert(zone_id, vote_tx);
             zone_global_txs.insert(zone_id, glob_tx);

@@ -103,16 +103,29 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
         } else if self.is_consensus_topic(topic) {
             match grid_core::decode_canonical::<ZephyrConsensusMessage>(data) {
                 Ok(msg) => {
-                    let (msg_type, tx) = match &msg {
-                        ZephyrConsensusMessage::Proposal(_) => {
-                            ("Proposal", &self.consensus_proposal_tx)
+                    let is_proposal = matches!(&msg, ZephyrConsensusMessage::Proposal(_));
+                    if is_proposal {
+                        debug!(%topic, %sender_label, "received consensus proposal");
+                        if self
+                            .consensus_proposal_tx
+                            .send((topic.to_owned(), msg))
+                            .await
+                            .is_err()
+                        {
+                            warn!("consensus proposal channel closed");
                         }
-                        ZephyrConsensusMessage::Vote(_) => ("Vote", &self.consensus_vote_tx),
-                        ZephyrConsensusMessage::Reject(_) => ("Reject", &self.consensus_vote_tx),
-                    };
-                    debug!(%topic, %sender_label, msg_type, "received consensus message");
-                    if let Err(e) = tx.try_send((topic.to_owned(), msg)) {
-                        warn!("consensus_{msg_type}_tx full, dropping: {e}");
+                    } else {
+                        let msg_type = match &msg {
+                            ZephyrConsensusMessage::Vote(_) => "Vote",
+                            ZephyrConsensusMessage::Reject(_) => "Reject",
+                            _ => unreachable!(),
+                        };
+                        debug!(%topic, %sender_label, msg_type, "received consensus message");
+                        if let Err(e) =
+                            self.consensus_vote_tx.try_send((topic.to_owned(), msg))
+                        {
+                            warn!(msg_type, "consensus vote channel full, dropping: {e}");
+                        }
                     }
                 }
                 Err(e) => {

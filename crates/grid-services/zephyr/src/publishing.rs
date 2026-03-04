@@ -147,7 +147,12 @@ pub(crate) fn publish_action(
         }
     };
 
+    let msg_type = match action {
+        ConsensusAction::BroadcastProposal(_) => "proposal",
+        ConsensusAction::BroadcastVote(_) => "vote",
+        ConsensusAction::BroadcastCertificate(_) => "certificate",
+    };
     if let Err(e) = publish_tx.try_send((topic, data)) {
-        warn!(error = %e, "publish channel full or closed, consensus message delayed");
+        warn!(error = %e, msg_type, "publish channel full, consensus message dropped");
     }
 }
