@@ -426,7 +426,7 @@ impl ZoneConsensus {
             );
             return Some(false);
         }
-        warn!(
+        info!(
             zone_id = self.zone_id,
             node_id = self.node_id,
             round = self.round,
@@ -453,6 +453,9 @@ impl ZoneConsensus {
     pub fn apply_certificate(&mut self, cert: &FinalityCertificate) -> bool {
         if cert.zone_id != self.zone_id {
             return false;
+        }
+        if cert.block_hash == self.parent_hash {
+            return true;
         }
         if cert.epoch != self.epoch && cert.epoch + 1 != self.epoch {
             debug!(
