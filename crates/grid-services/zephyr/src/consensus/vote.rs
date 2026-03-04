@@ -115,6 +115,11 @@ impl CertificateBuilder {
         self.votes.values().map(|v| v.len()).max().unwrap_or(0)
     }
 
+    /// Keep only votes for `block_hash`, dropping all others.
+    pub fn retain_block(&mut self, block_hash: [u8; 32]) {
+        self.votes.retain(|h, _| *h == block_hash);
+    }
+
     /// Discard all accumulated votes (called when the round advances).
     pub fn clear_votes(&mut self) {
         self.votes.clear();

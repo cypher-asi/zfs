@@ -33,6 +33,7 @@ pub struct ZoneConsensus {
     consecutive_timeouts: u32,
     consecutive_successes: u32,
     proposal_seen: bool,
+    voted_block_hash: Option<[u8; 32]>,
     force_adopt_next_cert: bool,
     fork_recovery_used: bool,
 }
@@ -70,6 +71,7 @@ impl ZoneConsensus {
             consecutive_timeouts: 0,
             consecutive_successes: 0,
             proposal_seen: false,
+            voted_block_hash: None,
             force_adopt_next_cert: false,
             fork_recovery_used: false,
         }
@@ -129,6 +131,7 @@ impl ZoneConsensus {
         self.consecutive_timeouts += 1;
         self.consecutive_successes = 0;
         self.proposal_seen = false;
+        self.voted_block_hash = None;
         self.cert_builder.clear_votes();
         txs
     }
@@ -279,6 +282,8 @@ impl ZoneConsensus {
         }
 
         self.proposal_seen = true;
+        self.voted_block_hash = Some(proposal.block_hash);
+        self.cert_builder.retain_block(proposal.block_hash);
 
         let signature = sign_fn(&proposal.block_hash);
         let vote = BlockVote {
@@ -316,6 +321,20 @@ impl ZoneConsensus {
                 "dropping vote: voter not in committee"
             );
             return None;
+        }
+
+        if let Some(h) = self.voted_block_hash {
+            if vote.block_hash != h {
+                debug!(
+                    zone_id = self.zone_id,
+                    round = self.round,
+                    voter = %hex::encode(&vote.voter_id[..8]),
+                    vote_block = %hex::encode(&vote.block_hash[..8]),
+                    accepted_block = %hex::encode(&h[..8]),
+                    "dropping cross-round vote: block_hash differs from accepted proposal"
+                );
+                return None;
+            }
         }
 
         if self.pending_proposal.as_ref().is_some_and(|p| p.block_hash == vote.block_hash) {
@@ -530,6 +549,7 @@ impl ZoneConsensus {
             }
         }
         self.proposal_seen = false;
+        self.voted_block_hash = None;
         self.cert_builder.clear_votes();
     }
 }
