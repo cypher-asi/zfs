@@ -27,6 +27,11 @@ pub enum ZephyrGlobalMessage {
         /// display transaction data in the dashboard.
         #[serde(default)]
         tx_nullifiers: Vec<String>,
+        /// Full nullifiers for the certified block. Allows nodes that never
+        /// saw the proposal to persist nullifier state and avoid proposing
+        /// already-spent nullifiers.
+        #[serde(default)]
+        nullifiers: Vec<Nullifier>,
     },
     EpochAnnounce(EpochAnnouncement),
 }

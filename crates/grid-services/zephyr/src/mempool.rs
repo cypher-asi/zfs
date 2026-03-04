@@ -109,6 +109,14 @@ impl Mempool {
             self.queue.swap_remove(n);
         }
     }
+
+    /// Remove all entries where the predicate returns `false`.
+    /// Returns the number of entries removed.
+    pub fn retain(&mut self, mut keep: impl FnMut(&Nullifier) -> bool) -> usize {
+        let before = self.queue.len();
+        self.queue.retain(|k, _| keep(k));
+        before - self.queue.len()
+    }
 }
 
 #[cfg(test)]

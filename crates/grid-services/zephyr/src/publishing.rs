@@ -103,6 +103,7 @@ pub(crate) fn publish_action(
     global_topic: &str,
     publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
     block_tx_cache: &HashMap<[u8; 32], (u32, Vec<String>)>,
+    block_nullifiers: &HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
 ) {
     let (topic, data) = match action {
         ConsensusAction::BroadcastProposal(p) => {
@@ -132,9 +133,14 @@ pub(crate) fn publish_action(
                 .get(&c.block_hash)
                 .map(|(_, n)| n.clone())
                 .unwrap_or_default();
+            let nullifiers = block_nullifiers
+                .get(&c.block_hash)
+                .map(|(_, n)| n.clone())
+                .unwrap_or_default();
             let msg = ZephyrGlobalMessage::Certificate {
                 cert: c.clone(),
                 tx_nullifiers,
+                nullifiers,
             };
             let data = match grid_core::encode_canonical(&msg) {
                 Ok(d) => d,

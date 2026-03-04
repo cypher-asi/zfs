@@ -33,6 +33,7 @@ impl ZoneTaskState {
                 self.handle_timeout(&mut eng);
             }
             self.periodic_drain(&mut eng);
+            self.periodic_mempool_purge(&eng);
             self.periodic_health(&eng);
             self.try_propose(&mut eng);
             self.engine = Some(eng);
@@ -152,7 +153,23 @@ impl ZoneTaskState {
         );
         let abandoned_txs = eng.timeout_round();
         if !abandoned_txs.is_empty() {
-            self.mempool.reinsert_batch(self.zone_id, abandoned_txs);
+            let total = abandoned_txs.len();
+            let fresh: Vec<_> = abandoned_txs
+                .into_iter()
+                .filter(|tx| !self.nullifier_set.contains(&tx.nullifier))
+                .collect();
+            let spent_dropped = total - fresh.len();
+            if spent_dropped > 0 {
+                debug!(
+                    zone_id = self.zone_id,
+                    spent_dropped,
+                    reinserted = fresh.len(),
+                    "dropped spent nullifiers on timeout reinsert"
+                );
+            }
+            if !fresh.is_empty() {
+                self.mempool.reinsert_batch(self.zone_id, fresh);
+            }
         }
         if eng.consecutive_timeouts() >= 2 || self.pending_certs.len() >= 8 {
             if eng.enable_fork_recovery() {
@@ -200,6 +217,21 @@ impl ZoneTaskState {
         }
     }
 
+    fn periodic_mempool_purge(&mut self, eng: &ZoneConsensus) {
+        if eng.ticks_in_round() % 50 != 0 {
+            return;
+        }
+        let nset = &self.nullifier_set;
+        let purged = self.mempool.retain(self.zone_id, |n| !nset.contains(n));
+        if purged > 0 {
+            debug!(
+                zone_id = self.zone_id,
+                purged,
+                "purged spent nullifiers from mempool"
+            );
+        }
+    }
+
     fn periodic_health(&self, eng: &ZoneConsensus) {
         if eng.consecutive_timeouts() == 0 || eng.ticks_in_round() % 100 != 0 {
             return;
@@ -234,12 +266,42 @@ impl ZoneTaskState {
         if !eng.is_leader() || eng.in_warmup() {
             return;
         }
-        let is_rebroadcast = eng.has_pending_proposal();
-        let spends = if is_rebroadcast {
-            vec![]
+        let mut is_rebroadcast = eng.has_pending_proposal();
+
+        if is_rebroadcast {
+            let has_stale = eng
+                .pending_proposal_transactions()
+                .map(|txs| txs.iter().any(|tx| self.nullifier_set.contains(&tx.nullifier)))
+                .unwrap_or(false);
+            if has_stale {
+                let recovered = eng.cancel_pending_proposal();
+                let fresh: Vec<_> = recovered
+                    .into_iter()
+                    .filter(|tx| !self.nullifier_set.contains(&tx.nullifier))
+                    .collect();
+                if !fresh.is_empty() {
+                    self.mempool.reinsert_batch(self.zone_id, fresh);
+                }
+                debug!(
+                    zone_id = self.zone_id,
+                    "cancelled stale proposal with spent nullifiers"
+                );
+                is_rebroadcast = false;
+            }
+        }
+
+        let (spends, spent_dropped) = if is_rebroadcast {
+            (vec![], 0)
         } else {
-            self.mempool
-                .drain_proposal(self.zone_id, self.config.max_block_size)
+            let drained = self.mempool
+                .drain_proposal(self.zone_id, self.config.max_block_size);
+            let before = drained.len();
+            let filtered: Vec<_> = drained
+                .into_iter()
+                .filter(|tx| !self.nullifier_set.contains(&tx.nullifier))
+                .collect();
+            let dropped = before - filtered.len();
+            (filtered, dropped)
         };
         let tx_count = spends.len();
         let identity = &self.identity;
@@ -262,6 +324,7 @@ impl ZoneTaskState {
                 height = eng.height(),
                 round = eng.round(),
                 tx_count,
+                spent_dropped,
                 block_hash = %hex::encode(&block.block_hash[..8]),
                 "proposed new block"
             );
@@ -278,6 +341,7 @@ impl ZoneTaskState {
             &self.global_topic,
             &self.publish_tx,
             &self.block_tx_cache,
+            &self.block_nullifiers,
         );
         if !is_rebroadcast {
             let identity2 = &self.identity;

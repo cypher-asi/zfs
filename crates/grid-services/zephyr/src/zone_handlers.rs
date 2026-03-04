@@ -116,6 +116,7 @@ impl ZoneTaskState {
                 &self.global_topic,
                 &self.publish_tx,
                 &self.block_tx_cache,
+                &self.block_nullifiers,
             );
         }
     }
@@ -123,8 +124,8 @@ impl ZoneTaskState {
     pub(crate) fn handle_global_batch(&mut self, batch: Vec<ZephyrGlobalMessage>) {
         for gmsg in batch {
             match gmsg {
-                ZephyrGlobalMessage::Certificate { cert, tx_nullifiers } => {
-                    self.handle_certificate(cert, tx_nullifiers);
+                ZephyrGlobalMessage::Certificate { cert, tx_nullifiers, nullifiers } => {
+                    self.handle_certificate(cert, tx_nullifiers, nullifiers);
                 }
                 ZephyrGlobalMessage::EpochAnnounce(ann) => {
                     debug!(zone_id = self.zone_id, epoch = ann.epoch, "received epoch announcement");
@@ -137,11 +138,19 @@ impl ZoneTaskState {
         &mut self,
         cert: grid_programs_zephyr::FinalityCertificate,
         tx_nullifiers: Vec<String>,
+        nullifiers: Vec<Nullifier>,
     ) {
         if !tx_nullifiers.is_empty() {
             self.block_tx_cache
                 .entry(cert.block_hash)
                 .or_insert_with(|| (cert.zone_id, tx_nullifiers));
+        }
+
+        if !nullifiers.is_empty()
+            && !self.block_nullifiers.contains_key(&cert.block_hash)
+        {
+            self.block_nullifiers
+                .insert(cert.block_hash, (cert.zone_id, nullifiers));
         }
 
         if let Some(ref mut eng) = self.engine {
@@ -362,6 +371,7 @@ impl ZoneTaskState {
             &self.global_topic,
             &self.publish_tx,
             &self.block_tx_cache,
+            &self.block_nullifiers,
         );
         if let ConsensusAction::BroadcastVote(vote) = action {
             let Some(ref mut eng) = self.engine else { return };
@@ -392,6 +402,7 @@ impl ZoneTaskState {
                     &self.global_topic,
                     &self.publish_tx,
                     &self.block_tx_cache,
+                    &self.block_nullifiers,
                 );
             }
         }

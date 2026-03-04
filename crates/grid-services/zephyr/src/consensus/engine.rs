@@ -636,6 +636,22 @@ impl ZoneConsensus {
         self.pending_proposal.as_ref().map(|b| b.block_hash)
     }
 
+    /// Access the pending proposal's transactions for inspection (e.g.
+    /// checking whether any nullifiers have been spent since the proposal
+    /// was created).
+    pub fn pending_proposal_transactions(&self) -> Option<&[SpendTransaction]> {
+        self.pending_proposal.as_ref().map(|b| b.transactions.as_slice())
+    }
+
+    /// Cancel the pending proposal and return its transactions so the
+    /// caller can re-insert valid ones into the mempool.
+    pub fn cancel_pending_proposal(&mut self) -> Vec<SpendTransaction> {
+        self.pending_proposal
+            .take()
+            .map(|b| b.transactions)
+            .unwrap_or_default()
+    }
+
     pub fn vote_count_for_pending(&self) -> usize {
         match self.pending_proposal.as_ref() {
             Some(b) => self.cert_builder.vote_count(&b.block_hash),

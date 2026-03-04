@@ -92,6 +92,17 @@ impl SharedMempool {
         }
     }
 
+    /// Remove all entries from a zone's mempool where the predicate returns
+    /// `false`. Returns the number of entries removed.
+    pub fn retain(&self, zone_id: ZoneId, keep: impl FnMut(&Nullifier) -> bool) -> usize {
+        let map = self.inner.read();
+        if let Some(mp) = map.get(&zone_id) {
+            mp.lock().retain(keep)
+        } else {
+            0
+        }
+    }
+
     pub fn len(&self, zone_id: ZoneId) -> usize {
         let map = self.inner.read();
         if let Some(mp) = map.get(&zone_id) {

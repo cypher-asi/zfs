@@ -71,6 +71,7 @@ impl ZoneTaskState {
                 _ = round_timer.tick() => {
                     Self::drain_consensus_channel(&mut self, &mut proposal_rx, 512);
                     Self::drain_consensus_channel(&mut self, &mut vote_rx, 512);
+                    Self::drain_global_channel(&mut self, &mut global_rx, 128);
                     let elapsed = epoch_start.elapsed();
                     self.handle_tick(elapsed).await;
                 }
@@ -134,6 +135,26 @@ impl ZoneTaskState {
         }
         if !batch.is_empty() {
             this.handle_consensus_batch(batch);
+        }
+    }
+
+    /// Drain all available messages from the global channel before processing
+    /// a tick. Ensures certificates (and their nullifiers) are applied before
+    /// `try_propose` runs, preventing stale nullifier state.
+    fn drain_global_channel(
+        this: &mut Self,
+        rx: &mut mpsc::Receiver<ZephyrGlobalMessage>,
+        limit: usize,
+    ) {
+        let mut batch = Vec::new();
+        while batch.len() < limit {
+            match rx.try_recv() {
+                Ok(m) => batch.push(m),
+                Err(_) => break,
+            }
+        }
+        if !batch.is_empty() {
+            this.handle_global_batch(batch);
         }
     }
 }
