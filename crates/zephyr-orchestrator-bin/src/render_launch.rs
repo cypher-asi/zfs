@@ -3,6 +3,7 @@ use eframe::egui;
 use crate::app::OrchestratorApp;
 use crate::components::action_button;
 use crate::components::tokens::{self, colors, font_size, spacing};
+use crate::helpers::fmt_float_comma;
 use crate::state::NetworkPreset;
 
 const CARD_WIDTH: f32 = 260.0;
@@ -190,7 +191,7 @@ fn render_throughput_inputs(ui: &mut egui::Ui, max_block_size: &mut usize, round
 
         let tps_per_zone = *max_block_size as f64 * (1000.0 / *round_interval_ms as f64);
         ui.label(
-            egui::RichText::new(format!("{:.0} tx/s per zone", tps_per_zone))
+            egui::RichText::new(format!("{} tx/s per zone", fmt_float_comma(tps_per_zone, 0)))
                 .size(font_size::SMALL)
                 .color(colors::ACCENT),
         );
