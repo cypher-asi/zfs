@@ -602,6 +602,7 @@ impl ZoneConsensus {
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
         if is_genuine_progress {
+            self.force_adopt_next_cert = false;
             self.consecutive_successes += 1;
             if self.consecutive_successes >= STALL_DECAY_SUCCESSES {
                 self.consecutive_timeouts = self.consecutive_timeouts.saturating_sub(1);
