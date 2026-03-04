@@ -426,7 +426,7 @@ impl Service for ZephyrService {
             };
 
             if is_assigned {
-                let em = epoch_mgr.blocking_lock();
+                let em = epoch_mgr.lock().await;
                 let committee = crate::committee::sample_committee(
                     em.randomness_seed(),
                     zone_id,
