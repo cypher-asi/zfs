@@ -15,8 +15,9 @@ use crate::crypto::verify_ed25519;
 /// instance. It tracks the current round, collects votes, and coordinates
 /// proposal/certification. `height` is a monotonic per-zone counter that
 /// is not reset across epochs.
-const MAX_PROPOSAL_REBROADCASTS: u32 = 5;
-const STALL_DECAY_SUCCESSES: u32 = 1;
+const MAX_PROPOSAL_REBROADCASTS: u32 = 10;
+const REBROADCAST_INTERVAL: u32 = 4;
+const STALL_DECAY_SUCCESSES: u32 = 7;
 const WARMUP_TICKS: u32 = 30;
 /// Accept proposals from epoch N-1 during the first N ticks after transitioning
 /// to epoch N, tolerating clock skew between validators at epoch boundaries.
@@ -34,6 +35,7 @@ pub struct ZoneConsensus {
     config: ZephyrConfig,
     pending_proposal: Option<Block>,
     rebroadcast_count: u32,
+    ticks_since_last_broadcast: u32,
     ticks_in_round: u32,
     consecutive_timeouts: u32,
     consecutive_successes: u32,
@@ -77,6 +79,7 @@ impl ZoneConsensus {
             config,
             pending_proposal: None,
             rebroadcast_count: 0,
+            ticks_since_last_broadcast: 0,
             ticks_in_round: 0,
             consecutive_timeouts: 0,
             consecutive_successes: 0,
@@ -118,6 +121,7 @@ impl ZoneConsensus {
     /// Increment the per-round tick counter.  Called once per round-timer fire.
     pub fn tick(&mut self) {
         self.ticks_in_round += 1;
+        self.ticks_since_last_broadcast += 1;
         self.epoch_ticks += 1;
         if self.warmup_ticks > 0 {
             self.warmup_ticks -= 1;
@@ -153,6 +157,7 @@ impl ZoneConsensus {
             .unwrap_or_default();
         self.round += 1;
         self.rebroadcast_count = 0;
+        self.ticks_since_last_broadcast = 0;
         self.ticks_in_round = 0;
         self.consecutive_timeouts += 1;
         self.consecutive_successes = 0;
@@ -191,6 +196,10 @@ impl ZoneConsensus {
                 );
                 return None;
             }
+            if self.ticks_since_last_broadcast < REBROADCAST_INTERVAL {
+                return None;
+            }
+            self.ticks_since_last_broadcast = 0;
             self.rebroadcast_count += 1;
             return Some(ConsensusAction::BroadcastProposal(block.clone()));
         }
@@ -214,6 +223,7 @@ impl ZoneConsensus {
 
         let block = build_block(params, block_spends, sign_fn);
         self.pending_proposal = Some(block.clone());
+        self.ticks_since_last_broadcast = 0;
 
         Some(ConsensusAction::BroadcastProposal(block))
     }
@@ -412,6 +422,10 @@ impl ZoneConsensus {
             return None;
         }
 
+        if vote.block_hash == self.parent_hash {
+            return None;
+        }
+
         if let Some(h) = self.voted_block_hash {
             if vote.block_hash != h {
                 debug!(
@@ -581,6 +595,7 @@ impl ZoneConsensus {
         self.round = 0;
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
+        self.ticks_since_last_broadcast = 0;
         self.ticks_in_round = 0;
         self.epoch_ticks = 0;
         // consecutive_timeouts intentionally preserved across epochs so the
@@ -695,6 +710,7 @@ impl ZoneConsensus {
         self.round = self.height;
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
+        self.ticks_since_last_broadcast = 0;
         self.ticks_in_round = 0;
         if is_genuine_progress {
             self.force_adopt_next_cert = false;

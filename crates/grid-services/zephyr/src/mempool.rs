@@ -1,5 +1,6 @@
+use std::collections::{HashSet, VecDeque};
+
 use grid_programs_zephyr::{Nullifier, SpendTransaction, ZoneId};
-use indexmap::IndexMap;
 
 /// Per-zone mempool of candidate spend transactions.
 ///
@@ -8,12 +9,14 @@ use indexmap::IndexMap;
 /// - Spends are drained in FIFO order by the leader for block proposals
 /// - Maximum capacity enforced to bound memory usage
 ///
-/// Backed by `IndexMap` for O(1) insert, O(1) contains, and O(1) removal
-/// by nullifier (via `swap_remove`), while preserving insertion order for
-/// `peek` and `drain`.
+/// Backed by a `VecDeque` for O(1) front-drain and a `HashSet` for O(1)
+/// dedup. Nullifiers removed via `remove_nullifiers` are lazily evicted
+/// from the queue during `drain_proposal`, avoiding the O(n) index-rebuild
+/// cost of `IndexMap::drain`.
 pub struct Mempool {
     zone_id: ZoneId,
-    queue: IndexMap<Nullifier, SpendTransaction>,
+    queue: VecDeque<SpendTransaction>,
+    seen: HashSet<Nullifier>,
     max_size: usize,
 }
 
@@ -21,7 +24,8 @@ impl Mempool {
     pub fn new(zone_id: ZoneId, max_size: usize) -> Self {
         Self {
             zone_id,
-            queue: IndexMap::new(),
+            queue: VecDeque::new(),
+            seen: HashSet::new(),
             max_size,
         }
     }
@@ -29,13 +33,13 @@ impl Mempool {
     /// Add a spend to the mempool. Returns `false` if the nullifier is
     /// already present or the mempool is full.
     pub fn insert(&mut self, spend: SpendTransaction) -> bool {
-        if self.queue.len() >= self.max_size {
+        if self.seen.len() >= self.max_size {
             return false;
         }
-        if self.queue.contains_key(&spend.nullifier) {
+        if !self.seen.insert(spend.nullifier.clone()) {
             return false;
         }
-        self.queue.insert(spend.nullifier.clone(), spend);
+        self.queue.push_back(spend);
         true
     }
 
@@ -54,14 +58,20 @@ impl Mempool {
     /// Drain up to `max` spends from the mempool (FIFO order) for a block
     /// proposal. Moves transactions out without cloning. On round timeout the
     /// caller should call `reinsert_batch` to return un-finalized transactions.
+    ///
+    /// Dead entries (nullifiers removed via `remove_nullifiers`) are skipped
+    /// and dropped, giving amortized O(count) instead of O(total_size).
     pub fn drain_proposal(&mut self, max: usize) -> Vec<SpendTransaction> {
-        let count = max.min(self.queue.len());
-        let mut result = Vec::with_capacity(count);
-        for _ in 0..count {
-            if let Some((_nullifier, spend)) = self.queue.shift_remove_index(0) {
-                result.push(spend);
+        let mut result = Vec::with_capacity(max);
+        while result.len() < max {
+            let Some(tx) = self.queue.pop_front() else {
+                break;
+            };
+            if self.seen.remove(&tx.nullifier) {
+                result.push(tx);
             }
         }
+        self.maybe_compact();
         result
     }
 
@@ -70,29 +80,36 @@ impl Mempool {
     /// skipped.
     pub fn reinsert_batch(&mut self, txs: Vec<SpendTransaction>) {
         for tx in txs {
-            if self.queue.len() >= self.max_size {
+            if self.seen.len() >= self.max_size {
                 break;
             }
-            self.queue.entry(tx.nullifier.clone()).or_insert(tx);
+            if self.seen.insert(tx.nullifier.clone()) {
+                self.queue.push_back(tx);
+            }
         }
     }
 
     /// Return clones of up to `max` spends without removing them.
     pub fn peek(&self, max: usize) -> Vec<SpendTransaction> {
-        self.queue.values().take(max).cloned().collect()
+        self.queue
+            .iter()
+            .filter(|tx| self.seen.contains(&tx.nullifier))
+            .take(max)
+            .cloned()
+            .collect()
     }
 
     /// Check if a nullifier is already in the mempool.
     pub fn contains_nullifier(&self, nullifier: &Nullifier) -> bool {
-        self.queue.contains_key(nullifier)
+        self.seen.contains(nullifier)
     }
 
     pub fn len(&self) -> usize {
-        self.queue.len()
+        self.seen.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+        self.seen.is_empty()
     }
 
     pub fn zone_id(&self) -> ZoneId {
@@ -101,21 +118,33 @@ impl Mempool {
 
     /// Remove all spends whose nullifiers are in the given set (after finalization).
     ///
-    /// Uses `swap_remove` for O(1) per nullifier. This reorders the tail of
-    /// the map but that is acceptable since block proposal ordering within a
-    /// block is not consensus-critical.
+    /// Only removes from the `seen` set; dead entries are lazily evicted from
+    /// the queue during `drain_proposal`.
     pub fn remove_nullifiers(&mut self, nullifiers: &[Nullifier]) {
         for n in nullifiers {
-            self.queue.swap_remove(n);
+            self.seen.remove(n);
         }
+        self.maybe_compact();
     }
 
     /// Remove all entries where the predicate returns `false`.
     /// Returns the number of entries removed.
     pub fn retain(&mut self, mut keep: impl FnMut(&Nullifier) -> bool) -> usize {
-        let before = self.queue.len();
-        self.queue.retain(|k, _| keep(k));
-        before - self.queue.len()
+        let before = self.seen.len();
+        self.seen.retain(|k| keep(k));
+        let removed = before - self.seen.len();
+        if removed > 0 {
+            self.queue.retain(|tx| self.seen.contains(&tx.nullifier));
+        }
+        removed
+    }
+
+    /// Compact the queue when dead entries exceed 2× live entries, preventing
+    /// unbounded growth from lazy removal.
+    fn maybe_compact(&mut self) {
+        if self.queue.len() > self.seen.len().saturating_mul(3).max(4096) {
+            self.queue.retain(|tx| self.seen.contains(&tx.nullifier));
+        }
     }
 }
 
@@ -220,5 +249,36 @@ mod tests {
         let peeked_one = mp.peek(1);
         assert_eq!(peeked_one.len(), 1);
         assert_eq!(peeked_one[0].nullifier, Nullifier([1; 32]));
+    }
+
+    #[test]
+    fn drain_skips_removed_nullifiers() {
+        let mut mp = Mempool::new(0, 100);
+        mp.insert(dummy_spend(1));
+        mp.insert(dummy_spend(2));
+        mp.insert(dummy_spend(3));
+
+        mp.remove_nullifiers(&[Nullifier([1; 32]), Nullifier([2; 32])]);
+
+        let drained = mp.drain_proposal(10);
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0].nullifier, Nullifier([3; 32]));
+        assert!(mp.is_empty());
+    }
+
+    #[test]
+    fn reinsert_after_timeout() {
+        let mut mp = Mempool::new(0, 100);
+        mp.insert(dummy_spend(1));
+        mp.insert(dummy_spend(2));
+
+        let drained = mp.drain_proposal(2);
+        assert_eq!(mp.len(), 0);
+
+        mp.reinsert_batch(drained);
+        assert_eq!(mp.len(), 2);
+
+        let re_drained = mp.drain_proposal(2);
+        assert_eq!(re_drained.len(), 2);
     }
 }

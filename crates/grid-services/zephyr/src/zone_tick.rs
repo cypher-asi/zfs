@@ -28,6 +28,7 @@ impl ZoneTaskState {
         }
 
         if let Some(mut eng) = self.engine.take() {
+            let tick_start = std::time::Instant::now();
             eng.tick();
             if eng.is_round_timed_out(self.config.round_timeout_ticks) {
                 self.handle_timeout(&mut eng);
@@ -151,6 +152,18 @@ impl ZoneTaskState {
             pending_certs = self.pending_certs.len(),
             "round timed out without quorum, rotating leader"
         );
+        // #region agent log
+        {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"H","location":"zone_tick.rs:timeout","message":"round timed out","data":{{"zone_id":{},"round":{},"height":{},"proposal_seen":{},"is_leader":{},"votes_for_pending":{},"vote_blocks":{},"max_votes":{},"consecutive_timeouts":{},"parent_hash":"{}"}},"timestamp":{}}}"#,
+                    self.zone_id, eng.round(), eng.height(), eng.proposal_seen(), eng.is_leader(),
+                    eng.vote_count_for_pending(), vote_blocks, max_votes, eng.consecutive_timeouts(),
+                    eng.parent_hash_hex(),
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+            }
+        }
+        // #endregion
         let abandoned_txs = eng.timeout_round();
         if !abandoned_txs.is_empty() {
             let total = abandoned_txs.len();
@@ -266,41 +279,52 @@ impl ZoneTaskState {
         if !eng.is_leader() || eng.in_warmup() {
             return;
         }
-        let mut is_rebroadcast = eng.has_pending_proposal();
-
-        if is_rebroadcast {
-            let has_stale = eng
-                .pending_proposal_transactions()
-                .map(|txs| txs.iter().any(|tx| self.nullifier_set.contains(&tx.nullifier)))
-                .unwrap_or(false);
-            if has_stale {
-                let recovered = eng.cancel_pending_proposal();
-                let fresh: Vec<_> = recovered
-                    .into_iter()
-                    .filter(|tx| !self.nullifier_set.contains(&tx.nullifier))
-                    .collect();
-                if !fresh.is_empty() {
-                    self.mempool.reinsert_batch(self.zone_id, fresh);
-                }
-                debug!(
-                    zone_id = self.zone_id,
-                    "cancelled stale proposal with spent nullifiers"
-                );
-                is_rebroadcast = false;
-            }
-        }
+        let is_rebroadcast = eng.has_pending_proposal();
 
         let (spends, spent_dropped) = if is_rebroadcast {
+            // #region agent log
+            {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                    let pending_nulls: Vec<String> = eng.pending_proposal_transactions()
+                        .map(|txs| txs.iter().take(3).map(|tx| hex::encode(&tx.nullifier.0[..8])).collect())
+                        .unwrap_or_default();
+                    let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"C","location":"zone_tick.rs:rebroadcast","message":"leader rebroadcast check","data":{{"zone_id":{},"nullifier_set_len":{},"has_stale":{},"pending_nulls_sample":"{:?}"}},"timestamp":{}}}"#,
+                        self.zone_id, self.nullifier_set.len(), is_rebroadcast,
+                        pending_nulls,
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+                }
+            }
+            // #endregion
             (vec![], 0)
         } else {
+            let timeouts = eng.consecutive_timeouts();
+            let effective_block_size = if timeouts > 0 {
+                self.config.max_block_size / 2
+            } else {
+                self.config.max_block_size
+            };
+            let drain_start = std::time::Instant::now();
             let drained = self.mempool
-                .drain_proposal(self.zone_id, self.config.max_block_size);
+                .drain_proposal(self.zone_id, effective_block_size);
+            let drain_us = drain_start.elapsed().as_micros();
             let before = drained.len();
             let filtered: Vec<_> = drained
                 .into_iter()
                 .filter(|tx| !self.nullifier_set.contains(&tx.nullifier))
                 .collect();
             let dropped = before - filtered.len();
+            // #region agent log
+            {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                    let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"A","location":"zone_tick.rs:new_proposal","message":"leader new proposal drain","data":{{"zone_id":{},"nullifier_set_len":{},"drained":{},"after_filter":{},"spent_dropped":{},"drain_us":{},"mempool_len":{},"effective_block_size":{},"consecutive_timeouts":{}}},"timestamp":{}}}"#,
+                        self.zone_id, self.nullifier_set.len(), before, filtered.len(), dropped,
+                        drain_us, self.mempool.len(self.zone_id), effective_block_size, timeouts,
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+                }
+            }
+            // #endregion
             (filtered, dropped)
         };
         let tx_count = spends.len();

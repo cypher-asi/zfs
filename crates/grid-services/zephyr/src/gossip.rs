@@ -101,10 +101,22 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
                 }
             }
         } else if self.is_consensus_topic(topic) {
+            let decode_start = std::time::Instant::now();
             match grid_core::decode_canonical::<ZephyrConsensusMessage>(data) {
                 Ok(msg) => {
                     let is_proposal = matches!(&msg, ZephyrConsensusMessage::Proposal(_));
                     if is_proposal {
+                        // #region agent log
+                        {
+                            let decode_us = decode_start.elapsed().as_micros();
+                            use std::io::Write;
+                            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                                let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"N","location":"gossip.rs:proposal_decode","message":"proposal decoded","data":{{"bytes":{},"decode_us":{},"sender":"{}"}},"timestamp":{}}}"#,
+                                    data.len(), decode_us, sender_label,
+                                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+                            }
+                        }
+                        // #endregion
                         debug!(%topic, %sender_label, "received consensus proposal");
                         if self
                             .consensus_proposal_tx

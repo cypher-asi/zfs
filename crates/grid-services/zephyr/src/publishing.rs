@@ -107,6 +107,7 @@ pub(crate) fn publish_action(
 ) {
     let (topic, data) = match action {
         ConsensusAction::BroadcastProposal(p) => {
+            let encode_start = std::time::Instant::now();
             let msg = ZephyrConsensusMessage::Proposal(p.clone());
             let data = match grid_core::encode_canonical(&msg) {
                 Ok(d) => d,
@@ -115,6 +116,17 @@ pub(crate) fn publish_action(
                     return;
                 }
             };
+            // #region agent log
+            {
+                let encode_us = encode_start.elapsed().as_micros();
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                    let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"L","location":"publishing.rs:proposal_size","message":"proposal encoded","data":{{"zone_id":{},"tx_count":{},"encoded_bytes":{},"encode_us":{}}},"timestamp":{}}}"#,
+                        p.header.zone_id, p.transactions.len(), data.len(), encode_us,
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+                }
+            }
+            // #endregion
             (consensus_topic.to_owned(), data)
         }
         ConsensusAction::BroadcastVote(v) => {
@@ -159,6 +171,17 @@ pub(crate) fn publish_action(
         ConsensusAction::BroadcastCertificate(_) => "certificate",
     };
     if let Err(e) = publish_tx.try_send((topic, data)) {
+        let is_closed = publish_tx.is_closed();
+        // #region agent log
+        {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"E","location":"publishing.rs:publish_fail","message":"publish failed","data":{{"msg_type":"{}","is_closed":{},"capacity":{}}},"timestamp":{}}}"#,
+                    msg_type, is_closed, publish_tx.capacity(),
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+            }
+        }
+        // #endregion
         warn!(error = %e, msg_type, "publish channel full, consensus message dropped");
     }
 }

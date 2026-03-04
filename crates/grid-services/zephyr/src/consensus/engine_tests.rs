@@ -110,6 +110,9 @@ fn re_proposal_returns_same_block() {
     let mut zc = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], test_config(), 0);
 
     let first = zc.propose(vec![], make_sign_fn(&keys[li])).unwrap();
+    for _ in 0..4 {
+        zc.tick();
+    }
     let second = zc.propose(vec![], make_sign_fn(&keys[li])).unwrap();
     let hash1 = match first {
         ConsensusAction::BroadcastProposal(b) => b.block_hash,
@@ -445,25 +448,26 @@ fn advance_round_decrements_consecutive_timeouts() {
     assert_eq!(zc.consecutive_timeouts(), 5);
     assert_eq!(zc.consecutive_successes(), 0);
 
-    let cert = make_cert(0, 0, 0, [0xBB; 32], [0xAA; 32], &keys, &[0, 1]);
-    assert!(zc.apply_certificate(&cert));
+    let mut parent = [0xAA; 32];
+    for i in 0..7u64 {
+        let mut block_hash = [0u8; 32];
+        block_hash[0..8].copy_from_slice(&(i + 1).to_le_bytes());
+        let cert = make_cert(0, 0, i, block_hash, parent, &keys, &[0, 1]);
+        assert!(zc.apply_certificate(&cert));
+        parent = block_hash;
+        if i < 6 {
+            assert_eq!(
+                zc.consecutive_timeouts(),
+                5,
+                "timeouts should stay at 5 until decay threshold ({} successes so far)",
+                i + 1
+            );
+        }
+    }
     assert_eq!(
         zc.consecutive_timeouts(),
         4,
-        "first success should decrement timeouts to 4 (threshold is 1)"
-    );
-    assert_eq!(
-        zc.consecutive_successes(),
-        0,
-        "consecutive_successes should reset after decay"
-    );
-
-    let cert2 = make_cert(0, 0, 1, [0xCC; 32], [0xBB; 32], &keys, &[0, 1]);
-    assert!(zc.apply_certificate(&cert2));
-    assert_eq!(
-        zc.consecutive_timeouts(),
-        3,
-        "second success should decrement timeouts to 3"
+        "7 consecutive successes should decrement timeouts to 4"
     );
     assert_eq!(
         zc.consecutive_successes(),

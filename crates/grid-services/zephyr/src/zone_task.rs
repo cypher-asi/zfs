@@ -153,6 +153,17 @@ impl ZoneTaskState {
                 Err(_) => break,
             }
         }
+        // #region agent log
+        if !batch.is_empty() {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-6fcc0e.log") {
+                let certs = batch.iter().filter(|m| matches!(m, ZephyrGlobalMessage::Certificate { .. })).count();
+                let _ = writeln!(f, r#"{{"sessionId":"6fcc0e","hypothesisId":"E","location":"zone_task.rs:drain_global","message":"global channel drained","data":{{"zone_id":{},"batch_size":{},"cert_count":{},"limit":{}}},"timestamp":{}}}"#,
+                    this.zone_id, batch.len(), certs, limit,
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+            }
+        }
+        // #endregion
         if !batch.is_empty() {
             this.handle_global_batch(batch);
         }

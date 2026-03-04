@@ -626,7 +626,7 @@ async fn ingest_loop(
                     }
                 }
                 for (zone_id, txs) in zone_buckets {
-                    let verified = if let Some(ref verifier) = proof_verifier {
+                    let verified: Vec<_> = if let Some(ref verifier) = proof_verifier {
                         txs.into_iter()
                             .filter(|tx| verify_spend_proof(verifier, tx))
                             .collect()
