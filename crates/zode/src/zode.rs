@@ -711,14 +711,44 @@ impl Zode {
             }
         }
 
+        let mut peer_snapshot_interval =
+            tokio::time::interval(std::time::Duration::from_secs(2));
+        peer_snapshot_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
         loop {
             let event = {
                 let mut net = network.lock().await;
+
+                // Eagerly flush outbound consensus messages before polling for
+                // new network events.  Without this, proposals/votes sit in the
+                // channel while the select randomly picks net.next_event() to
+                // process incoming spend gossip, delaying publication by many
+                // event-loop iterations.
+                while let Ok((t, d)) = publish_rx.try_recv() {
+                    if let Err(e) = net.publish(&t, d) {
+                        warn!(error = %e, "gossip publish failed (eager flush)");
+                    }
+                }
+
                 tokio::select! {
-                    event = net.next_event() => {
-                        // Snapshot peer IPs and last-activity while we hold the
-                        // network lock, since `status()` cannot acquire it
-                        // during `next_event`.
+                    biased;
+
+                    _ = shutdown_rx.recv() => {
+                        info!("event loop shutting down");
+                        return;
+                    }
+                    Some((topic, data)) = publish_rx.recv() => {
+                        if let Err(e) = net.publish(&topic, data) {
+                            warn!(error = %e, "gossip publish failed");
+                        }
+                        while let Ok((t, d)) = publish_rx.try_recv() {
+                            if let Err(e) = net.publish(&t, d) {
+                                warn!(error = %e, "gossip publish failed");
+                            }
+                        }
+                        continue;
+                    }
+                    _ = peer_snapshot_interval.tick() => {
                         let fresh: HashMap<String, String> = net
                             .connected_peers_with_addrs()
                             .into_iter()
@@ -739,23 +769,9 @@ impl Zode {
                         if let Ok(mut map) = peer_last_activity.write() {
                             *map = activity;
                         }
-                        event
-                    },
-                    _ = shutdown_rx.recv() => {
-                        info!("event loop shutting down");
-                        return;
-                    }
-                    Some((topic, data)) = publish_rx.recv() => {
-                        if let Err(e) = net.publish(&topic, data) {
-                            warn!(error = %e, "gossip publish failed");
-                        }
-                        while let Ok((t, d)) = publish_rx.try_recv() {
-                            if let Err(e) = net.publish(&t, d) {
-                                warn!(error = %e, "gossip publish failed");
-                            }
-                        }
                         continue;
                     }
+                    event = net.next_event() => event,
                     Some((peer, request, response_tx)) = sector_request_rx.recv() => {
                         let request_id = net.send_sector_request(&peer, request);
                         pending_sector_requests.insert(request_id, response_tx);
