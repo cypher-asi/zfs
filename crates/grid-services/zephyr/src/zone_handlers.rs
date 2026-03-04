@@ -46,6 +46,12 @@ impl ZoneTaskState {
     }
 
     fn handle_proposal(&mut self, proposal: Block) {
+        if let Some(ref eng) = self.engine {
+            if proposal.header.height < eng.height() {
+                return;
+            }
+        }
+
         info!(
             zone_id = self.zone_id,
             proposer = %hex::encode(&proposal.header.proposer_id[..8]),
@@ -103,13 +109,9 @@ impl ZoneTaskState {
                     &mut self.block_tx_cache,
                     &self.runtime,
                 );
-                cleanup_mempool_after_cert(
-                    cert,
-                    &self.mempool,
-                    &mut self.block_nullifiers,
-                    &mut self.deferred_cleanups,
-                );
             }
+            // Publish BEFORE cleanup so block_nullifiers are still intact
+            // for the cert's `nullifiers` field.
             publish_action(
                 &action,
                 &self.consensus_topic,
@@ -118,6 +120,14 @@ impl ZoneTaskState {
                 &self.block_tx_cache,
                 &self.block_nullifiers,
             );
+            if let ConsensusAction::BroadcastCertificate(ref cert) = action {
+                cleanup_mempool_after_cert(
+                    cert,
+                    &self.mempool,
+                    &mut self.block_nullifiers,
+                    &mut self.deferred_cleanups,
+                );
+            }
         }
     }
 
@@ -248,21 +258,25 @@ impl ZoneTaskState {
             None => return,
         };
 
+        if let Some(ref eng) = self.engine {
+            if proposal.header.height < eng.height() {
+                debug!(
+                    zone_id = self.zone_id,
+                    proposal_height = proposal.header.height,
+                    local_height = eng.height(),
+                    "discarding stale buffered proposal"
+                );
+                return;
+            }
+        } else {
+            return;
+        }
+
         if !self.verify_proposal_transactions(&proposal) {
             return;
         }
 
         let Some(ref mut eng) = self.engine else { return };
-
-        if proposal.header.height < eng.height() {
-            debug!(
-                zone_id = self.zone_id,
-                proposal_height = proposal.header.height,
-                local_height = eng.height(),
-                "discarding stale buffered proposal"
-            );
-            return;
-        }
         if proposal.header.parent_hash != *eng.parent_hash() {
             self.last_buffered_proposal = Some(proposal);
             return;
@@ -389,13 +403,9 @@ impl ZoneTaskState {
                         &mut self.block_tx_cache,
                         &self.runtime,
                     );
-                    cleanup_mempool_after_cert(
-                        cert,
-                        &self.mempool,
-                        &mut self.block_nullifiers,
-                        &mut self.deferred_cleanups,
-                    );
                 }
+                // Publish BEFORE cleanup so block_nullifiers are still intact
+                // for the cert's `nullifiers` field.
                 publish_action(
                     &cert_action,
                     &self.consensus_topic,
@@ -404,6 +414,14 @@ impl ZoneTaskState {
                     &self.block_tx_cache,
                     &self.block_nullifiers,
                 );
+                if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
+                    cleanup_mempool_after_cert(
+                        cert,
+                        &self.mempool,
+                        &mut self.block_nullifiers,
+                        &mut self.deferred_cleanups,
+                    );
+                }
             }
         }
     }
