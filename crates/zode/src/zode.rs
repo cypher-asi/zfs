@@ -152,7 +152,7 @@ impl Zode {
 
         let (event_tx, _) = broadcast::channel(256);
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
-        let (publish_tx, publish_rx) = mpsc::channel(2048);
+        let (publish_tx, publish_rx) = mpsc::channel(8192);
         let (sector_request_tx, sector_request_rx) = mpsc::channel(16);
         let metrics = Arc::new(ZodeMetrics::default());
         let connected_peers: Arc<RwLock<Vec<String>>> = Arc::default();

@@ -15,8 +15,10 @@ pub struct ZephyrGossipHandler {
     zone_topics: Arc<RwLock<HashSet<String>>>,
     consensus_topics: Arc<RwLock<HashSet<String>>>,
     global_topic: String,
-    /// Proposals, votes, and rejects on dedicated consensus topics.
-    consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
+    /// Proposals on dedicated consensus topics -- small, high-priority channel.
+    consensus_proposal_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
+    /// Votes and rejects on consensus topics -- larger channel.
+    consensus_vote_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
     /// Spend submissions only -- high-volume, loss-tolerant.
     zone_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
     global_message_tx: tokio::sync::mpsc::Sender<ZephyrGlobalMessage>,
@@ -25,7 +27,8 @@ pub struct ZephyrGossipHandler {
 impl ZephyrGossipHandler {
     pub fn new(
         global_topic: String,
-        consensus_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
+        consensus_proposal_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
+        consensus_vote_tx: tokio::sync::mpsc::Sender<(String, ZephyrConsensusMessage)>,
         zone_message_tx: tokio::sync::mpsc::Sender<(String, ZephyrZoneMessage)>,
         global_message_tx: tokio::sync::mpsc::Sender<ZephyrGlobalMessage>,
     ) -> Self {
@@ -33,7 +36,8 @@ impl ZephyrGossipHandler {
             zone_topics: Arc::new(RwLock::new(HashSet::new())),
             consensus_topics: Arc::new(RwLock::new(HashSet::new())),
             global_topic,
-            consensus_message_tx,
+            consensus_proposal_tx,
+            consensus_vote_tx,
             zone_message_tx,
             global_message_tx,
         }
@@ -99,14 +103,16 @@ impl ServiceGossipHandler for ZephyrGossipHandler {
         } else if self.is_consensus_topic(topic) {
             match grid_core::decode_canonical::<ZephyrConsensusMessage>(data) {
                 Ok(msg) => {
-                    let msg_type = match &msg {
-                        ZephyrConsensusMessage::Proposal(_) => "Proposal",
-                        ZephyrConsensusMessage::Vote(_) => "Vote",
-                        ZephyrConsensusMessage::Reject(_) => "Reject",
+                    let (msg_type, tx) = match &msg {
+                        ZephyrConsensusMessage::Proposal(_) => {
+                            ("Proposal", &self.consensus_proposal_tx)
+                        }
+                        ZephyrConsensusMessage::Vote(_) => ("Vote", &self.consensus_vote_tx),
+                        ZephyrConsensusMessage::Reject(_) => ("Reject", &self.consensus_vote_tx),
                     };
                     debug!(%topic, %sender_label, msg_type, "received consensus message");
-                    if let Err(e) = self.consensus_message_tx.try_send((topic.to_owned(), msg)) {
-                        warn!("consensus_tx full, dropping message: {e}");
+                    if let Err(e) = tx.try_send((topic.to_owned(), msg)) {
+                        warn!("consensus_{msg_type}_tx full, dropping: {e}");
                     }
                 }
                 Err(e) => {
@@ -143,24 +149,27 @@ mod tests {
     fn make_handler() -> (
         ZephyrGossipHandler,
         tokio::sync::mpsc::Receiver<(String, ZephyrConsensusMessage)>,
+        tokio::sync::mpsc::Receiver<(String, ZephyrConsensusMessage)>,
         tokio::sync::mpsc::Receiver<(String, ZephyrZoneMessage)>,
         tokio::sync::mpsc::Receiver<ZephyrGlobalMessage>,
     ) {
-        let (consensus_tx, consensus_rx) = tokio::sync::mpsc::channel(32);
+        let (proposal_tx, proposal_rx) = tokio::sync::mpsc::channel(32);
+        let (vote_tx, vote_rx) = tokio::sync::mpsc::channel(32);
         let (zone_tx, zone_rx) = tokio::sync::mpsc::channel(32);
         let (global_tx, global_rx) = tokio::sync::mpsc::channel(32);
         let handler = ZephyrGossipHandler::new(
             "prog/global_topic_hex".to_owned(),
-            consensus_tx,
+            proposal_tx,
+            vote_tx,
             zone_tx,
             global_tx,
         );
-        (handler, consensus_rx, zone_rx, global_rx)
+        (handler, proposal_rx, vote_rx, zone_rx, global_rx)
     }
 
     #[test]
     fn handles_registered_topics() {
-        let (handler, _, _, _) = make_handler();
+        let (handler, _, _, _, _) = make_handler();
         assert!(handler.handles_topic("prog/global_topic_hex"));
         assert!(!handler.handles_topic("prog/unknown"));
 
@@ -177,7 +186,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatches_global_message() {
-        let (handler, _, _, mut global_rx) = make_handler();
+        let (handler, _, _, _, mut global_rx) = make_handler();
         let msg = ZephyrGlobalMessage::EpochAnnounce(EpochAnnouncement {
             epoch: 1,
             randomness_seed: [0; 32],
@@ -194,8 +203,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatches_consensus_message() {
-        let (handler, mut consensus_rx, _, _) = make_handler();
+    async fn dispatches_consensus_vote_message() {
+        let (handler, _, mut vote_rx, _, _) = make_handler();
         handler.add_consensus_topic("prog/cons_5".to_owned());
 
         let msg = ZephyrConsensusMessage::Reject(SpendReject {
@@ -206,27 +215,28 @@ mod tests {
 
         handler.on_gossip("prog/cons_5", &data, None).await;
 
-        let (topic, received) = consensus_rx.try_recv().unwrap();
+        let (topic, received) = vote_rx.try_recv().unwrap();
         assert_eq!(topic, "prog/cons_5");
         assert_eq!(received, msg);
     }
 
     #[tokio::test]
     async fn invalid_data_dropped() {
-        let (handler, mut consensus_rx, mut zone_rx, _) = make_handler();
+        let (handler, mut proposal_rx, mut vote_rx, mut zone_rx, _) = make_handler();
         handler.add_zone_topic("prog/zone_0".to_owned());
         handler.add_consensus_topic("prog/cons_0".to_owned());
 
         handler.on_gossip("prog/zone_0", &[0xFF, 0xFF], None).await;
         handler.on_gossip("prog/cons_0", &[0xFF, 0xFF], None).await;
 
-        assert!(consensus_rx.try_recv().is_err());
+        assert!(proposal_rx.try_recv().is_err());
+        assert!(vote_rx.try_recv().is_err());
         assert!(zone_rx.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn submit_spend_routed_to_zone() {
-        let (handler, _, mut zone_rx, _) = make_handler();
+        let (handler, _, _, mut zone_rx, _) = make_handler();
         handler.add_zone_topic("prog/zone_1".to_owned());
 
         let msg = ZephyrZoneMessage::SubmitSpend(SpendTransaction {

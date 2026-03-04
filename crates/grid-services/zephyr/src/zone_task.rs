@@ -42,7 +42,8 @@ pub(crate) struct ZoneTaskState {
 impl ZoneTaskState {
     pub async fn run(
         mut self,
-        mut consensus_rx: mpsc::Receiver<ZephyrConsensusMessage>,
+        mut proposal_rx: mpsc::Receiver<ZephyrConsensusMessage>,
+        mut vote_rx: mpsc::Receiver<ZephyrConsensusMessage>,
         mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
         shutdown: tokio_util::sync::CancellationToken,
     ) {
@@ -55,17 +56,39 @@ impl ZoneTaskState {
 
         loop {
             tokio::select! {
+                biased;
+
                 _ = shutdown.cancelled() => {
                     debug!(zone_id = self.zone_id, "zone consensus task shutting down");
                     break;
                 }
 
-                msg = consensus_rx.recv() => {
+                _ = round_timer.tick() => {
+                    Self::drain_consensus_channel(&mut self, &mut proposal_rx, 256);
+                    Self::drain_consensus_channel(&mut self, &mut vote_rx, 256);
+                    let elapsed = epoch_start.elapsed();
+                    self.handle_tick(elapsed).await;
+                }
+
+                msg = proposal_rx.recv() => {
+                    let Some(first) = msg else { break };
+                    let mut batch = Vec::with_capacity(65);
+                    batch.push(first);
+                    while batch.len() < 64 {
+                        match proposal_rx.try_recv() {
+                            Ok(m) => batch.push(m),
+                            Err(_) => break,
+                        }
+                    }
+                    self.handle_consensus_batch(batch);
+                }
+
+                msg = vote_rx.recv() => {
                     let Some(first) = msg else { break };
                     let mut batch = Vec::with_capacity(129);
                     batch.push(first);
                     while batch.len() < 128 {
-                        match consensus_rx.try_recv() {
+                        match vote_rx.try_recv() {
                             Ok(m) => batch.push(m),
                             Err(_) => break,
                         }
@@ -85,12 +108,27 @@ impl ZoneTaskState {
                     }
                     self.handle_global_batch(batch);
                 }
-
-                _ = round_timer.tick() => {
-                    let elapsed = epoch_start.elapsed();
-                    self.handle_tick(elapsed).await;
-                }
             }
+        }
+    }
+
+    /// Drain all available messages from a consensus channel before processing
+    /// a tick. This prevents premature timeouts when votes/proposals are
+    /// pending in the channel but haven't been processed yet.
+    fn drain_consensus_channel(
+        this: &mut Self,
+        rx: &mut mpsc::Receiver<ZephyrConsensusMessage>,
+        limit: usize,
+    ) {
+        let mut batch = Vec::new();
+        while batch.len() < limit {
+            match rx.try_recv() {
+                Ok(m) => batch.push(m),
+                Err(_) => break,
+            }
+        }
+        if !batch.is_empty() {
+            this.handle_consensus_batch(batch);
         }
     }
 }

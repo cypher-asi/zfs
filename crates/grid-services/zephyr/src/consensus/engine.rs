@@ -17,6 +17,9 @@ use crate::config::ZephyrConfig;
 const MAX_PROPOSAL_REBROADCASTS: u32 = 5;
 const STALL_DECAY_SUCCESSES: u32 = 2;
 const WARMUP_TICKS: u32 = 30;
+/// Accept proposals from epoch N-1 during the first N ticks after transitioning
+/// to epoch N, tolerating clock skew between validators at epoch boundaries.
+const EPOCH_GRACE_TICKS: u32 = 50;
 
 pub struct ZoneConsensus {
     zone_id: ZoneId,
@@ -36,6 +39,7 @@ pub struct ZoneConsensus {
     proposal_seen: bool,
     voted_block_hash: Option<[u8; 32]>,
     warmup_ticks: u32,
+    epoch_ticks: u32,
     force_adopt_next_cert: bool,
     fork_recovery_used: bool,
     node_id: usize,
@@ -78,6 +82,7 @@ impl ZoneConsensus {
             proposal_seen: false,
             voted_block_hash: None,
             warmup_ticks: WARMUP_TICKS,
+            epoch_ticks: 0,
             force_adopt_next_cert: force_adopt_at_genesis,
             fork_recovery_used: false,
             node_id,
@@ -112,6 +117,7 @@ impl ZoneConsensus {
     /// Increment the per-round tick counter.  Called once per round-timer fire.
     pub fn tick(&mut self) {
         self.ticks_in_round += 1;
+        self.epoch_ticks += 1;
         if self.warmup_ticks > 0 {
             self.warmup_ticks -= 1;
         }
@@ -231,17 +237,30 @@ impl ZoneConsensus {
             );
             return Err("already voted");
         }
-        if proposal.header.zone_id != self.zone_id || proposal.header.epoch != self.epoch {
+        if proposal.header.zone_id != self.zone_id {
             warn!(
                 zone_id = self.zone_id,
                 node_id = self.node_id,
-                round = self.round,
                 proposal_zone = proposal.header.zone_id,
-                proposal_epoch = proposal.header.epoch,
-                local_epoch = self.epoch,
-                "rejecting proposal: zone/epoch mismatch"
+                "rejecting proposal: zone mismatch"
             );
-            return Err("zone/epoch mismatch");
+            return Err("zone mismatch");
+        }
+        if proposal.header.epoch != self.epoch {
+            let in_epoch_grace = self.epoch_ticks <= EPOCH_GRACE_TICKS
+                && proposal.header.epoch + 1 == self.epoch;
+            if !in_epoch_grace {
+                warn!(
+                    zone_id = self.zone_id,
+                    node_id = self.node_id,
+                    round = self.round,
+                    proposal_epoch = proposal.header.epoch,
+                    local_epoch = self.epoch,
+                    epoch_ticks = self.epoch_ticks,
+                    "rejecting proposal: epoch mismatch"
+                );
+                return Err("epoch mismatch");
+            }
         }
         if proposal.header.parent_hash != self.parent_hash && !self.force_adopt_next_cert {
             debug!(
@@ -504,6 +523,7 @@ impl ZoneConsensus {
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
+        self.epoch_ticks = 0;
         // consecutive_timeouts intentionally preserved across epochs so the
         // stall-recovery threshold can accumulate even when epoch boundaries
         // intervene.

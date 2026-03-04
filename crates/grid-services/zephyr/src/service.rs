@@ -77,7 +77,9 @@ pub struct ZephyrService {
     consensus_program_ids: Vec<ProgramId>,
     runtime: Arc<parking_lot::RwLock<ZephyrRuntime>>,
     gossip_handler: Arc<ZephyrGossipHandler>,
-    consensus_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrConsensusMessage)>>>,
+    consensus_proposal_rx:
+        std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrConsensusMessage)>>>,
+    consensus_vote_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrConsensusMessage)>>>,
     zone_rx: std::sync::Mutex<Option<mpsc::Receiver<(String, ZephyrZoneMessage)>>>,
     global_rx: std::sync::Mutex<Option<mpsc::Receiver<ZephyrGlobalMessage>>>,
 }
@@ -141,12 +143,14 @@ impl ZephyrService {
         }
 
         let global_topic = grid_core::program_topic(&global_pid);
-        let (consensus_tx, consensus_rx) = mpsc::channel(4096);
+        let (proposal_tx, consensus_proposal_rx) = mpsc::channel(512);
+        let (vote_tx, consensus_vote_rx) = mpsc::channel(4096);
         let (zone_tx, zone_rx) = mpsc::channel(65_536);
         let (global_tx, global_rx) = mpsc::channel(1024);
         let gossip_handler = Arc::new(ZephyrGossipHandler::new(
             global_topic,
-            consensus_tx,
+            proposal_tx,
+            vote_tx,
             zone_tx,
             global_tx,
         ));
@@ -178,7 +182,8 @@ impl ZephyrService {
                 zone_last_advance: HashMap::new(),
             })),
             gossip_handler,
-            consensus_rx: std::sync::Mutex::new(Some(consensus_rx)),
+            consensus_proposal_rx: std::sync::Mutex::new(Some(consensus_proposal_rx)),
+            consensus_vote_rx: std::sync::Mutex::new(Some(consensus_vote_rx)),
             zone_rx: std::sync::Mutex::new(Some(zone_rx)),
             global_rx: std::sync::Mutex::new(Some(global_rx)),
         })
@@ -328,12 +333,19 @@ impl Service for ZephyrService {
         }
 
         // Take channel receivers (one-time)
-        let consensus_rx = self
-            .consensus_rx
+        let consensus_proposal_rx = self
+            .consensus_proposal_rx
             .lock()
             .map_err(|e| ServiceError::Other(format!("lock poisoned: {e}")))?
             .take()
-            .ok_or_else(|| ServiceError::Other("consensus_rx already taken".into()))?;
+            .ok_or_else(|| ServiceError::Other("consensus_proposal_rx already taken".into()))?;
+
+        let consensus_vote_rx = self
+            .consensus_vote_rx
+            .lock()
+            .map_err(|e| ServiceError::Other(format!("lock poisoned: {e}")))?
+            .take()
+            .ok_or_else(|| ServiceError::Other("consensus_vote_rx already taken".into()))?;
 
         let zone_rx = self
             .zone_rx
@@ -387,13 +399,16 @@ impl Service for ZephyrService {
         let epoch_mgr = Arc::new(tokio::sync::Mutex::new(epoch_mgr));
 
         // Per-zone channels and tasks
-        let mut zone_consensus_txs = HashMap::new();
+        let mut zone_proposal_txs = HashMap::new();
+        let mut zone_vote_txs = HashMap::new();
         let mut zone_global_txs = HashMap::new();
 
         for zone_id in 0..self.config.total_zones {
-            let (cons_tx, cons_rx) = mpsc::channel(4096);
+            let (prop_tx, prop_rx) = mpsc::channel(256);
+            let (vote_tx, vote_rx) = mpsc::channel(4096);
             let (glob_tx, glob_rx) = mpsc::channel(1024);
-            zone_consensus_txs.insert(zone_id, cons_tx);
+            zone_proposal_txs.insert(zone_id, prop_tx);
+            zone_vote_txs.insert(zone_id, vote_tx);
             zone_global_txs.insert(zone_id, glob_tx);
 
             let is_assigned = assigned_zones.contains(&zone_id);
@@ -451,16 +466,18 @@ impl Service for ZephyrService {
 
             let sd = shutdown.clone();
             tokio::spawn(async move {
-                zone_state.run(cons_rx, glob_rx, sd).await;
+                zone_state.run(prop_rx, vote_rx, glob_rx, sd).await;
             });
         }
 
         // Spawn the dispatcher (fan-out from shared channels to per-zone channels)
         tokio::spawn(consensus_dispatcher(
-            consensus_rx,
+            consensus_proposal_rx,
+            consensus_vote_rx,
             global_rx,
             consensus_topic_to_zone,
-            zone_consensus_txs,
+            zone_proposal_txs,
+            zone_vote_txs,
             zone_global_txs,
             shutdown.clone(),
         ));
@@ -615,38 +632,53 @@ async fn ingest_loop(
 /// channel based on topic â†’ zone_id mapping (consensus) or cert.zone_id
 /// (global certificates).
 async fn consensus_dispatcher(
-    mut consensus_rx: mpsc::Receiver<(String, ZephyrConsensusMessage)>,
+    mut proposal_rx: mpsc::Receiver<(String, ZephyrConsensusMessage)>,
+    mut vote_rx: mpsc::Receiver<(String, ZephyrConsensusMessage)>,
     mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
     consensus_topic_to_zone: HashMap<String, u32>,
-    zone_consensus_txs: HashMap<u32, mpsc::Sender<ZephyrConsensusMessage>>,
+    zone_proposal_txs: HashMap<u32, mpsc::Sender<ZephyrConsensusMessage>>,
+    zone_vote_txs: HashMap<u32, mpsc::Sender<ZephyrConsensusMessage>>,
     zone_global_txs: HashMap<u32, mpsc::Sender<ZephyrGlobalMessage>>,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
     loop {
         tokio::select! {
+            biased;
+
             _ = shutdown.cancelled() => {
                 debug!("consensus dispatcher shutting down");
                 break;
             }
 
-            msg = consensus_rx.recv() => {
+            msg = proposal_rx.recv() => {
                 let Some((topic, cmsg)) = msg else { break };
                 let Some(&zone_id) = consensus_topic_to_zone.get(&topic) else {
                     warn!(%topic, "dispatcher: unknown consensus topic");
                     continue;
                 };
-                if let Some(tx) = zone_consensus_txs.get(&zone_id) {
-                    let msg_type = match &cmsg {
-                        ZephyrConsensusMessage::Proposal(_) => "Proposal",
-                        ZephyrConsensusMessage::Vote(_) => "Vote",
-                        ZephyrConsensusMessage::Reject(_) => "Reject",
-                    };
-                    if let Err(_) = tx.try_send(cmsg) {
+                if let Some(tx) = zone_proposal_txs.get(&zone_id) {
+                    if tx.try_send(cmsg).is_err() {
                         warn!(
                             zone_id,
-                            msg_type,
                             capacity = tx.capacity(),
-                            "zone consensus channel full, dropping message"
+                            "zone proposal channel full, dropping proposal"
+                        );
+                    }
+                }
+            }
+
+            msg = vote_rx.recv() => {
+                let Some((topic, cmsg)) = msg else { break };
+                let Some(&zone_id) = consensus_topic_to_zone.get(&topic) else {
+                    warn!(%topic, "dispatcher: unknown consensus topic");
+                    continue;
+                };
+                if let Some(tx) = zone_vote_txs.get(&zone_id) {
+                    if tx.try_send(cmsg).is_err() {
+                        warn!(
+                            zone_id,
+                            capacity = tx.capacity(),
+                            "zone vote channel full, dropping vote"
                         );
                     }
                 }

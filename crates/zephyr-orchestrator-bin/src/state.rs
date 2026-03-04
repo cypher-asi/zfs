@@ -85,7 +85,7 @@ impl NetworkPreset {
     pub fn description(&self) -> &str {
         match self {
             Self::Minimal => "3 validators, 2 zones",
-            Self::Standard => "5 validators, 4 zones",
+            Self::Standard => "7 validators, 4 zones",
             Self::Large => "10 validators, 8 zones",
             Self::Custom { .. } => "Custom configuration",
         }
@@ -94,7 +94,7 @@ impl NetworkPreset {
     pub fn validators(&self) -> usize {
         match self {
             Self::Minimal => 3,
-            Self::Standard => 5,
+            Self::Standard => 7,
             Self::Large => 10,
             Self::Custom { validators, .. } => *validators,
         }
@@ -112,7 +112,7 @@ impl NetworkPreset {
     pub fn committee_size(&self) -> usize {
         match self {
             Self::Minimal => 3,
-            Self::Standard => 5,
+            Self::Standard => 7,
             Self::Large => 5,
             Self::Custom { committee_size, .. } => *committee_size,
         }
