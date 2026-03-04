@@ -4,7 +4,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use libp2p::{
     gossipsub, identify, kad, request_response,
-    swarm::{dial_opts::DialOpts, SwarmEvent},
+    swarm::{dial_opts::DialOpts, DialError, SwarmEvent},
     Multiaddr, PeerId,
 };
 use tokio::time::Instant;
@@ -560,6 +560,7 @@ impl NetworkService {
                     error = %error,
                     "outgoing connection failed"
                 );
+                let error_string = error.to_string();
                 if self.pending_discovery_dials > 0 {
                     self.pending_discovery_dials -= 1;
                 }
@@ -569,17 +570,52 @@ impl NetworkService {
                         self.dial_backoff
                             .insert(failed_peer, Instant::now() + self.dial_backoff_duration);
                     }
-                    self.peer_addresses.remove(&failed_peer);
-                    if self.kademlia_enabled && !is_relay {
-                        self.swarm
-                            .behaviour_mut()
-                            .kademlia
-                            .remove_peer(&failed_peer);
+                    match error {
+                        DialError::WrongPeerId { obtained, address } => {
+                            let normalized = crate::addr::normalize_multiaddr(&address);
+                            if let Some(addrs) = self.peer_addresses.get_mut(&failed_peer) {
+                                addrs.retain(|a| *a != normalized && *a != address);
+                                if addrs.is_empty() {
+                                    self.peer_addresses.remove(&failed_peer);
+                                }
+                            }
+                            if self.kademlia_enabled {
+                                self.swarm
+                                    .behaviour_mut()
+                                    .kademlia
+                                    .remove_address(&failed_peer, &normalized);
+                            }
+                            if crate::addr::is_dialable(&normalized, self.allow_private_addresses)
+                            {
+                                self.insert_peer_addr(obtained, normalized.clone());
+                                if self.kademlia_enabled {
+                                    self.swarm
+                                        .behaviour_mut()
+                                        .kademlia
+                                        .add_address(&obtained, normalized);
+                                }
+                            }
+                            info!(
+                                expected = %failed_peer,
+                                obtained = %obtained,
+                                %address,
+                                "corrected peer address after WrongPeerId"
+                            );
+                        }
+                        _ => {
+                            self.peer_addresses.remove(&failed_peer);
+                            if self.kademlia_enabled && !is_relay {
+                                self.swarm
+                                    .behaviour_mut()
+                                    .kademlia
+                                    .remove_peer(&failed_peer);
+                            }
+                        }
                     }
                 }
                 Some(NetworkEvent::ConnectionFailed {
                     peer: peer_id,
-                    error: error.to_string(),
+                    error: error_string,
                 })
             }
             _ => None,
