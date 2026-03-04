@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use grid_core::{
-    KvContainsRequest, KvDeleteRequest, KvGetRequest, KvPutRequest, SectorAppendRequest,
-    SectorBatchAppendRequest, SectorBatchLogLengthRequest, SectorLogLengthRequest,
-    SectorReadLogRequest, SectorRequest, SectorResponse,
+    KvContainsRequest, KvDeleteRequest, KvGetRequest, KvPrefixScanRequest, KvPutRequest,
+    SectorAppendRequest, SectorBatchAppendRequest, SectorBatchLogLengthRequest,
+    SectorLogLengthRequest, SectorReadLogRequest, SectorRequest, SectorResponse,
 };
 
 use crate::{NodeStatus, SectorDispatch};
@@ -83,6 +83,9 @@ pub(crate) fn dispatch(
         "kv.contains" => {
             dispatch_typed::<KvContainsRequest>(handler, req, SectorRequest::KvContains)
         }
+        "kv.prefixScan" => {
+            dispatch_typed::<KvPrefixScanRequest>(handler, req, SectorRequest::KvPrefixScan)
+        }
         _ => error_response(
             req.id.clone(),
             METHOD_NOT_FOUND,
@@ -141,7 +144,7 @@ fn error_response(id: Value, code: i32, message: &str) -> JsonRpcResponse {
 mod tests {
     use super::*;
     use grid_core::{
-        KvContainsResponse, KvDeleteResponse, KvGetResponse, KvPutResponse,
+        KvContainsResponse, KvDeleteResponse, KvGetResponse, KvPrefixScanResponse, KvPutResponse,
         SectorLogLengthResponse, SectorRequest, SectorResponse,
     };
 
@@ -170,6 +173,12 @@ mod tests {
                     exists: true,
                     error_code: None,
                 }),
+                SectorRequest::KvPrefixScan(_) => {
+                    SectorResponse::KvPrefixScan(KvPrefixScanResponse {
+                        entries: Vec::new(),
+                        error_code: None,
+                    })
+                }
                 _ => unimplemented!("MockHandler: unsupported request"),
             }
         }

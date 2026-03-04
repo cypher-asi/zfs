@@ -142,6 +142,30 @@ impl SectorStore for RocksStorage {
     fn kv_contains(&self, program_id: &ProgramId, key: &[u8]) -> Result<bool, StorageError> {
         Ok(self.kv_get(program_id, key)?.is_some())
     }
+
+    fn kv_prefix_scan(
+        &self,
+        program_id: &ProgramId,
+        prefix: &[u8],
+        max_entries: u32,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StorageError> {
+        let cf = self.cf_handle(CF_SERVICE_KV)?;
+        let db_prefix = build_kv_key(program_id, prefix);
+        let iter = self.db().prefix_iterator_cf(cf, &db_prefix);
+        let mut results = Vec::new();
+        for item in iter {
+            let (key, value) = item?;
+            if !key.starts_with(&db_prefix) {
+                break;
+            }
+            let user_key = key[PID_LEN..].to_vec();
+            results.push((user_key, value.to_vec()));
+            if results.len() >= max_entries as usize {
+                break;
+            }
+        }
+        Ok(results)
+    }
 }
 
 impl RocksStorage {

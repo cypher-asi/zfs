@@ -90,6 +90,7 @@ pub enum SectorRequest {
     KvPut(KvPutRequest),
     KvDelete(KvDeleteRequest),
     KvContains(KvContainsRequest),
+    KvPrefixScan(KvPrefixScanRequest),
 }
 
 /// Zode → Client: sector response sent over `/grid/sector/1.0.0`.
@@ -104,6 +105,7 @@ pub enum SectorResponse {
     KvPut(KvPutResponse),
     KvDelete(KvDeleteResponse),
     KvContains(KvContainsResponse),
+    KvPrefixScan(KvPrefixScanResponse),
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +304,32 @@ pub struct KvContainsRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KvContainsResponse {
     pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_code: Option<ErrorCode>,
+}
+
+/// A key-value pair returned by prefix scan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KvEntry {
+    #[serde(with = "serde_bytes")]
+    pub key: Vec<u8>,
+    #[serde(with = "serde_bytes")]
+    pub value: Vec<u8>,
+}
+
+/// Scan the service KV store for keys matching a prefix.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KvPrefixScanRequest {
+    pub program_id: ProgramId,
+    #[serde(with = "serde_bytes")]
+    pub prefix: Vec<u8>,
+    pub max_entries: u32,
+}
+
+/// Response to a KV prefix scan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KvPrefixScanResponse {
+    pub entries: Vec<KvEntry>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub error_code: Option<ErrorCode>,
 }

@@ -115,4 +115,17 @@ pub trait SectorStore {
     fn kv_contains(&self, _program_id: &ProgramId, _key: &[u8]) -> Result<bool, StorageError> {
         Err(StorageError::Unsupported("kv_contains".into()))
     }
+
+    /// Scan the service KV store for keys matching a prefix.
+    ///
+    /// Returns up to `max_entries` key-value pairs whose user-facing key
+    /// starts with `prefix`. Keys in the result have the `program_id` stripped.
+    fn kv_prefix_scan(
+        &self,
+        _program_id: &ProgramId,
+        _prefix: &[u8],
+        _max_entries: u32,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StorageError> {
+        Err(StorageError::Unsupported("kv_prefix_scan".into()))
+    }
 }

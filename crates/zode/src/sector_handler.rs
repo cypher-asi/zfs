@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use grid_core::{
     Cid, ErrorCode, GossipSectorAppend, KvContainsRequest, KvContainsResponse, KvDeleteRequest,
-    KvDeleteResponse, KvGetRequest, KvGetResponse, KvPutRequest, KvPutResponse, ProgramId,
-    ProofSystem, SectorAppendRequest, SectorAppendResponse, SectorAppendResult,
-    SectorBatchAppendEntry, SectorBatchAppendRequest, SectorBatchAppendResponse,
-    SectorBatchLogLengthRequest, SectorBatchLogLengthResponse, SectorLogLengthRequest,
-    SectorLogLengthResponse, SectorLogLengthResult, SectorReadLogRequest, SectorReadLogResponse,
-    SectorRequest, SectorResponse, ShapeProof, MAX_BATCH_ENTRIES, MAX_BATCH_PAYLOAD_BYTES,
+    KvDeleteResponse, KvEntry, KvGetRequest, KvGetResponse, KvPrefixScanRequest,
+    KvPrefixScanResponse, KvPutRequest, KvPutResponse, ProgramId, ProofSystem,
+    SectorAppendRequest, SectorAppendResponse, SectorAppendResult, SectorBatchAppendEntry,
+    SectorBatchAppendRequest, SectorBatchAppendResponse, SectorBatchLogLengthRequest,
+    SectorBatchLogLengthResponse, SectorLogLengthRequest, SectorLogLengthResponse,
+    SectorLogLengthResult, SectorReadLogRequest, SectorReadLogResponse, SectorRequest,
+    SectorResponse, ShapeProof, MAX_BATCH_ENTRIES, MAX_BATCH_PAYLOAD_BYTES,
 };
 use grid_proof::ProofVerifierRegistry;
 use grid_storage::{SectorStore, StorageError};
@@ -72,6 +73,9 @@ impl<S: SectorStore> SectorRequestHandler<S> {
             SectorRequest::KvPut(r) => SectorResponse::KvPut(self.handle_kv_put(r)),
             SectorRequest::KvDelete(r) => SectorResponse::KvDelete(self.handle_kv_delete(r)),
             SectorRequest::KvContains(r) => SectorResponse::KvContains(self.handle_kv_contains(r)),
+            SectorRequest::KvPrefixScan(r) => {
+                SectorResponse::KvPrefixScan(self.handle_kv_prefix_scan(r))
+            }
         }
     }
 
@@ -322,6 +326,28 @@ impl<S: SectorStore> SectorRequestHandler<S> {
                 warn!(error = %e, "kv_contains failed");
                 KvContainsResponse {
                     exists: false,
+                    error_code: Some(storage_err_to_code(&e)),
+                }
+            }
+        }
+    }
+
+    fn handle_kv_prefix_scan(&self, req: &KvPrefixScanRequest) -> KvPrefixScanResponse {
+        match self
+            .storage
+            .kv_prefix_scan(&req.program_id, &req.prefix, req.max_entries)
+        {
+            Ok(pairs) => KvPrefixScanResponse {
+                entries: pairs
+                    .into_iter()
+                    .map(|(key, value)| KvEntry { key, value })
+                    .collect(),
+                error_code: None,
+            },
+            Err(e) => {
+                warn!(error = %e, "kv_prefix_scan failed");
+                KvPrefixScanResponse {
+                    entries: Vec::new(),
                     error_code: Some(storage_err_to_code(&e)),
                 }
             }
