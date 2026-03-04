@@ -102,16 +102,27 @@ mod tests {
     use super::*;
     use crate::config::ZephyrConfig;
     use crate::consensus::leader::leader_for_round;
-    use grid_programs_zephyr::{FinalityCertificate, ValidatorInfo};
+    use ed25519_dalek::{Signer, SigningKey};
+    use grid_programs_zephyr::{CertSignature, FinalityCertificate, ValidatorInfo};
 
-    fn make_committee(n: usize) -> Vec<ValidatorInfo> {
+    fn make_keys(n: usize) -> Vec<SigningKey> {
         (0..n)
             .map(|i| {
-                let mut id = [0u8; 32];
-                id[0] = i as u8;
+                let mut seed = [0u8; 32];
+                seed[0] = i as u8;
+                SigningKey::from_bytes(&seed)
+            })
+            .collect()
+    }
+
+    fn make_committee_from_keys(keys: &[SigningKey]) -> Vec<ValidatorInfo> {
+        keys.iter()
+            .enumerate()
+            .map(|(i, sk)| {
+                let pk = sk.verifying_key().to_bytes();
                 ValidatorInfo {
-                    validator_id: id,
-                    pubkey: id,
+                    validator_id: pk,
+                    pubkey: pk,
                     p2p_endpoint: format!("/ip4/127.0.0.1/tcp/{}", 4000 + i),
                 }
             })
@@ -128,7 +139,13 @@ mod tests {
         }
     }
 
-    fn make_cert(zone: u32, epoch: u64, height: u64, parent: [u8; 32], block: [u8; 32]) -> FinalityCertificate {
+    fn make_unsigned_cert(
+        zone: u32,
+        epoch: u64,
+        height: u64,
+        parent: [u8; 32],
+        block: [u8; 32],
+    ) -> FinalityCertificate {
         FinalityCertificate {
             zone_id: zone,
             epoch,
@@ -139,10 +156,35 @@ mod tests {
         }
     }
 
+    fn make_signed_cert(
+        zone: u32,
+        epoch: u64,
+        height: u64,
+        parent: [u8; 32],
+        block: [u8; 32],
+        keys: &[SigningKey],
+        signer_indices: &[usize],
+    ) -> FinalityCertificate {
+        FinalityCertificate {
+            zone_id: zone,
+            epoch,
+            height,
+            block_hash: block,
+            parent_hash: parent,
+            signatures: signer_indices
+                .iter()
+                .map(|&i| CertSignature {
+                    validator_id: keys[i].verifying_key().to_bytes(),
+                    signature: keys[i].sign(&block).to_bytes().to_vec(),
+                })
+                .collect(),
+        }
+    }
+
     #[test]
     fn push_rejects_duplicate() {
         let mut buf = PendingCertBuffer::new(10);
-        let cert = make_cert(0, 0, 0, [0xAA; 32], [0xBB; 32]);
+        let cert = make_unsigned_cert(0, 0, 0, [0xAA; 32], [0xBB; 32]);
         assert!(buf.push(cert.clone()));
         assert!(!buf.push(cert));
         assert_eq!(buf.len(), 1);
@@ -151,20 +193,38 @@ mod tests {
     #[test]
     fn push_rejects_when_full() {
         let mut buf = PendingCertBuffer::new(2);
-        assert!(buf.push(make_cert(0, 0, 0, [1; 32], [2; 32])));
-        assert!(buf.push(make_cert(0, 0, 1, [2; 32], [3; 32])));
-        assert!(!buf.push(make_cert(0, 0, 2, [3; 32], [4; 32])));
+        assert!(buf.push(make_unsigned_cert(0, 0, 0, [1; 32], [2; 32])));
+        assert!(buf.push(make_unsigned_cert(0, 0, 1, [2; 32], [3; 32])));
+        assert!(!buf.push(make_unsigned_cert(0, 0, 2, [3; 32], [4; 32])));
     }
 
     #[test]
     fn drain_applicable_chains_certs() {
-        let committee = make_committee(3);
+        let keys = make_keys(3);
+        let committee = make_committee_from_keys(&keys);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
-        let mut eng = ZoneConsensus::new(0, 0, committee, leader_id, [0xAA; 32], test_config(), 0);
+        let mut eng =
+            ZoneConsensus::new(0, 0, committee, leader_id, [0xAA; 32], test_config(), 0);
 
         let mut buf = PendingCertBuffer::new(10);
-        buf.push(make_cert(0, 0, 1, [0xBB; 32], [0xCC; 32]));
-        buf.push(make_cert(0, 0, 0, [0xAA; 32], [0xBB; 32]));
+        buf.push(make_signed_cert(
+            0,
+            0,
+            1,
+            [0xBB; 32],
+            [0xCC; 32],
+            &keys,
+            &[0, 1],
+        ));
+        buf.push(make_signed_cert(
+            0,
+            0,
+            0,
+            [0xAA; 32],
+            [0xBB; 32],
+            &keys,
+            &[0, 1],
+        ));
 
         let applied = buf.drain_applicable(&mut eng);
         assert_eq!(applied.len(), 2);
@@ -175,9 +235,9 @@ mod tests {
     #[test]
     fn retain_epoch_drops_old() {
         let mut buf = PendingCertBuffer::new(10);
-        buf.push(make_cert(0, 0, 0, [1; 32], [2; 32]));
-        buf.push(make_cert(0, 4, 0, [3; 32], [4; 32]));
-        buf.push(make_cert(0, 5, 0, [5; 32], [6; 32]));
+        buf.push(make_unsigned_cert(0, 0, 0, [1; 32], [2; 32]));
+        buf.push(make_unsigned_cert(0, 4, 0, [3; 32], [4; 32]));
+        buf.push(make_unsigned_cert(0, 5, 0, [5; 32], [6; 32]));
         buf.retain_epoch(5);
         assert_eq!(buf.len(), 2);
     }
@@ -186,7 +246,7 @@ mod tests {
     fn purge_overflow_trims() {
         let mut buf = PendingCertBuffer::new(8);
         for i in 0..7u8 {
-            buf.push(make_cert(0, 0, i as u64, [i; 32], [i + 100; 32]));
+            buf.push(make_unsigned_cert(0, 0, i as u64, [i; 32], [i + 100; 32]));
         }
         assert_eq!(buf.len(), 7);
         buf.purge_overflow();

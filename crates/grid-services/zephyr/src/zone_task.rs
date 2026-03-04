@@ -13,8 +13,10 @@ use crate::config::ZephyrConfig;
 use crate::consensus::pending_certs::PendingCertBuffer;
 use crate::consensus::ZoneConsensus;
 use crate::epoch::EpochManager;
+use crate::proof::SpendProofVerifier;
 use crate::service::ZephyrRuntime;
 use crate::shared_mempool::SharedMempool;
+use crate::storage::NullifierSet;
 
 pub(crate) struct ZoneTaskState {
     pub zone_id: u32,
@@ -38,6 +40,8 @@ pub(crate) struct ZoneTaskState {
     pub mempool: SharedMempool,
     pub runtime: Arc<parking_lot::RwLock<ZephyrRuntime>>,
     pub epoch_mgr: Arc<tokio::sync::Mutex<EpochManager>>,
+    pub nullifier_set: NullifierSet,
+    pub proof_verifier: Option<Arc<SpendProofVerifier>>,
 }
 
 impl ZoneTaskState {

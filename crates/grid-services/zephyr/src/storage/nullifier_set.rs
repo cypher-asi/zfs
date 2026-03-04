@@ -4,7 +4,7 @@ use grid_programs_zephyr::{Nullifier, ZoneId};
 use grid_service::{ProgramStore, ServiceError};
 
 /// Per-zone nullifier set: in-memory `HashSet` for O(1) lookup,
-/// backed by persistent sector log for durability.
+/// optionally backed by persistent sector log for durability.
 ///
 /// Invariants:
 /// - The in-memory set is always a superset of the persistent log
@@ -14,10 +14,19 @@ use grid_service::{ProgramStore, ServiceError};
 pub struct NullifierSet {
     zone_id: ZoneId,
     set: HashSet<Nullifier>,
-    store: ProgramStore,
+    store: Option<ProgramStore>,
 }
 
 impl NullifierSet {
+    /// Create a purely in-memory nullifier set (no persistence).
+    pub fn in_memory(zone_id: ZoneId) -> Self {
+        Self {
+            zone_id,
+            set: HashSet::new(),
+            store: None,
+        }
+    }
+
     /// Rebuild from persistent log on startup.
     pub fn load(zone_id: ZoneId, store: ProgramStore) -> Result<Self, ServiceError> {
         let key = format!("nullifiers/{zone_id}");
@@ -29,7 +38,7 @@ impl NullifierSet {
         Ok(Self {
             zone_id,
             set,
-            store,
+            store: Some(store),
         })
     }
 
@@ -43,10 +52,12 @@ impl NullifierSet {
         if !self.set.insert(n.clone()) {
             return Ok(false);
         }
-        let key = format!("nullifiers/{}", self.zone_id);
-        let encoded =
-            grid_core::encode_canonical(&n).map_err(|e| ServiceError::Storage(e.to_string()))?;
-        self.store.put(key.as_bytes(), encoded)?;
+        if let Some(ref store) = self.store {
+            let key = format!("nullifiers/{}", self.zone_id);
+            let encoded = grid_core::encode_canonical(&n)
+                .map_err(|e| ServiceError::Storage(e.to_string()))?;
+            store.put(key.as_bytes(), encoded)?;
+        }
         Ok(true)
     }
 

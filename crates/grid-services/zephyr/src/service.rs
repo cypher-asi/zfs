@@ -380,10 +380,13 @@ impl Service for ZephyrService {
         }
 
         // Spawn the ingest task (spend submissions only)
+        // Proof verifier is None when skip_proof_verification is set.
+        let ingest_verifier: Option<Arc<crate::proof::SpendProofVerifier>> = None;
         tokio::spawn(ingest_loop(
             zone_rx,
             topic_to_zone.clone(),
             mempool.clone(),
+            ingest_verifier,
             shutdown.clone(),
         ));
 
@@ -407,6 +410,9 @@ impl Service for ZephyrService {
             let is_assigned = assigned_zones.contains(&zone_id);
             let zt = self.zone_topic(zone_id);
             let ct = self.consensus_topic(zone_id);
+
+            let nullifier_set =
+                crate::storage::NullifierSet::in_memory(zone_id);
 
             let mut zone_state = crate::zone_task::ZoneTaskState {
                 zone_id,
@@ -432,6 +438,8 @@ impl Service for ZephyrService {
                 mempool: mempool.clone(),
                 runtime: runtime.clone(),
                 epoch_mgr: epoch_mgr.clone(),
+                nullifier_set,
+                proof_verifier: None,
             };
 
             if is_assigned {
@@ -571,10 +579,14 @@ impl Service for ZephyrService {
 /// Receives spend submissions from gossip and inserts them into the shared
 /// mempool. This decouples high-volume transaction ingestion from
 /// latency-sensitive consensus round-trips.
+///
+/// When a `SpendProofVerifier` is provided, each spend proof is verified
+/// before mempool insertion; invalid spends are silently dropped.
 async fn ingest_loop(
     mut zone_rx: mpsc::Receiver<(String, ZephyrZoneMessage)>,
     topic_to_zone: HashMap<String, u32>,
     mempool: SharedMempool,
+    proof_verifier: Option<Arc<crate::proof::SpendProofVerifier>>,
     shutdown: tokio_util::sync::CancellationToken,
 ) {
     loop {
@@ -614,11 +626,37 @@ async fn ingest_loop(
                     }
                 }
                 for (zone_id, txs) in zone_buckets {
-                    mempool.insert_batch(zone_id, txs);
+                    let verified = if let Some(ref verifier) = proof_verifier {
+                        txs.into_iter()
+                            .filter(|tx| verify_spend_proof(verifier, tx))
+                            .collect()
+                    } else {
+                        txs
+                    };
+                    mempool.insert_batch(zone_id, verified);
                 }
             }
         }
     }
+}
+
+/// Verify a single spend transaction's Groth16 proof.
+fn verify_spend_proof(
+    verifier: &crate::proof::SpendProofVerifier,
+    tx: &grid_programs_zephyr::SpendTransaction,
+) -> bool {
+    let signals: Result<Vec<ark_bn254::Fr>, _> = tx
+        .public_signals
+        .iter()
+        .map(|b| {
+            use ark_serialize::CanonicalDeserialize;
+            ark_bn254::Fr::deserialize_compressed(&b[..]).map_err(|_| ())
+        })
+        .collect();
+    let Ok(signals) = signals else {
+        return false;
+    };
+    verifier.verify(&tx.proof, &signals).is_ok()
 }
 
 /// Lightweight fan-out task: reads from the shared consensus and global

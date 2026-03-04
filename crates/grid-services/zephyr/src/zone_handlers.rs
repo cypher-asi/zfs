@@ -1,11 +1,33 @@
-use grid_programs_zephyr::{Block, ZephyrConsensusMessage, ZephyrGlobalMessage};
-use tracing::{debug, info};
+use std::collections::HashMap;
+
+use grid_programs_zephyr::{Block, Nullifier, ZephyrConsensusMessage, ZephyrGlobalMessage};
+use tracing::{debug, info, warn};
 
 use crate::consensus::ConsensusAction;
 use crate::publishing::{
     apply_certificate_locally, cache_block_txs, cleanup_mempool_after_cert, publish_action,
 };
+use crate::storage::NullifierSet;
 use crate::zone_task::ZoneTaskState;
+
+/// Persist finalized block nullifiers into the nullifier set.
+///
+/// Extracted as a free function to avoid borrow-checker conflicts when the
+/// consensus engine holds a mutable reference into `ZoneTaskState.engine`.
+fn persist_nullifiers_inline(
+    block_hash: &[u8; 32],
+    block_nullifiers: &HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
+    nullifier_set: &mut NullifierSet,
+    zone_id: u32,
+) {
+    if let Some((_, nullifiers)) = block_nullifiers.get(block_hash) {
+        for n in nullifiers {
+            if let Err(e) = nullifier_set.insert(n.clone()) {
+                warn!(zone_id, error = %e, "failed to persist nullifier");
+            }
+        }
+    }
+}
 
 impl ZoneTaskState {
     pub(crate) fn handle_consensus_batch(&mut self, batch: Vec<ZephyrConsensusMessage>) {
@@ -33,6 +55,11 @@ impl ZoneTaskState {
             parent_hash = %hex::encode(&proposal.header.parent_hash[..8]),
             "received proposal from network"
         );
+
+        if !self.verify_proposal_transactions(&proposal) {
+            return;
+        }
+
         cache_block_txs(
             &mut self.block_tx_cache,
             &mut self.block_nullifiers,
@@ -64,6 +91,12 @@ impl ZoneTaskState {
         let Some(ref mut eng) = self.engine else { return };
         if let Some(action) = eng.receive_vote(vote) {
             if let ConsensusAction::BroadcastCertificate(ref cert) = action {
+                persist_nullifiers_inline(
+                    &cert.block_hash,
+                    &self.block_nullifiers,
+                    &mut self.nullifier_set,
+                    self.zone_id,
+                );
                 apply_certificate_locally(
                     cert,
                     &self.zone_head_store,
@@ -114,6 +147,12 @@ impl ZoneTaskState {
         if let Some(ref mut eng) = self.engine {
             if eng.apply_certificate(&cert) {
                 let _ = eng.take_fork_recovery_used();
+                persist_nullifiers_inline(
+                    &cert.block_hash,
+                    &self.block_nullifiers,
+                    &mut self.nullifier_set,
+                    self.zone_id,
+                );
                 apply_certificate_locally(
                     &cert,
                     &self.zone_head_store,
@@ -129,6 +168,12 @@ impl ZoneTaskState {
 
                 let applied = self.pending_certs.drain_applicable(eng);
                 for pc in &applied {
+                    persist_nullifiers_inline(
+                        &pc.block_hash,
+                        &self.block_nullifiers,
+                        &mut self.nullifier_set,
+                        self.zone_id,
+                    );
                     apply_certificate_locally(
                         pc,
                         &self.zone_head_store,
@@ -167,6 +212,12 @@ impl ZoneTaskState {
                 );
             }
         } else {
+            persist_nullifiers_inline(
+                &cert.block_hash,
+                &self.block_nullifiers,
+                &mut self.nullifier_set,
+                self.zone_id,
+            );
             apply_certificate_locally(
                 &cert,
                 &self.zone_head_store,
@@ -187,6 +238,11 @@ impl ZoneTaskState {
             Some(p) => p,
             None => return,
         };
+
+        if !self.verify_proposal_transactions(&proposal) {
+            return;
+        }
+
         let Some(ref mut eng) = self.engine else { return };
 
         if proposal.header.height < eng.height() {
@@ -232,6 +288,72 @@ impl ZoneTaskState {
         }
     }
 
+    /// Verify spend proofs and nullifier freshness for all transactions in a
+    /// proposal.  Returns `false` (reject) if any check fails.
+    fn verify_proposal_transactions(&self, proposal: &Block) -> bool {
+        if let Some(ref verifier) = self.proof_verifier {
+            for (i, tx) in proposal.transactions.iter().enumerate() {
+                let signals: Result<Vec<ark_bn254::Fr>, _> = tx
+                    .public_signals
+                    .iter()
+                    .map(|b| {
+                        use ark_serialize::CanonicalDeserialize;
+                        ark_bn254::Fr::deserialize_compressed(&b[..])
+                            .map_err(|_| ())
+                    })
+                    .collect();
+                let Ok(signals) = signals else {
+                    warn!(
+                        zone_id = self.zone_id,
+                        block_hash = %hex::encode(&proposal.block_hash[..8]),
+                        tx_index = i,
+                        "rejecting proposal: invalid public signal encoding"
+                    );
+                    return false;
+                };
+                if verifier.verify(&tx.proof, &signals).is_err() {
+                    warn!(
+                        zone_id = self.zone_id,
+                        block_hash = %hex::encode(&proposal.block_hash[..8]),
+                        tx_index = i,
+                        "rejecting proposal: spend proof verification failed"
+                    );
+                    return false;
+                }
+            }
+        }
+
+        for (i, tx) in proposal.transactions.iter().enumerate() {
+            if self.nullifier_set.contains(&tx.nullifier) {
+                warn!(
+                    zone_id = self.zone_id,
+                    block_hash = %hex::encode(&proposal.block_hash[..8]),
+                    tx_index = i,
+                    nullifier = %hex::encode(&tx.nullifier.0[..8]),
+                    "rejecting proposal: nullifier already spent"
+                );
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Insert nullifiers from a finalized block into the persistent set.
+    pub(crate) fn persist_finalized_nullifiers(&mut self, block_hash: &[u8; 32]) {
+        if let Some((_, nullifiers)) = self.block_nullifiers.get(block_hash) {
+            for n in nullifiers {
+                if let Err(e) = self.nullifier_set.insert(n.clone()) {
+                    warn!(
+                        zone_id = self.zone_id,
+                        error = %e,
+                        "failed to persist nullifier"
+                    );
+                }
+            }
+        }
+    }
+
     /// Publish an action, then self-certify if it's a vote (leader self-vote path).
     pub(crate) fn publish_and_self_certify(&mut self, action: ConsensusAction) {
         publish_action(
@@ -245,6 +367,12 @@ impl ZoneTaskState {
             let Some(ref mut eng) = self.engine else { return };
             if let Some(cert_action) = eng.receive_vote(vote) {
                 if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
+                    persist_nullifiers_inline(
+                        &cert.block_hash,
+                        &self.block_nullifiers,
+                        &mut self.nullifier_set,
+                        self.zone_id,
+                    );
                     apply_certificate_locally(
                         cert,
                         &self.zone_head_store,

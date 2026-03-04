@@ -5,6 +5,7 @@
 //! 4. Rotation continuity
 //! 5. Invalid-proof containment
 
+use ed25519_dalek::{Signer, SigningKey};
 use grid_programs_zephyr::*;
 use grid_services_zephyr::committee::sample_committee;
 use grid_services_zephyr::config::ZephyrConfig;
@@ -14,18 +15,39 @@ use grid_services_zephyr::mempool::Mempool;
 use grid_services_zephyr::routing::zone_for_nullifier;
 use grid_services_zephyr::storage::ZoneHead;
 
-fn make_validators(n: usize) -> Vec<ValidatorInfo> {
+fn make_keys(n: usize) -> Vec<SigningKey> {
     (0..n)
         .map(|i| {
-            let mut id = [0u8; 32];
-            id[0] = i as u8;
+            let mut seed = [0u8; 32];
+            seed[0] = i as u8;
+            SigningKey::from_bytes(&seed)
+        })
+        .collect()
+}
+
+fn make_validators_from_keys(keys: &[SigningKey]) -> Vec<ValidatorInfo> {
+    keys.iter()
+        .enumerate()
+        .map(|(i, sk)| {
+            let pk = sk.verifying_key().to_bytes();
             ValidatorInfo {
-                validator_id: id,
-                pubkey: id,
+                validator_id: pk,
+                pubkey: pk,
                 p2p_endpoint: format!("/ip4/127.0.0.1/tcp/{}", 4000 + i),
             }
         })
         .collect()
+}
+
+fn find_key<'a>(keys: &'a [SigningKey], validator_id: &[u8; 32]) -> &'a SigningKey {
+    keys.iter()
+        .find(|k| k.verifying_key().to_bytes() == *validator_id)
+        .expect("signing key not found for validator_id")
+}
+
+fn make_sign_fn(key: &SigningKey) -> impl FnOnce(&[u8]) -> Vec<u8> {
+    let key = key.clone();
+    move |data: &[u8]| key.sign(data).to_bytes().to_vec()
 }
 
 fn test_config(total_zones: u32) -> ZephyrConfig {
@@ -46,10 +68,6 @@ fn dummy_spend(nullifier_byte: u8) -> SpendTransaction {
         proof: vec![],
         public_signals: vec![],
     }
-}
-
-fn identity_sign(data: &[u8]) -> Vec<u8> {
-    data.to_vec()
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +105,8 @@ fn criterion_1_routing_determinism() {
 
 #[test]
 fn criterion_2_parallel_finality() {
-    let validators = make_validators(5);
+    let keys = make_keys(5);
+    let validators = make_validators_from_keys(&keys);
     let config = test_config(8);
     let seed = [0u8; 32];
 
@@ -121,11 +140,17 @@ fn criterion_2_parallel_finality() {
         1,
     );
 
-    let block_a = match consensus_a.propose(vec![spend_a], identity_sign).unwrap() {
+    let block_a = match consensus_a
+        .propose(vec![spend_a], make_sign_fn(find_key(&keys, &leader_a)))
+        .unwrap()
+    {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
-    let block_b = match consensus_b.propose(vec![spend_b], identity_sign).unwrap() {
+    let block_b = match consensus_b
+        .propose(vec![spend_b], make_sign_fn(find_key(&keys, &leader_b)))
+        .unwrap()
+    {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
@@ -134,12 +159,13 @@ fn criterion_2_parallel_finality() {
     let mut cert_b = None;
 
     for voter in &committee_a[..2] {
+        let voter_key = find_key(&keys, &voter.validator_id);
         let vote = BlockVote {
             zone_id: zone_a,
             epoch: 0,
             block_hash: block_a.block_hash,
             voter_id: voter.validator_id,
-            signature: block_a.block_hash.to_vec(),
+            signature: voter_key.sign(&block_a.block_hash).to_bytes().to_vec(),
         };
         if let Some(ConsensusAction::BroadcastCertificate(c)) = consensus_a.receive_vote(vote) {
             cert_a = Some(c);
@@ -147,12 +173,13 @@ fn criterion_2_parallel_finality() {
     }
 
     for voter in &committee_b[..2] {
+        let voter_key = find_key(&keys, &voter.validator_id);
         let vote = BlockVote {
             zone_id: zone_b,
             epoch: 0,
             block_hash: block_b.block_hash,
             voter_id: voter.validator_id,
-            signature: block_b.block_hash.to_vec(),
+            signature: voter_key.sign(&block_b.block_hash).to_bytes().to_vec(),
         };
         if let Some(ConsensusAction::BroadcastCertificate(c)) = consensus_b.receive_vote(vote) {
             cert_b = Some(c);
@@ -176,6 +203,8 @@ fn criterion_2_parallel_finality() {
 
 #[test]
 fn criterion_3_double_spend_rejection() {
+    let keys = make_keys(5);
+    let validators = make_validators_from_keys(&keys);
     let config = test_config(8);
 
     let spend1 = dummy_spend(0xDD);
@@ -195,7 +224,6 @@ fn criterion_3_double_spend_rejection() {
     );
     assert_eq!(mempool.len(), 1, "only one spend should be in mempool");
 
-    let validators = make_validators(5);
     let seed = [0u8; 32];
     let committee = sample_committee(&seed, zone, &validators, config.committee_size);
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
@@ -211,7 +239,10 @@ fn criterion_3_double_spend_rejection() {
         0,
     );
 
-    let block = match consensus.propose(spends, identity_sign).unwrap() {
+    let block = match consensus
+        .propose(spends, make_sign_fn(find_key(&keys, &leader_id)))
+        .unwrap()
+    {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };
@@ -229,7 +260,8 @@ fn criterion_3_double_spend_rejection() {
 
 #[test]
 fn criterion_4_rotation_continuity() {
-    let validators = make_validators(10);
+    let keys = make_keys(10);
+    let validators = make_validators_from_keys(&keys);
     let config = test_config(16);
 
     let mut epoch_mgr = EpochManager::new(
@@ -257,7 +289,10 @@ fn criterion_4_rotation_continuity() {
     );
 
     let block_e0 = match consensus_e0
-        .propose(vec![dummy_spend(0x01)], identity_sign)
+        .propose(
+            vec![dummy_spend(0x01)],
+            make_sign_fn(find_key(&keys, &leader_e0)),
+        )
         .unwrap()
     {
         ConsensusAction::BroadcastProposal(p) => p,
@@ -265,14 +300,17 @@ fn criterion_4_rotation_continuity() {
     };
 
     for voter in &committee_e0[..2] {
+        let voter_key = find_key(&keys, &voter.validator_id);
         let vote = BlockVote {
             zone_id: test_zone,
             epoch: 0,
             block_hash: block_e0.block_hash,
             voter_id: voter.validator_id,
-            signature: block_e0.block_hash.to_vec(),
+            signature: voter_key.sign(&block_e0.block_hash).to_bytes().to_vec(),
         };
-        if let Some(ConsensusAction::BroadcastCertificate(cert)) = consensus_e0.receive_vote(vote) {
+        if let Some(ConsensusAction::BroadcastCertificate(cert)) =
+            consensus_e0.receive_vote(vote)
+        {
             zone_heads.set(test_zone, cert.block_hash);
         }
     }
@@ -295,7 +333,10 @@ fn criterion_4_rotation_continuity() {
     );
 
     let block_e1 = match consensus_e1
-        .propose(vec![dummy_spend(0x02)], identity_sign)
+        .propose(
+            vec![dummy_spend(0x02)],
+            make_sign_fn(find_key(&keys, &leader_e1)),
+        )
         .unwrap()
     {
         ConsensusAction::BroadcastProposal(p) => p,
@@ -307,16 +348,20 @@ fn criterion_4_rotation_continuity() {
         "epoch 1 block must reference epoch 0's zone head"
     );
 
+    let voter_id_e1 = committee_e1[1].validator_id;
     let mut voter_e1 = ZoneConsensus::new(
         test_zone,
         1,
         committee_e1.clone(),
-        committee_e1[1].validator_id,
+        voter_id_e1,
         head_after_e0,
         config,
         1,
     );
-    let vote_action = voter_e1.vote_on_proposal(&block_e1, identity_sign);
+    let vote_action = voter_e1.vote_on_proposal(
+        &block_e1,
+        make_sign_fn(find_key(&keys, &voter_id_e1)),
+    );
     assert!(
         vote_action.is_some(),
         "validator with correct parent_hash should accept the proposal"
@@ -330,6 +375,8 @@ fn criterion_4_rotation_continuity() {
 
 #[test]
 fn criterion_5_invalid_proof_containment() {
+    let keys = make_keys(5);
+    let validators = make_validators_from_keys(&keys);
     let config = test_config(8);
     let mut mempool = Mempool::new(0, 100);
 
@@ -354,7 +401,6 @@ fn criterion_5_invalid_proof_containment() {
 
     assert_eq!(mempool.len(), 1, "only proof-verified spends enter mempool");
 
-    let validators = make_validators(5);
     let seed = [0u8; 32];
     let committee = sample_committee(&seed, 0, &validators, config.committee_size);
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
@@ -362,7 +408,10 @@ fn criterion_5_invalid_proof_containment() {
     let spends = mempool.drain_proposal(64);
     let mut consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config, 0);
 
-    let block = match consensus.propose(spends, identity_sign).unwrap() {
+    let block = match consensus
+        .propose(spends, make_sign_fn(find_key(&keys, &leader_id)))
+        .unwrap()
+    {
         ConsensusAction::BroadcastProposal(p) => p,
         _ => panic!("expected proposal"),
     };

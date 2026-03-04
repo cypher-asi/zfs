@@ -180,6 +180,7 @@ impl ZoneTaskState {
         }
         let applied = self.pending_certs.drain_applicable(eng);
         for pc in &applied {
+            self.persist_finalized_nullifiers(&pc.block_hash);
             apply_certificate_locally(
                 pc,
                 &self.zone_head_store,

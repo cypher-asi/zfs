@@ -65,6 +65,7 @@ pub(crate) async fn launch_network(
         initial_randomness: [0u8; 32],
         validators: validators.clone(),
         self_validate: false,
+        skip_proof_verification: true,
     };
 
     let zephyr_json =

@@ -49,6 +49,11 @@ pub struct ZephyrConfig {
     /// identity. The validator list is auto-populated on start.
     #[serde(default)]
     pub self_validate: bool,
+    /// When true, Groth16 spend-proof verification is skipped for all
+    /// transactions.  Useful for load testing with dummy proofs.
+    /// Production deployments should set this to `false`.
+    #[serde(default = "default_skip_proof_verification")]
+    pub skip_proof_verification: bool,
 }
 
 fn default_total_zones() -> u32 {
@@ -75,6 +80,9 @@ fn default_round_timeout_ticks() -> u32 {
 fn default_max_pending_certs() -> usize {
     64
 }
+fn default_skip_proof_verification() -> bool {
+    true
+}
 
 impl Default for ZephyrConfig {
     fn default() -> Self {
@@ -90,6 +98,7 @@ impl Default for ZephyrConfig {
             initial_randomness: [0u8; 32],
             validators: vec![],
             self_validate: false,
+            skip_proof_verification: default_skip_proof_verification(),
         }
     }
 }

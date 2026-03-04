@@ -1,3 +1,4 @@
+use ed25519_dalek::{Signer, SigningKey};
 use grid_programs_zephyr::ValidatorInfo;
 
 use super::engine::ConsensusAction;
@@ -10,6 +11,7 @@ pub struct TestNode {
     pub pending: PendingCertBuffer,
     pub outbox: Vec<ConsensusAction>,
     pub connected: bool,
+    pub signing_key: SigningKey,
 }
 
 pub struct TestNetwork {
@@ -17,19 +19,32 @@ pub struct TestNetwork {
     round_timeout_ticks: u32,
 }
 
-fn identity_sign(data: &[u8]) -> Vec<u8> {
-    data.to_vec()
+fn make_keys(n: usize) -> Vec<SigningKey> {
+    (0..n)
+        .map(|i| {
+            let mut seed = [0u8; 32];
+            seed[0] = i as u8;
+            SigningKey::from_bytes(&seed)
+        })
+        .collect()
+}
+
+fn make_sign_fn(key: &SigningKey) -> impl FnOnce(&[u8]) -> Vec<u8> {
+    let key = key.clone();
+    move |data: &[u8]| key.sign(data).to_bytes().to_vec()
 }
 
 impl TestNetwork {
     pub fn new(n: usize, zone_id: u32) -> Self {
-        let committee: Vec<ValidatorInfo> = (0..n)
-            .map(|i| {
-                let mut id = [0u8; 32];
-                id[0] = i as u8;
+        let keys = make_keys(n);
+        let committee: Vec<ValidatorInfo> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, sk)| {
+                let pk = sk.verifying_key().to_bytes();
                 ValidatorInfo {
-                    validator_id: id,
-                    pubkey: id,
+                    validator_id: pk,
+                    pubkey: pk,
                     p2p_endpoint: format!("/ip4/127.0.0.1/tcp/{}", 4000 + i),
                 }
             })
@@ -62,6 +77,7 @@ impl TestNetwork {
                     pending: PendingCertBuffer::new(64),
                     outbox: Vec::new(),
                     connected: true,
+                    signing_key: keys[i].clone(),
                 }
             })
             .collect();
@@ -80,7 +96,8 @@ impl TestNetwork {
                 node.engine.timeout_round();
             }
             if node.engine.is_leader() && !node.engine.has_pending_proposal() {
-                if let Some(action) = node.engine.propose(vec![], identity_sign) {
+                if let Some(action) = node.engine.propose(vec![], make_sign_fn(&node.signing_key))
+                {
                     node.outbox.push(action);
                 }
             }
@@ -110,7 +127,7 @@ impl TestNetwork {
                 }
                 if let Some(vote) =
                     node.engine
-                        .vote_on_proposal(proposal, identity_sign)
+                        .vote_on_proposal(proposal, make_sign_fn(&node.signing_key))
                 {
                     node.outbox.push(vote);
                 }

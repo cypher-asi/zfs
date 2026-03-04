@@ -7,6 +7,7 @@ use super::block::{build_block, BlockParams};
 use super::leader::leader_for_round;
 use super::vote::CertificateBuilder;
 use crate::config::ZephyrConfig;
+use crate::crypto::verify_ed25519;
 
 /// Per-zone consensus state machine.
 ///
@@ -288,19 +289,36 @@ impl ZoneConsensus {
             );
             return Err("fork recovery: backward jump");
         }
-        if !self
+        let proposer_info = match self
             .committee
             .iter()
-            .any(|v| v.validator_id == proposal.header.proposer_id)
+            .find(|v| v.validator_id == proposal.header.proposer_id)
         {
+            Some(info) => info,
+            None => {
+                warn!(
+                    zone_id = self.zone_id,
+                    node_id = self.node_id,
+                    round = self.round,
+                    proposer = %hex::encode(&proposal.header.proposer_id[..8]),
+                    "rejecting proposal: proposer not in committee"
+                );
+                return Err("proposer not in committee");
+            }
+        };
+        if !verify_ed25519(
+            &proposer_info.pubkey,
+            &proposal.block_hash,
+            &proposal.proposer_sig,
+        ) {
             warn!(
                 zone_id = self.zone_id,
                 node_id = self.node_id,
                 round = self.round,
                 proposer = %hex::encode(&proposal.header.proposer_id[..8]),
-                "rejecting proposal: proposer not in committee"
+                "rejecting proposal: invalid proposer signature"
             );
-            return Err("proposer not in committee");
+            return Err("invalid proposer signature");
         }
         Ok(())
     }
@@ -364,18 +382,32 @@ impl ZoneConsensus {
 
     /// Process an incoming vote. Returns a certificate action if quorum is reached.
     pub fn receive_vote(&mut self, vote: BlockVote) -> Option<ConsensusAction> {
-        if !self
+        let voter_info = match self
             .committee
             .iter()
-            .any(|v| v.validator_id == vote.voter_id)
+            .find(|v| v.validator_id == vote.voter_id)
         {
+            Some(info) => info,
+            None => {
+                warn!(
+                    zone_id = self.zone_id,
+                    node_id = self.node_id,
+                    round = self.round,
+                    voter = %hex::encode(&vote.voter_id[..8]),
+                    block_hash = %hex::encode(&vote.block_hash[..8]),
+                    "dropping vote: voter not in committee"
+                );
+                return None;
+            }
+        };
+        if !verify_ed25519(&voter_info.pubkey, &vote.block_hash, &vote.signature) {
             warn!(
                 zone_id = self.zone_id,
                 node_id = self.node_id,
                 round = self.round,
                 voter = %hex::encode(&vote.voter_id[..8]),
                 block_hash = %hex::encode(&vote.block_hash[..8]),
-                "dropping vote: voter not in committee"
+                "dropping vote: invalid signature"
             );
             return None;
         }
@@ -486,6 +518,31 @@ impl ZoneConsensus {
                 cert_epoch = cert.epoch,
                 local_epoch = self.epoch,
                 "skipping certificate: epoch too old"
+            );
+            return false;
+        }
+
+        let valid_sigs = cert
+            .signatures
+            .iter()
+            .filter(|cs| {
+                self.committee
+                    .iter()
+                    .find(|v| v.validator_id == cs.validator_id)
+                    .map_or(false, |vi| {
+                        verify_ed25519(&vi.pubkey, &cert.block_hash, &cs.signature)
+                    })
+            })
+            .count();
+        if valid_sigs < self.config.quorum_threshold {
+            warn!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                valid_sigs,
+                quorum = self.config.quorum_threshold,
+                cert_block = %hex::encode(&cert.block_hash[..8]),
+                "rejecting certificate: insufficient valid signatures"
             );
             return false;
         }
@@ -618,8 +675,8 @@ impl ZoneConsensus {
     fn advance_round_inner(&mut self, new_parent_hash: [u8; 32], is_genuine_progress: bool) {
         let old_height = self.height;
         self.parent_hash = new_parent_hash;
-        self.round += 1;
         self.height += 1;
+        self.round = self.height;
         self.pending_proposal = None;
         self.rebroadcast_count = 0;
         self.ticks_in_round = 0;
