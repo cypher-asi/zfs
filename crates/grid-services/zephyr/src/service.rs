@@ -698,6 +698,7 @@ async fn zone_consensus_task(
             my_validator_id,
             prev_head,
             config.clone(),
+            zone_id as usize,
         ));
     }
 
@@ -1109,6 +1110,7 @@ async fn zone_consensus_task(
                                     my_validator_id,
                                     prev_head,
                                     config.clone(),
+                                    zone_id as usize,
                                 ));
                                 mempool.add_zone(zone_id, 65_536);
                                 pending_certs.retain(|c| c.epoch + 1 >= current_epoch);

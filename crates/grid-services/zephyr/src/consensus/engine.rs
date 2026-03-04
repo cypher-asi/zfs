@@ -38,6 +38,7 @@ pub struct ZoneConsensus {
     warmup_ticks: u32,
     force_adopt_next_cert: bool,
     fork_recovery_used: bool,
+    node_id: usize,
 }
 
 /// Actions the consensus engine requests the caller to perform.
@@ -56,7 +57,9 @@ impl ZoneConsensus {
         my_validator_id: [u8; 32],
         parent_hash: [u8; 32],
         config: ZephyrConfig,
+        node_id: usize,
     ) -> Self {
+        let force_adopt_at_genesis = parent_hash == [0u8; 32];
         Self {
             zone_id,
             epoch,
@@ -75,8 +78,9 @@ impl ZoneConsensus {
             proposal_seen: false,
             voted_block_hash: None,
             warmup_ticks: WARMUP_TICKS,
-            force_adopt_next_cert: false,
+            force_adopt_next_cert: force_adopt_at_genesis,
             fork_recovery_used: false,
+            node_id,
         }
     }
 
@@ -94,6 +98,10 @@ impl ZoneConsensus {
 
     pub fn height(&self) -> u64 {
         self.height
+    }
+
+    pub fn node_id(&self) -> usize {
+        self.node_id
     }
 
     pub fn is_leader(&self) -> bool {
@@ -167,6 +175,7 @@ impl ZoneConsensus {
             if self.rebroadcast_count >= MAX_PROPOSAL_REBROADCASTS {
                 debug!(
                     zone_id = self.zone_id,
+                    node_id = self.node_id,
                     round = self.round,
                     block_hash = %hex::encode(&block.block_hash[..8]),
                     votes = self.cert_builder.vote_count(&block.block_hash),
@@ -209,6 +218,74 @@ impl ZoneConsensus {
         self.pending_proposal.is_some()
     }
 
+    /// Check all guard conditions on a proposal. Returns `Ok(())` if the
+    /// proposal is valid for voting, or `Err(reason)` explaining rejection.
+    fn validate_proposal(&self, proposal: &Block) -> Result<(), &'static str> {
+        if self.proposal_seen {
+            debug!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                block_hash = %hex::encode(&proposal.block_hash[..8]),
+                "ignoring proposal: already voted this round"
+            );
+            return Err("already voted");
+        }
+        if proposal.header.zone_id != self.zone_id || proposal.header.epoch != self.epoch {
+            warn!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                proposal_zone = proposal.header.zone_id,
+                proposal_epoch = proposal.header.epoch,
+                local_epoch = self.epoch,
+                "rejecting proposal: zone/epoch mismatch"
+            );
+            return Err("zone/epoch mismatch");
+        }
+        if proposal.header.parent_hash != self.parent_hash && !self.force_adopt_next_cert {
+            debug!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
+                local_parent = %hex::encode(&self.parent_hash[..8]),
+                height = self.height,
+                "rejecting proposal: parent_hash mismatch (chain divergence)"
+            );
+            return Err("parent_hash mismatch");
+        }
+        if proposal.header.parent_hash != self.parent_hash
+            && self.force_adopt_next_cert
+            && proposal.header.height < self.height
+        {
+            warn!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                proposal_height = proposal.header.height,
+                local_height = self.height,
+                "fork recovery: rejecting proposal that would jump backward"
+            );
+            return Err("fork recovery: backward jump");
+        }
+        if !self
+            .committee
+            .iter()
+            .any(|v| v.validator_id == proposal.header.proposer_id)
+        {
+            warn!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                proposer = %hex::encode(&proposal.header.proposer_id[..8]),
+                "rejecting proposal: proposer not in committee"
+            );
+            return Err("proposer not in committee");
+        }
+        Ok(())
+    }
+
     /// Validate a proposal and produce a vote if it checks out.
     ///
     /// The caller is responsible for:
@@ -220,76 +297,23 @@ impl ZoneConsensus {
         proposal: &Block,
         sign_fn: impl FnOnce(&[u8]) -> Vec<u8>,
     ) -> Option<ConsensusAction> {
-        if self.proposal_seen {
-            debug!(
-                zone_id = self.zone_id,
-                round = self.round,
-                block_hash = %hex::encode(&proposal.block_hash[..8]),
-                "ignoring proposal: already voted this round"
-            );
-            return None;
-        }
-        if proposal.header.zone_id != self.zone_id || proposal.header.epoch != self.epoch {
+        self.validate_proposal(proposal).ok()?;
+
+        if proposal.header.parent_hash != self.parent_hash && self.force_adopt_next_cert {
             warn!(
                 zone_id = self.zone_id,
+                node_id = self.node_id,
                 round = self.round,
-                proposal_zone = proposal.header.zone_id,
-                proposal_epoch = proposal.header.epoch,
-                local_epoch = self.epoch,
-                "rejecting proposal: zone/epoch mismatch"
+                proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
+                local_parent = %hex::encode(&self.parent_hash[..8]),
+                old_height = self.height,
+                new_height = proposal.header.height,
+                "fork recovery: adopting proposal's chain tip"
             );
-            return None;
-        }
-        if proposal.header.parent_hash != self.parent_hash {
-            if self.force_adopt_next_cert {
-                if proposal.header.height < self.height {
-                    warn!(
-                        zone_id = self.zone_id,
-                        round = self.round,
-                        proposal_height = proposal.header.height,
-                        local_height = self.height,
-                        proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
-                        "fork recovery: rejecting proposal that would jump backward"
-                    );
-                    return None;
-                }
-                warn!(
-                    zone_id = self.zone_id,
-                    round = self.round,
-                    proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
-                    local_parent = %hex::encode(&self.parent_hash[..8]),
-                    old_height = self.height,
-                    new_height = proposal.header.height,
-                    "fork recovery: adopting proposal's chain tip"
-                );
-                self.parent_hash = proposal.header.parent_hash;
-                self.height = proposal.header.height;
-                self.force_adopt_next_cert = false;
-                self.fork_recovery_used = true;
-            } else {
-                warn!(
-                    zone_id = self.zone_id,
-                    round = self.round,
-                    proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
-                    local_parent = %hex::encode(&self.parent_hash[..8]),
-                    height = self.height,
-                    "rejecting proposal: parent_hash mismatch (chain divergence)"
-                );
-                return None;
-            }
-        }
-        if !self
-            .committee
-            .iter()
-            .any(|v| v.validator_id == proposal.header.proposer_id)
-        {
-            warn!(
-                zone_id = self.zone_id,
-                round = self.round,
-                proposer = %hex::encode(&proposal.header.proposer_id[..8]),
-                "rejecting proposal: proposer not in committee"
-            );
-            return None;
+            self.parent_hash = proposal.header.parent_hash;
+            self.height = proposal.header.height;
+            self.force_adopt_next_cert = false;
+            self.fork_recovery_used = true;
         }
 
         self.proposal_seen = true;
@@ -308,6 +332,7 @@ impl ZoneConsensus {
 
         info!(
             zone_id = self.zone_id,
+            node_id = self.node_id,
             round = self.round,
             block_hash = %hex::encode(&proposal.block_hash[..8]),
             proposer = %hex::encode(&proposal.header.proposer_id[..8]),
@@ -327,6 +352,7 @@ impl ZoneConsensus {
         {
             warn!(
                 zone_id = self.zone_id,
+                node_id = self.node_id,
                 round = self.round,
                 voter = %hex::encode(&vote.voter_id[..8]),
                 block_hash = %hex::encode(&vote.block_hash[..8]),
@@ -339,6 +365,7 @@ impl ZoneConsensus {
             if vote.block_hash != h {
                 debug!(
                     zone_id = self.zone_id,
+                    node_id = self.node_id,
                     round = self.round,
                     voter = %hex::encode(&vote.voter_id[..8]),
                     vote_block = %hex::encode(&vote.block_hash[..8]),
@@ -357,6 +384,7 @@ impl ZoneConsensus {
             if cert.block_hash == self.parent_hash {
                 debug!(
                     zone_id = self.zone_id,
+                    node_id = self.node_id,
                     round = self.round,
                     block_hash = %hex::encode(&cert.block_hash[..8]),
                     "ignoring quorum cert: block already applied (double-advancement guard)"
@@ -365,6 +393,7 @@ impl ZoneConsensus {
             }
             info!(
                 zone_id = self.zone_id,
+                node_id = self.node_id,
                 round = self.round,
                 height = self.height,
                 block_hash = %hex::encode(&cert.block_hash[..8]),
@@ -376,6 +405,44 @@ impl ZoneConsensus {
         } else {
             None
         }
+    }
+
+    /// Try to adopt a mismatched certificate via fork recovery.
+    /// Returns `Some(true)` if adopted, `Some(false)` if rejected,
+    /// `None` if fork recovery is not armed.
+    fn try_fork_recovery_cert(&mut self, cert: &FinalityCertificate) -> Option<bool> {
+        if !self.force_adopt_next_cert {
+            return None;
+        }
+        if cert.height + 1 < self.height {
+            warn!(
+                zone_id = self.zone_id,
+                node_id = self.node_id,
+                round = self.round,
+                cert_height = cert.height,
+                local_height = self.height,
+                cert_block = %hex::encode(&cert.block_hash[..8]),
+                "fork recovery: rejecting ancient cert (would jump backward)"
+            );
+            return Some(false);
+        }
+        warn!(
+            zone_id = self.zone_id,
+            node_id = self.node_id,
+            round = self.round,
+            cert_parent = %hex::encode(&cert.parent_hash[..8]),
+            local_parent = %hex::encode(&self.parent_hash[..8]),
+            cert_block = %hex::encode(&cert.block_hash[..8]),
+            cert_height = cert.height,
+            local_height = self.height,
+            "fork recovery: adopting cert chain despite parent_hash mismatch"
+        );
+        self.parent_hash = cert.parent_hash;
+        self.height = cert.height;
+        self.force_adopt_next_cert = false;
+        self.fork_recovery_used = true;
+        self.advance_round_inner(cert.block_hash, false);
+        Some(true)
     }
 
     /// Apply a received certificate (e.g. from the global topic).
@@ -390,8 +457,8 @@ impl ZoneConsensus {
         if cert.epoch != self.epoch && cert.epoch + 1 != self.epoch {
             debug!(
                 zone_id = self.zone_id,
+                node_id = self.node_id,
                 round = self.round,
-                cert_zone = cert.zone_id,
                 cert_epoch = cert.epoch,
                 local_epoch = self.epoch,
                 "skipping certificate: epoch too old"
@@ -402,37 +469,12 @@ impl ZoneConsensus {
         self.warmup_ticks = 0;
 
         if cert.parent_hash != self.parent_hash {
-            if self.force_adopt_next_cert {
-                if cert.height + 1 < self.height {
-                    warn!(
-                        zone_id = self.zone_id,
-                        round = self.round,
-                        cert_height = cert.height,
-                        local_height = self.height,
-                        cert_block = %hex::encode(&cert.block_hash[..8]),
-                        "fork recovery: rejecting ancient cert (would jump backward)"
-                    );
-                    return false;
-                }
-                warn!(
-                    zone_id = self.zone_id,
-                    round = self.round,
-                    cert_parent = %hex::encode(&cert.parent_hash[..8]),
-                    local_parent = %hex::encode(&self.parent_hash[..8]),
-                    cert_block = %hex::encode(&cert.block_hash[..8]),
-                    cert_height = cert.height,
-                    local_height = self.height,
-                    "fork recovery: adopting cert chain despite parent_hash mismatch"
-                );
-                self.parent_hash = cert.parent_hash;
-                self.height = cert.height;
-                self.force_adopt_next_cert = false;
-                self.fork_recovery_used = true;
-                self.advance_round_inner(cert.block_hash, false);
-                return true;
+            if let Some(adopted) = self.try_fork_recovery_cert(cert) {
+                return adopted;
             }
             debug!(
                 zone_id = self.zone_id,
+                node_id = self.node_id,
                 round = self.round,
                 cert_parent = %hex::encode(&cert.parent_hash[..8]),
                 local_parent = %hex::encode(&self.parent_hash[..8]),
@@ -549,6 +591,7 @@ impl ZoneConsensus {
     }
 
     fn advance_round_inner(&mut self, new_parent_hash: [u8; 32], is_genuine_progress: bool) {
+        let old_height = self.height;
         self.parent_hash = new_parent_hash;
         self.round += 1;
         self.height += 1;
@@ -565,6 +608,14 @@ impl ZoneConsensus {
         self.proposal_seen = false;
         self.voted_block_hash = None;
         self.cert_builder.clear_votes();
+        info!(
+            zone_id = self.zone_id,
+            node_id = self.node_id,
+            old_height,
+            new_height = self.height,
+            parent = %hex::encode(&new_parent_hash[..8]),
+            "height advanced"
+        );
     }
 }
 
@@ -604,7 +655,7 @@ mod tests {
     fn leader_can_propose() {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
-        let mut zc = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], test_config());
+        let mut zc = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], test_config(), 0);
 
         assert!(zc.is_leader());
         let action = zc.propose(vec![], identity_sign);
@@ -622,7 +673,7 @@ mod tests {
                 break;
             }
         }
-        let mut zc = ZoneConsensus::new(0, 0, committee, non_leader_id, [0; 32], test_config());
+        let mut zc = ZoneConsensus::new(0, 0, committee, non_leader_id, [0; 32], test_config(), 0);
         assert!(!zc.is_leader());
         assert!(zc.propose(vec![], identity_sign).is_none());
     }
@@ -631,7 +682,7 @@ mod tests {
     fn re_proposal_returns_same_block() {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
-        let mut zc = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], test_config());
+        let mut zc = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], test_config(), 0);
 
         let first = zc.propose(vec![], identity_sign).unwrap();
         let second = zc.propose(vec![], identity_sign).unwrap();
@@ -651,7 +702,7 @@ mod tests {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
 
         let action = zc.propose(vec![], identity_sign).unwrap();
         let block = match action {
@@ -666,6 +717,7 @@ mod tests {
             committee[1].validator_id,
             [0; 32],
             test_config(),
+            1,
         );
         let vote_action = voter.vote_on_proposal(&block, identity_sign);
         assert!(vote_action.is_some());
@@ -676,7 +728,7 @@ mod tests {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
 
         let action = zc.propose(vec![], identity_sign).unwrap();
         let block = match action {
@@ -691,6 +743,7 @@ mod tests {
             committee[1].validator_id,
             [0xFF; 32],
             test_config(),
+            1,
         );
         assert!(voter.vote_on_proposal(&block, identity_sign).is_none());
     }
@@ -700,7 +753,7 @@ mod tests {
         let committee = make_committee(3);
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
 
         let block = match zc.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(p) => p,
@@ -708,7 +761,7 @@ mod tests {
         };
 
         let mut collector =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
 
         for voter in &committee[..2] {
             let vote = BlockVote {
@@ -734,7 +787,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut leader =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
         let block_a = match leader.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(b) => b,
             _ => panic!("expected proposal"),
@@ -747,6 +800,7 @@ mod tests {
             committee[1].validator_id,
             [0; 32],
             test_config(),
+            1,
         );
 
         let first_vote = voter.vote_on_proposal(&block_a, identity_sign);
@@ -766,7 +820,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut leader =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
         let block = match leader.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(b) => b,
             _ => panic!("expected proposal"),
@@ -779,6 +833,7 @@ mod tests {
             committee[1].validator_id,
             [0; 32],
             test_config(),
+            1,
         );
 
         voter.vote_on_proposal(&block, identity_sign);
@@ -794,7 +849,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
         let block = match zc.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(b) => b,
             _ => panic!("expected proposal"),
@@ -813,7 +868,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         zc.advance_to_epoch(1, committee.clone());
         assert_eq!(zc.epoch(), 1);
@@ -839,7 +894,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         let cert = FinalityCertificate {
             zone_id: 0,
@@ -881,7 +936,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut leader =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xBB; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xBB; 32], test_config(), 0);
         let block = match leader.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(b) => b,
             _ => panic!("expected proposal"),
@@ -895,6 +950,7 @@ mod tests {
             committee[1].validator_id,
             [0xAA; 32], // different chain tip
             test_config(),
+            1,
         );
 
         assert!(
@@ -926,7 +982,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0; 32], test_config(), 0);
 
         zc.timeout_round();
         zc.timeout_round();
@@ -947,7 +1003,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         for _ in 0..5 {
             zc.timeout_round();
@@ -1001,7 +1057,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         for _ in 0..4 {
             zc.timeout_round();
@@ -1040,7 +1096,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         let normal_cert = FinalityCertificate {
             zone_id: 0,
@@ -1078,7 +1134,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut zc =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xAA; 32], test_config(), 0);
 
         for i in 0..5u8 {
             let cert = FinalityCertificate {
@@ -1117,7 +1173,7 @@ mod tests {
         let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
         let mut leader =
-            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xBB; 32], test_config());
+            ZoneConsensus::new(0, 0, committee.clone(), leader_id, [0xBB; 32], test_config(), 0);
         let block = match leader.propose(vec![], identity_sign).unwrap() {
             ConsensusAction::BroadcastProposal(b) => b,
             _ => panic!("expected proposal"),
@@ -1130,6 +1186,7 @@ mod tests {
             committee[1].validator_id,
             [0xAA; 32],
             test_config(),
+            1,
         );
 
         let normal_cert = FinalityCertificate {

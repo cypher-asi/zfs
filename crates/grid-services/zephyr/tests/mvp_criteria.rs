@@ -109,6 +109,7 @@ fn criterion_2_parallel_finality() {
         leader_a,
         [0; 32],
         config.clone(),
+        0,
     );
     let mut consensus_b = ZoneConsensus::new(
         zone_b,
@@ -117,6 +118,7 @@ fn criterion_2_parallel_finality() {
         leader_b,
         [0; 32],
         config.clone(),
+        1,
     );
 
     let block_a = match consensus_a.propose(vec![spend_a], identity_sign).unwrap() {
@@ -206,6 +208,7 @@ fn criterion_3_double_spend_rejection() {
         leader_id,
         [0; 32],
         config.clone(),
+        0,
     );
 
     let block = match consensus.propose(spends, identity_sign).unwrap() {
@@ -250,6 +253,7 @@ fn criterion_4_rotation_continuity() {
         leader_e0,
         [0; 32],
         config.clone(),
+        0,
     );
 
     let block_e0 = match consensus_e0
@@ -287,6 +291,7 @@ fn criterion_4_rotation_continuity() {
         leader_e1,
         head_after_e0,
         config.clone(),
+        0,
     );
 
     let block_e1 = match consensus_e1
@@ -309,6 +314,7 @@ fn criterion_4_rotation_continuity() {
         committee_e1[1].validator_id,
         head_after_e0,
         config,
+        1,
     );
     let vote_action = voter_e1.vote_on_proposal(&block_e1, identity_sign);
     assert!(
@@ -354,7 +360,7 @@ fn criterion_5_invalid_proof_containment() {
     let leader_id = leader_for_round(&committee, 0, 0).validator_id;
 
     let spends = mempool.drain_proposal(64);
-    let mut consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config);
+    let mut consensus = ZoneConsensus::new(0, 0, committee, leader_id, [0; 32], config, 0);
 
     let block = match consensus.propose(spends, identity_sign).unwrap() {
         ConsensusAction::BroadcastProposal(p) => p,
