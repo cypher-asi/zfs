@@ -10,26 +10,22 @@ use axum::{Json, Router};
 use dashmap::DashMap;
 use grid_core::ProgramId;
 use grid_programs_zephyr::{
-    Block, FinalityCertificate, Nullifier, ValidatorInfo, ZephyrConsensusDescriptor,
-    ZephyrConsensusMessage, ZephyrGlobalDescriptor, ZephyrGlobalMessage, ZephyrSpendDescriptor,
-    ZephyrValidatorDescriptor, ZephyrZoneDescriptor, ZephyrZoneMessage,
+    ValidatorInfo, ZephyrConsensusDescriptor, ZephyrConsensusMessage, ZephyrGlobalDescriptor,
+    ZephyrGlobalMessage, ZephyrSpendDescriptor, ZephyrValidatorDescriptor, ZephyrZoneDescriptor,
+    ZephyrZoneMessage,
 };
 use grid_service::{
     ConfigField, ConfigFieldType, OwnedProgram, RouteInfo, Service, ServiceContext,
-    ServiceDescriptor, ServiceError, ServiceGossipHandler, TopicCommand,
+    ServiceDescriptor, ServiceError, ServiceGossipHandler,
 };
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::committee::{my_assigned_zones, sample_committee};
+use crate::committee::my_assigned_zones;
 use crate::config::ZephyrConfig;
-use crate::consensus::{ConsensusAction, ZoneConsensus};
 use crate::epoch::EpochManager;
 use crate::gossip::ZephyrGossipHandler;
-use crate::publishing::{
-    apply_certificate_locally, cache_block_txs, cleanup_mempool_after_cert, publish_action,
-};
 use crate::shared_mempool::SharedMempool;
 
 /// Summary of a finalized block for the metrics / dashboard feed.
@@ -214,7 +210,7 @@ impl ZephyrService {
 }
 
 /// HMAC-SHA256 signing using the validator ID as key (sufficient for local testbed).
-fn hmac_sign(validator_id: &[u8; 32], data: &[u8]) -> Vec<u8> {
+pub(crate) fn hmac_sign(validator_id: &[u8; 32], data: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(validator_id);
     hasher.update(data);
@@ -404,25 +400,59 @@ impl Service for ZephyrService {
             let zt = self.zone_topic(zone_id);
             let ct = self.consensus_topic(zone_id);
 
-            tokio::spawn(zone_consensus_task(
+            let mut zone_state = crate::zone_task::ZoneTaskState {
                 zone_id,
-                is_assigned,
+                engine: None,
+                pending_certs: crate::consensus::PendingCertBuffer::new(
+                    config.max_pending_certs,
+                ),
+                block_tx_cache: HashMap::new(),
+                block_nullifiers: HashMap::new(),
+                deferred_cleanups: HashMap::new(),
+                last_buffered_proposal: None,
+                last_known_epoch: 0,
+                validators: validators.clone(),
                 my_validator_id,
-                validators.clone(),
-                config.clone(),
-                runtime.clone(),
-                cons_rx,
-                glob_rx,
-                publish_tx.clone(),
-                topic_tx.clone(),
-                zt,
-                ct,
-                global_topic_for_task.clone(),
-                shutdown.clone(),
-                epoch_mgr.clone(),
-                mempool.clone(),
-                zone_head_store.clone(),
-            ));
+                config: config.clone(),
+                publish_tx: publish_tx.clone(),
+                topic_tx: topic_tx.clone(),
+                zone_topic: zt,
+                consensus_topic: ct,
+                global_topic: global_topic_for_task.clone(),
+                zone_head_store: zone_head_store.clone(),
+                mempool: mempool.clone(),
+                runtime: runtime.clone(),
+                epoch_mgr: epoch_mgr.clone(),
+            };
+
+            if is_assigned {
+                let em = epoch_mgr.blocking_lock();
+                let committee = crate::committee::sample_committee(
+                    em.randomness_seed(),
+                    zone_id,
+                    &validators,
+                    config.committee_size,
+                );
+                let prev_head = zone_head_store
+                    .get(&zone_id)
+                    .map(|v| *v)
+                    .unwrap_or([0u8; 32]);
+                zone_state.engine = Some(crate::consensus::ZoneConsensus::new(
+                    zone_id,
+                    0,
+                    committee,
+                    my_validator_id,
+                    prev_head,
+                    config.clone(),
+                    zone_id as usize,
+                ));
+                drop(em);
+            }
+
+            let sd = shutdown.clone();
+            tokio::spawn(async move {
+                zone_state.run(cons_rx, glob_rx, sd).await;
+            });
         }
 
         // Spawn the dispatcher (fan-out from shared channels to per-zone channels)
@@ -582,7 +612,7 @@ async fn ingest_loop(
 
 /// Lightweight fan-out task: reads from the shared consensus and global
 /// channels and routes each message to the correct zone task's per-zone
-/// channel based on topic → zone_id mapping (consensus) or cert.zone_id
+/// channel based on topic â†’ zone_id mapping (consensus) or cert.zone_id
 /// (global certificates).
 async fn consensus_dispatcher(
     mut consensus_rx: mpsc::Receiver<(String, ZephyrConsensusMessage)>,
@@ -639,822 +669,6 @@ async fn consensus_dispatcher(
                     }
                     ZephyrGlobalMessage::EpochAnnounce(ann) => {
                         debug!(epoch = ann.epoch, "received epoch announcement");
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Independent consensus event loop for a single zone.
-///
-/// Each zone task owns its own round timer, consensus engine, and local
-/// caches (`block_tx_cache`, `block_nullifiers`, `deferred_cleanups`).
-/// Shared cross-zone state (`ZoneHead`, `EpochManager`) is protected by
-/// async mutexes with near-zero contention since each zone task only
-/// writes to its own zone_id entry.
-#[allow(clippy::too_many_arguments)]
-async fn zone_consensus_task(
-    zone_id: u32,
-    initially_assigned: bool,
-    my_validator_id: [u8; 32],
-    validators: Vec<ValidatorInfo>,
-    config: ZephyrConfig,
-    runtime: Arc<parking_lot::RwLock<ZephyrRuntime>>,
-    mut consensus_rx: mpsc::Receiver<ZephyrConsensusMessage>,
-    mut global_rx: mpsc::Receiver<ZephyrGlobalMessage>,
-    publish_tx: mpsc::Sender<(String, Vec<u8>)>,
-    topic_tx: mpsc::Sender<TopicCommand>,
-    zone_topic: String,
-    consensus_topic: String,
-    global_topic: String,
-    shutdown: tokio_util::sync::CancellationToken,
-    epoch_mgr: Arc<tokio::sync::Mutex<EpochManager>>,
-    mempool: SharedMempool,
-    zone_head_store: Arc<DashMap<u32, [u8; 32]>>,
-) {
-    let mut engine: Option<ZoneConsensus> = None;
-    let mut block_tx_cache: HashMap<[u8; 32], (u32, Vec<String>)> = HashMap::new();
-    let mut block_nullifiers: HashMap<[u8; 32], (u32, Vec<Nullifier>)> = HashMap::new();
-    let mut deferred_cleanups: HashMap<[u8; 32], u32> = HashMap::new();
-    let mut pending_certs: Vec<FinalityCertificate> = Vec::new();
-    let mut last_buffered_proposal: Option<Block> = None;
-    let mut last_known_epoch: u64 = 0;
-
-    if initially_assigned {
-        let em = epoch_mgr.lock().await;
-        let committee = sample_committee(
-            em.randomness_seed(),
-            zone_id,
-            &validators,
-            config.committee_size,
-        );
-        let prev_head = zone_head_store
-            .get(&zone_id)
-            .map(|v| *v)
-            .unwrap_or([0u8; 32]);
-        engine = Some(ZoneConsensus::new(
-            zone_id,
-            0,
-            committee,
-            my_validator_id,
-            prev_head,
-            config.clone(),
-            zone_id as usize,
-        ));
-    }
-
-    let round_interval = std::time::Duration::from_millis(config.round_interval_ms);
-    let mut round_timer = tokio::time::interval(round_interval);
-    round_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    let epoch_start = tokio::time::Instant::now();
-
-    loop {
-        tokio::select! {
-            _ = shutdown.cancelled() => {
-                debug!(zone_id, "zone consensus task shutting down");
-                break;
-            }
-
-            msg = consensus_rx.recv() => {
-                let Some(first) = msg else { break };
-
-                let mut batch = Vec::with_capacity(129);
-                batch.push(first);
-                while batch.len() < 128 {
-                    match consensus_rx.try_recv() {
-                        Ok(m) => batch.push(m),
-                        Err(_) => break,
-                    }
-                }
-
-                for cmsg in batch {
-                    match cmsg {
-                        ZephyrConsensusMessage::Proposal(proposal) => {
-                            info!(
-                                zone_id,
-                                proposer = %hex::encode(&proposal.header.proposer_id[..8]),
-                                block_hash = %hex::encode(&proposal.block_hash[..8]),
-                                tx_count = proposal.transactions.len(),
-                                height = proposal.header.height,
-                                parent_hash = %hex::encode(&proposal.header.parent_hash[..8]),
-                                "received proposal from network"
-                            );
-                            cache_block_txs(
-                                &mut block_tx_cache,
-                                &mut block_nullifiers,
-                                zone_id,
-                                &proposal,
-                            );
-                            if let Some(ref mut eng) = engine {
-                                let vid = my_validator_id;
-                                if let Some(action) =
-                                    eng.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data))
-                                {
-                                    eng.reset_timeout();
-                                    let _ = eng.take_fork_recovery_used();
-                                    publish_action(
-                                        &action,
-                                        &consensus_topic,
-                                        &global_topic,
-                                        &publish_tx,
-                                        &block_tx_cache,
-                                    );
-                                    if let ConsensusAction::BroadcastVote(vote) = action {
-                                        if let Some(cert_action) = eng.receive_vote(vote) {
-                                            if let ConsensusAction::BroadcastCertificate(
-                                                ref cert,
-                                            ) = cert_action
-                                            {
-                                                apply_certificate_locally(
-                                                cert,
-                                                &zone_head_store,
-                                                &mut block_tx_cache,
-                                                &runtime,
-                                            );
-                                            cleanup_mempool_after_cert(
-                                                cert,
-                                                &mempool,
-                                                &mut block_nullifiers,
-                                                &mut deferred_cleanups,
-                                            );
-                                            }
-                                            publish_action(
-                                                &cert_action,
-                                                &consensus_topic,
-                                                &global_topic,
-                                                &publish_tx,
-                                                &block_tx_cache,
-                                            );
-                                        }
-                                    }
-                                } else if proposal.header.parent_hash != *eng.parent_hash()
-                                    && proposal.header.epoch == eng.epoch()
-                                    && proposal.header.height >= eng.height()
-                                {
-                                    debug!(
-                                        zone_id,
-                                        proposal_parent = %hex::encode(&proposal.header.parent_hash[..8]),
-                                        local_parent = %eng.parent_hash_hex(),
-                                        height = proposal.header.height,
-                                        "buffering proposal for retry after cert"
-                                    );
-                                    last_buffered_proposal = Some(proposal);
-                                }
-                            }
-                        }
-                        ZephyrConsensusMessage::Vote(vote) => {
-                            let mut cert_produced = false;
-                            if let Some(ref mut eng) = engine {
-                                if let Some(action) = eng.receive_vote(vote) {
-                                    if let ConsensusAction::BroadcastCertificate(ref cert) =
-                                        action
-                                    {
-                                        apply_certificate_locally(
-                                            cert,
-                                            &zone_head_store,
-                                            &mut block_tx_cache,
-                                            &runtime,
-                                        );
-                                        cleanup_mempool_after_cert(
-                                            cert,
-                                            &mempool,
-                                            &mut block_nullifiers,
-                                            &mut deferred_cleanups,
-                                        );
-                                        cert_produced = true;
-                                    }
-                                    publish_action(
-                                        &action,
-                                        &consensus_topic,
-                                        &global_topic,
-                                        &publish_tx,
-                                        &block_tx_cache,
-                                    );
-                                }
-                            }
-                            // Proposal deferred to round timer tick to let cert propagate first.
-                            let _ = cert_produced;
-                        }
-                        ZephyrConsensusMessage::Reject(_) => {}
-                    }
-                }
-
-                let resolved: Vec<[u8; 32]> = deferred_cleanups
-                    .keys()
-                    .filter(|h| block_nullifiers.contains_key(*h))
-                    .copied()
-                    .collect();
-                for hash in resolved {
-                    if deferred_cleanups.remove(&hash).is_some() {
-                        if let Some((_, nullifiers)) = block_nullifiers.remove(&hash) {
-                            mempool.remove_nullifiers(zone_id, &nullifiers);
-                        }
-                    }
-                }
-            }
-
-            msg = global_rx.recv() => {
-                let Some(first) = msg else { break };
-
-                let mut global_batch = Vec::with_capacity(33);
-                global_batch.push(first);
-                while global_batch.len() < 32 {
-                    match global_rx.try_recv() {
-                        Ok(m) => global_batch.push(m),
-                        Err(_) => break,
-                    }
-                }
-
-                for gmsg in global_batch {
-                    match gmsg {
-                        ZephyrGlobalMessage::Certificate { cert, tx_nullifiers } => {
-                            if !tx_nullifiers.is_empty() {
-                                block_tx_cache
-                                    .entry(cert.block_hash)
-                                    .or_insert_with(|| (cert.zone_id, tx_nullifiers));
-                            }
-
-                            let mut round_advanced = false;
-                            if let Some(ref mut eng) = engine {
-                                if eng.apply_certificate(&cert) {
-                                    let _ = eng.take_fork_recovery_used();
-                                    apply_certificate_locally(
-                                        &cert,
-                                        &zone_head_store,
-                                        &mut block_tx_cache,
-                                        &runtime,
-                                    );
-                                    cleanup_mempool_after_cert(
-                                        &cert,
-                                        &mempool,
-                                        &mut block_nullifiers,
-                                        &mut deferred_cleanups,
-                                    );
-                                    debug!(zone_id, "applied certificate from global topic");
-                                    round_advanced = true;
-
-                                    // Fork recovery may have fired; pending_certs are
-                                    // preserved so the drain loop below can chain through them.
-
-                                    // Drain buffered certs that may now be applicable,
-                                    // and discard any that are now stale.
-                                    pending_certs.sort_by_key(|c| c.height);
-                                    while !pending_certs.is_empty() {
-                                        let before = pending_certs.len();
-                                        let mut still_pending = Vec::new();
-                                        for pc in pending_certs.drain(..) {
-                                            if pc.block_hash == *eng.parent_hash() {
-                                                debug!(
-                                                    zone_id,
-                                                    cert_block = %hex::encode(&pc.block_hash[..8]),
-                                                    "purging stale buffered certificate"
-                                                );
-                                                continue;
-                                            }
-                                            if pc.height < eng.height() {
-                                                debug!(
-                                                    zone_id,
-                                                    cert_height = pc.height,
-                                                    local_height = eng.height(),
-                                                    cert_block = %hex::encode(&pc.block_hash[..8]),
-                                                    "purging height-stale buffered certificate"
-                                                );
-                                                continue;
-                                            }
-                                            if eng.apply_certificate(&pc) {
-                                                let _ = eng.take_fork_recovery_used();
-                                                apply_certificate_locally(
-                                                    &pc,
-                                                    &zone_head_store,
-                                                    &mut block_tx_cache,
-                                                    &runtime,
-                                                );
-                                                cleanup_mempool_after_cert(
-                                                    &pc,
-                                                    &mempool,
-                                                    &mut block_nullifiers,
-                                                    &mut deferred_cleanups,
-                                                );
-                                                debug!(
-                                                    zone_id,
-                                                    "applied buffered certificate"
-                                                );
-                                            } else {
-                                                still_pending.push(pc);
-                                            }
-                                        }
-                                        pending_certs = still_pending;
-                                        if pending_certs.len() >= before {
-                                            break;
-                                        }
-                                    }
-
-                                    let purge_at = config.max_pending_certs * 3 / 4;
-                                    if pending_certs.len() > purge_at {
-                                        let drop_count =
-                                            pending_certs.len() - purge_at;
-                                        debug!(
-                                            zone_id,
-                                            dropped = drop_count,
-                                            remaining = purge_at,
-                                            "purging oldest buffered certs"
-                                        );
-                                        pending_certs.drain(..drop_count);
-                                    }
-                                } else if cert.block_hash == *eng.parent_hash() {
-                                    debug!(
-                                        zone_id,
-                                        cert_block = %hex::encode(&cert.block_hash[..8]),
-                                        "ignoring stale certificate (already applied)"
-                                    );
-                                } else if pending_certs.iter().any(|pc| pc.block_hash == cert.block_hash) {
-                                    debug!(
-                                        zone_id,
-                                        cert_block = %hex::encode(&cert.block_hash[..8]),
-                                        "ignoring duplicate buffered certificate"
-                                    );
-                                } else if pending_certs.len() < config.max_pending_certs {
-                                    debug!(
-                                        zone_id,
-                                        cert_block = %hex::encode(&cert.block_hash[..8]),
-                                        cert_parent = %hex::encode(&cert.parent_hash[..8]),
-                                        local_parent = %eng.parent_hash_hex(),
-                                        buffered = pending_certs.len() + 1,
-                                        "buffering out-of-order certificate"
-                                    );
-                                    pending_certs.push(cert.clone());
-                                } else {
-                                    warn!(
-                                        zone_id,
-                                        cert_block = %hex::encode(&cert.block_hash[..8]),
-                                        cert_parent = %hex::encode(&cert.parent_hash[..8]),
-                                        local_parent = %eng.parent_hash_hex(),
-                                        buffered = pending_certs.len(),
-                                        "pending cert buffer full, dropping certificate"
-                                    );
-                                }
-                            } else {
-                                apply_certificate_locally(
-                                    &cert,
-                                    &zone_head_store,
-                                    &mut block_tx_cache,
-                                    &runtime,
-                                );
-                                cleanup_mempool_after_cert(
-                                    &cert,
-                                    &mempool,
-                                    &mut block_nullifiers,
-                                    &mut deferred_cleanups,
-                                );
-                            }
-
-                            // Proposal deferred to round timer tick to let cert propagate first.
-                            let _ = round_advanced;
-
-                            if round_advanced {
-                                if let Some(ref mut eng) = engine {
-                                    retry_buffered_proposal(
-                                        &mut last_buffered_proposal,
-                                        eng,
-                                        zone_id,
-                                        my_validator_id,
-                                        &mut pending_certs,
-                                        &consensus_topic,
-                                        &global_topic,
-                                        &publish_tx,
-                                        &mut block_tx_cache,
-                                        &mut block_nullifiers,
-                                        &mut deferred_cleanups,
-                                        &zone_head_store,
-                                        &mempool,
-                                        &runtime,
-                                    );
-                                }
-                            }
-                        }
-                        ZephyrGlobalMessage::EpochAnnounce(ann) => {
-                            debug!(zone_id, epoch = ann.epoch, "received epoch announcement");
-                        }
-                    }
-                }
-            }
-
-            _ = round_timer.tick() => {
-                let elapsed = epoch_start.elapsed();
-                let epoch_elapsed = elapsed.as_millis() as u64 % config.epoch_duration_ms;
-                let progress = epoch_elapsed as f32 / config.epoch_duration_ms as f32;
-                let expected_epoch = elapsed.as_millis() as u64 / config.epoch_duration_ms;
-
-                // --- Epoch boundary check ---
-                // Only acquire the epoch lock when a transition may have
-                // occurred (~once per 120s). On every other tick the lock is
-                // skipped entirely, saving ~1-2ms of contention per tick.
-                if expected_epoch > last_known_epoch {
-                    let mut em = epoch_mgr.lock().await;
-                    while em.current_epoch() < expected_epoch {
-                        em.advance_epoch(&my_validator_id);
-                        info!(
-                            zone_id,
-                            new_epoch = em.current_epoch(),
-                            "epoch advanced"
-                        );
-                    }
-
-                    let current_epoch = em.current_epoch();
-                    if current_epoch > last_known_epoch {
-                        last_known_epoch = current_epoch;
-                        let assigned = em.zones_for_validator(&my_validator_id);
-                        let is_assigned = assigned.contains(&zone_id);
-                        let was_assigned = engine.is_some();
-
-                        {
-                            let mut rt = runtime.write();
-                            rt.assigned_zones = assigned;
-                        }
-
-                        if is_assigned {
-                            let committee = sample_committee(
-                                em.randomness_seed(),
-                                zone_id,
-                                &validators,
-                                config.committee_size,
-                            );
-                            drop(em);
-                            if !was_assigned {
-                                let _ = topic_tx.try_send(TopicCommand::Subscribe(zone_topic.clone()));
-                                let _ = topic_tx.try_send(TopicCommand::Subscribe(consensus_topic.clone()));
-                                info!(zone_id, "epoch transition: gained zone, subscribed to topics");
-                            }
-                            if let Some(ref mut eng) = engine {
-                                if eng.consecutive_timeouts() >= 2 {
-                                    warn!(
-                                        zone_id,
-                                        consecutive_timeouts = eng.consecutive_timeouts(),
-                                        height = eng.height(),
-                                        parent_hash = %eng.parent_hash_hex(),
-                                        "zone stalled at epoch boundary, enabling fork recovery"
-                                    );
-                                    eng.enable_fork_recovery();
-                                }
-                                eng.advance_to_epoch(current_epoch, committee);
-                                pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
-                            } else {
-                                let prev_head = zone_head_store
-                                    .get(&zone_id)
-                                    .map(|v| *v)
-                                    .unwrap_or([0u8; 32]);
-                                engine = Some(ZoneConsensus::new(
-                                    zone_id,
-                                    current_epoch,
-                                    committee,
-                                    my_validator_id,
-                                    prev_head,
-                                    config.clone(),
-                                    zone_id as usize,
-                                ));
-                                mempool.add_zone(zone_id, 65_536);
-                                pending_certs.retain(|c| c.epoch + 1 >= current_epoch);
-                            }
-                        } else {
-                            drop(em);
-                            if was_assigned {
-                                let _ = topic_tx.try_send(TopicCommand::Unsubscribe(zone_topic.clone()));
-                                let _ = topic_tx.try_send(TopicCommand::Unsubscribe(consensus_topic.clone()));
-                                info!(zone_id, "epoch transition: lost zone, unsubscribed from topics");
-                                engine = None;
-                                mempool.remove_zone(zone_id);
-                                pending_certs.clear();
-                            }
-                        }
-                    }
-                }
-
-                {
-                    let mut rt = runtime.write();
-                    rt.epoch_progress_pct = progress;
-                    rt.current_epoch = last_known_epoch;
-                }
-
-                if let Some(ref mut eng) = engine {
-                    eng.tick();
-                    if eng.is_round_timed_out(config.round_timeout_ticks) {
-                        let effective_timeout = config.round_timeout_ticks
-                            * (1 + eng.consecutive_timeouts().min(3));
-                        let (vote_blocks, max_votes) = eng.vote_summary();
-                        warn!(
-                            zone_id,
-                            round = eng.round(),
-                            height = eng.height(),
-                            consecutive_timeouts = eng.consecutive_timeouts(),
-                            effective_timeout_ticks = effective_timeout,
-                            is_leader = eng.is_leader(),
-                            leader = %hex::encode(&eng.leader_id()[..8]),
-                            parent_hash = %eng.parent_hash_hex(),
-                            proposal_seen = eng.proposal_seen(),
-                            has_pending_proposal = eng.has_pending_proposal(),
-                            votes_for_pending = eng.vote_count_for_pending(),
-                            vote_blocks,
-                            max_votes,
-                            committee_size = eng.committee_size(),
-                            quorum = config.quorum_threshold,
-                            pending_certs = pending_certs.len(),
-                            "round timed out without quorum, rotating leader"
-                        );
-                        let abandoned_txs = eng.timeout_round();
-                        if !abandoned_txs.is_empty() {
-                            mempool.reinsert_batch(zone_id, abandoned_txs);
-                        }
-                        if eng.consecutive_timeouts() >= 2 || pending_certs.len() >= 8 {
-                            if eng.enable_fork_recovery() {
-                                warn!(
-                                    zone_id,
-                                    consecutive_timeouts = eng.consecutive_timeouts(),
-                                    pending_certs = pending_certs.len(),
-                                    height = eng.height(),
-                                    parent_hash = %eng.parent_hash_hex(),
-                                    mempool = mempool.len(zone_id),
-                                    "zone stalled, enabling fork recovery"
-                                );
-                            }
-                        }
-                        {
-                            let mut rt = runtime.write();
-                            rt.zone_consecutive_timeouts.insert(zone_id, eng.consecutive_timeouts());
-                        }
-                    }
-
-                    // Periodic drain of buffered certs (~every 1s at default 100ms tick).
-                    // Breaks the deadlock where a node can't drain because no cert is
-                    // applied, and no cert is applied because the drain never runs.
-                    if eng.ticks_in_round() % 10 == 0 && !pending_certs.is_empty() {
-                        let mut drained_any = true;
-                        pending_certs.sort_by_key(|c| c.height);
-                        while drained_any && !pending_certs.is_empty() {
-                            drained_any = false;
-                            let mut still_pending = Vec::new();
-                            for pc in pending_certs.drain(..) {
-                                if pc.block_hash == *eng.parent_hash() {
-                                    continue;
-                                }
-                                if pc.height < eng.height() {
-                                    debug!(
-                                        zone_id,
-                                        cert_height = pc.height,
-                                        local_height = eng.height(),
-                                        cert_block = %hex::encode(&pc.block_hash[..8]),
-                                        "periodic drain: purging height-stale certificate"
-                                    );
-                                    continue;
-                                }
-                                if eng.apply_certificate(&pc) {
-                                    let _ = eng.take_fork_recovery_used();
-                                    apply_certificate_locally(
-                                        &pc,
-                                        &zone_head_store,
-                                        &mut block_tx_cache,
-                                        &runtime,
-                                    );
-                                    cleanup_mempool_after_cert(
-                                        &pc,
-                                        &mempool,
-                                        &mut block_nullifiers,
-                                        &mut deferred_cleanups,
-                                    );
-                                    debug!(zone_id, "periodic drain: applied buffered certificate");
-                                    drained_any = true;
-                                } else {
-                                    still_pending.push(pc);
-                                }
-                            }
-                            pending_certs = still_pending;
-                        }
-
-                        retry_buffered_proposal(
-                            &mut last_buffered_proposal,
-                            eng,
-                            zone_id,
-                            my_validator_id,
-                            &mut pending_certs,
-                            &consensus_topic,
-                            &global_topic,
-                            &publish_tx,
-                            &mut block_tx_cache,
-                            &mut block_nullifiers,
-                            &mut deferred_cleanups,
-                            &zone_head_store,
-                            &mempool,
-                            &runtime,
-                        );
-                    }
-
-                    // Periodic health summary during stalls (every ~10s at default 100ms tick)
-                    if eng.consecutive_timeouts() > 0 && eng.ticks_in_round() % 100 == 0 {
-                        let (vote_blocks, max_votes) = eng.vote_summary();
-                        let distinct_parents: std::collections::HashSet<[u8; 32]> = pending_certs.iter().map(|c| c.parent_hash).collect();
-                        info!(
-                            zone_id,
-                            round = eng.round(),
-                            height = eng.height(),
-                            epoch = eng.epoch(),
-                            consecutive_timeouts = eng.consecutive_timeouts(),
-                            consecutive_successes = eng.consecutive_successes(),
-                            ticks_in_round = eng.ticks_in_round(),
-                            is_leader = eng.is_leader(),
-                            leader = %hex::encode(&eng.leader_id()[..8]),
-                            proposal_seen = eng.proposal_seen(),
-                            has_pending_proposal = eng.has_pending_proposal(),
-                            votes_for_pending = eng.vote_count_for_pending(),
-                            vote_blocks,
-                            max_votes,
-                            parent_hash = %eng.parent_hash_hex(),
-                            pending_certs = pending_certs.len(),
-                            pending_cert_distinct_parents = distinct_parents.len(),
-                            mempool_len = mempool.len(zone_id),
-                            "zone stall health check"
-                        );
-                    }
-
-                    try_propose_for_zone(
-                        zone_id,
-                        eng,
-                        &mempool,
-                        my_validator_id,
-                        &config,
-                        &mut block_tx_cache,
-                        &mut block_nullifiers,
-                        &consensus_topic,
-                        &global_topic,
-                        &publish_tx,
-                        &zone_head_store,
-                        &runtime,
-                        &mut deferred_cleanups,
-                    );
-                }
-
-                let zone_len = mempool.len(zone_id);
-                {
-                    let mut rt = runtime.write();
-                    rt.mempool_sizes.insert(zone_id, zone_len);
-                }
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn retry_buffered_proposal(
-    last_buffered_proposal: &mut Option<Block>,
-    eng: &mut ZoneConsensus,
-    zone_id: u32,
-    my_validator_id: [u8; 32],
-    _pending_certs: &mut Vec<FinalityCertificate>,
-    consensus_topic: &str,
-    global_topic: &str,
-    publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
-    block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
-    block_nullifiers: &mut HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
-    deferred_cleanups: &mut HashMap<[u8; 32], u32>,
-    zone_head_store: &DashMap<u32, [u8; 32]>,
-    mempool: &SharedMempool,
-    runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
-) {
-    let proposal = match last_buffered_proposal.take() {
-        Some(p) => p,
-        None => return,
-    };
-
-    if proposal.header.height < eng.height() {
-        debug!(
-            zone_id,
-            proposal_height = proposal.header.height,
-            local_height = eng.height(),
-            "discarding stale buffered proposal"
-        );
-        return;
-    }
-
-    if proposal.header.parent_hash != *eng.parent_hash() {
-        *last_buffered_proposal = Some(proposal);
-        return;
-    }
-
-    debug!(
-        zone_id,
-        block_hash = %hex::encode(&proposal.block_hash[..8]),
-        height = proposal.header.height,
-        "retrying buffered proposal after cert catch-up"
-    );
-
-    let vid = my_validator_id;
-    if let Some(action) = eng.vote_on_proposal(&proposal, |data| hmac_sign(&vid, data)) {
-        eng.reset_timeout();
-        let _ = eng.take_fork_recovery_used();
-        publish_action(&action, consensus_topic, global_topic, publish_tx, block_tx_cache);
-        if let ConsensusAction::BroadcastVote(vote) = action {
-            if let Some(cert_action) = eng.receive_vote(vote) {
-                if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
-                    apply_certificate_locally(cert, zone_head_store, block_tx_cache, runtime);
-                    cleanup_mempool_after_cert(cert, mempool, block_nullifiers, deferred_cleanups);
-                }
-                publish_action(&cert_action, consensus_topic, global_topic, publish_tx, block_tx_cache);
-            }
-        }
-    }
-}
-
-/// Attempt to propose a block for a single zone where this node is leader.
-///
-/// Called on every round timer tick. Proposals are paced to the timer to give
-/// certificates time to propagate before the next proposal goes out.
-#[allow(clippy::too_many_arguments)]
-fn try_propose_for_zone(
-    zone_id: u32,
-    engine: &mut ZoneConsensus,
-    mempool: &SharedMempool,
-    my_validator_id: [u8; 32],
-    config: &ZephyrConfig,
-    block_tx_cache: &mut HashMap<[u8; 32], (u32, Vec<String>)>,
-    block_nullifiers: &mut HashMap<[u8; 32], (u32, Vec<Nullifier>)>,
-    consensus_topic: &str,
-    global_topic: &str,
-    publish_tx: &mpsc::Sender<(String, Vec<u8>)>,
-    zone_head_store: &DashMap<u32, [u8; 32]>,
-    runtime: &Arc<parking_lot::RwLock<ZephyrRuntime>>,
-    deferred_cleanups: &mut HashMap<[u8; 32], u32>,
-) {
-    if !engine.is_leader() || engine.in_warmup() {
-        return;
-    }
-
-    let is_rebroadcast = engine.has_pending_proposal();
-    let spends = if is_rebroadcast {
-        vec![]
-    } else {
-        mempool.drain_proposal(zone_id, config.max_block_size)
-    };
-    let tx_count = spends.len();
-    let vid = my_validator_id;
-    if let Some(action) = engine.propose(spends, |data| hmac_sign(&vid, data)) {
-        if let ConsensusAction::BroadcastProposal(ref block) = action {
-            if is_rebroadcast {
-                debug!(
-                    zone_id,
-                    round = engine.round(),
-                    block_hash = %hex::encode(&block.block_hash[..8]),
-                    "rebroadcasting proposal"
-                );
-            } else {
-                info!(
-                    zone_id,
-                    height = engine.height(),
-                    round = engine.round(),
-                    tx_count,
-                    block_hash = %hex::encode(&block.block_hash[..8]),
-                    "proposed new block"
-                );
-                cache_block_txs(block_tx_cache, block_nullifiers, zone_id, block);
-            }
-
-            publish_action(&action, consensus_topic, global_topic, publish_tx, block_tx_cache);
-
-            if !is_rebroadcast {
-                let vid2 = my_validator_id;
-                if let Some(vote_action) =
-                    engine.vote_on_proposal(block, |data| hmac_sign(&vid2, data))
-                {
-                    publish_action(
-                        &vote_action,
-                        consensus_topic,
-                        global_topic,
-                        publish_tx,
-                        block_tx_cache,
-                    );
-                    if let ConsensusAction::BroadcastVote(vote) = vote_action {
-                        if let Some(cert_action) = engine.receive_vote(vote) {
-                            if let ConsensusAction::BroadcastCertificate(ref cert) = cert_action {
-                                apply_certificate_locally(
-                                    cert,
-                                    zone_head_store,
-                                    block_tx_cache,
-                                    runtime,
-                                );
-                                cleanup_mempool_after_cert(
-                                    cert,
-                                    mempool,
-                                    block_nullifiers,
-                                    deferred_cleanups,
-                                );
-                            }
-                            publish_action(
-                                &cert_action,
-                                consensus_topic,
-                                global_topic,
-                                publish_tx,
-                                block_tx_cache,
-                            );
-                        }
                     }
                 }
             }

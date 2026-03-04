@@ -12,6 +12,9 @@ pub mod routing;
 pub mod service;
 pub mod shared_mempool;
 pub mod storage;
+pub mod zone_handlers;
+pub mod zone_task;
+pub mod zone_tick;
 
 pub use config::ZephyrConfig;
 pub use service::ZephyrService;
