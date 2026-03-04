@@ -16,5 +16,6 @@ mod layout;
 
 pub(crate) use buttons::{action_button, danger_button, icon_button, title_bar_icon};
 pub(crate) use layout::{
-    overlay_frame, section, section_heading, status_bar_frame, title_bar_frame,
+    overlay_frame, section, section_heading, section_heading_with_right, status_bar_frame,
+    title_bar_frame,
 };

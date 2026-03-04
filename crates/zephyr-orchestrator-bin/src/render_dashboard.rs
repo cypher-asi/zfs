@@ -6,7 +6,7 @@ use eframe::egui;
 use crate::app::OrchestratorApp;
 use crate::components::tokens::{self, colors, font_size, spacing};
 use crate::components::labels::field_label;
-use crate::components::section;
+use crate::components::{section, section_heading_with_right};
 use crate::helpers::{fmt_float_comma, fmt_int_comma, format_uptime, node_color};
 use crate::state::{AppState, RecentBlock};
 
@@ -293,31 +293,61 @@ fn render_zone_card(ui: &mut egui::Ui, zone_id: u32, state: &AppState, card_w: f
 }
 
 fn render_epoch_timeline(ui: &mut egui::Ui, state: &AppState) {
-    section(ui, "Epoch Timeline", |ui| {
+    let pct = state.network.epoch_progress_pct.clamp(0.0, 1.0);
+    let subtitle = format!(
+        "Epoch {} \u{2014} {:.0}%",
+        state.network.current_epoch,
+        pct * 100.0,
+    );
+
+    let max = ui.available_rect_before_wrap();
+    let prev_clip = ui.clip_rect();
+    ui.set_clip_rect(prev_clip.intersect(egui::Rect::from_x_y_ranges(
+        max.left()..=max.right(),
+        prev_clip.top()..=prev_clip.bottom(),
+    )));
+
+    let mut prepared = egui::Frame::default()
+        .fill(colors::SURFACE)
+        .corner_radius(0.0)
+        .inner_margin(spacing::XL)
+        .outer_margin(egui::Margin::symmetric(1, 0))
+        .stroke(tokens::border_stroke())
+        .begin(ui);
+
+    {
+        let ui = &mut prepared.content_ui;
+        ui.set_width(ui.available_width());
+        section_heading_with_right(ui, "Epoch Timeline", &subtitle);
+        ui.add_space(10.0);
+
         let avail = ui.available_width();
-        let bar_h = 20.0;
+        let bar_h = 6.0;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(avail, bar_h), egui::Sense::hover());
         let painter = ui.painter_at(rect);
 
-        painter.rect_filled(rect, 2.0, colors::SURFACE_DARK);
+        painter.rect_filled(rect, 0.0, colors::SURFACE_DARK);
 
-        let pct = state.network.epoch_progress_pct.clamp(0.0, 1.0);
         let fill_w = rect.width() * pct;
         let fill_rect = egui::Rect::from_min_size(rect.left_top(), egui::vec2(fill_w, bar_h));
-        painter.rect_filled(fill_rect, 2.0, colors::ACCENT.linear_multiply(0.6));
+        painter.rect_filled(fill_rect, 0.0, colors::ACCENT.linear_multiply(0.6));
+    }
 
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            format!(
-                "Epoch {} — {:.0}%",
-                state.network.current_epoch,
-                pct * 100.0
-            ),
-            egui::FontId::proportional(font_size::SMALL),
-            egui::Color32::WHITE,
-        );
-    });
+    let resp = prepared.end(ui);
+
+    let border_rect = egui::Rect::from_min_max(
+        egui::pos2(max.left() + 1.0, resp.rect.top()),
+        egui::pos2(max.right() - 1.0, resp.rect.bottom()),
+    );
+    ui.painter().rect_stroke(
+        border_rect,
+        0.0,
+        tokens::border_stroke(),
+        egui::StrokeKind::Inside,
+    );
+
+    ui.set_clip_rect(prev_clip);
+    ui.add_space(spacing::MD);
 }
 
 /// Delay before auto-resuming after the pointer leaves the feed area,

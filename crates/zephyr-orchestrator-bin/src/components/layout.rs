@@ -53,6 +53,28 @@ pub(crate) fn section_heading(ui: &mut egui::Ui, title: &str) {
     );
 }
 
+pub(crate) fn section_heading_with_right(
+    ui: &mut egui::Ui,
+    title: &str,
+    right_text: &str,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(title.to_uppercase())
+                .strong()
+                .size(font_size::HEADING)
+                .color(colors::TEXT_HEADING),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(right_text)
+                    .size(font_size::SMALL)
+                    .color(colors::TEXT_SECONDARY),
+            );
+        });
+    });
+}
+
 pub(crate) fn action_panel(
     ui: &mut egui::Ui,
     id: impl Into<egui::Id>,
