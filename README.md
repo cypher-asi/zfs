@@ -13,6 +13,7 @@
   <a href="#overview">Overview</a> &nbsp;·&nbsp;
   <a href="docs/run-a-zode.md">Run a ZODE</a> &nbsp;·&nbsp;
   <a href="docs/run-a-relay.md">Run a Relay</a> &nbsp;·&nbsp;
+  <a href="docs/build-a-program.md">Build a Program</a> &nbsp;·&nbsp;
   <a href="#principles">Principles</a> &nbsp;·&nbsp;
   <a href="docs/grid-protocol.md">Protocol Spec</a>
 </p>

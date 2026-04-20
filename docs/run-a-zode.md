@@ -165,6 +165,17 @@ The `ZodeConfig` struct (in `crates/zode/src/config.rs`) controls node behavior:
 | `sector_filter` | `SectorFilter` | `All` | Per-sector accept filter |
 | `network` | `NetworkConfig` | QUIC on `0.0.0.0:3690`, Kademlia server mode | libp2p transport and discovery |
 
+### Adding third-party Programs
+
+To subscribe a ZODE to a custom (non-default) Program, pass one or more
+`--topic <program_id_hex>` flags to `zode-cli`, or add the 32-byte
+`ProgramId` to `ZodeConfig::topics` (and the desktop GUI's Settings →
+Programs panel for `zode-bin`). Both paths feed into
+`ZodeConfig::effective_topics()` in `crates/zode/src/config.rs`.
+
+For a full walkthrough of defining, publishing, and operating third-party
+Programs and Services, see [Build a Program](build-a-program.md).
+
 ### Environment Variables
 
 | Variable | Description |
