@@ -242,6 +242,23 @@ impl ZodeApp {
             }
         };
 
+        // Generate the libp2p keypair up-front and seal it inside the
+        // vault so the Zode's peer id is stable across restarts. Without
+        // this, the vault would carry an empty `libp2p_keypair`, every
+        // boot would synthesise a fresh ed25519 keypair, and any client
+        // with a saved multiaddr (e.g. zos / zero-sdk) would have to be
+        // re-pointed at the new peer id on every restart.
+        let libp2p_keypair = grid_net::Keypair::generate_ed25519();
+        let libp2p_keypair_bytes = match libp2p_keypair.to_protobuf_encoding() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.identity_state.error =
+                    Some(format!("Failed to encode libp2p keypair: {e}"));
+                return;
+            }
+        };
+        let libp2p_peer_id = grid_net::format_zode_id(&libp2p_keypair.public().to_peer_id());
+
         let plaintext = VaultPlaintext {
             shares: self
                 .identity_state
@@ -253,7 +270,7 @@ impl ZodeApp {
             machine_id: mk.machine_id,
             epoch: mk.epoch,
             capabilities: mk.capabilities.bits(),
-            libp2p_keypair: Vec::new(),
+            libp2p_keypair: libp2p_keypair_bytes,
         };
 
         let did = self.identity_state.did.clone().unwrap_or_default();
@@ -263,7 +280,7 @@ impl ZodeApp {
             &base,
             profile::CreateProfileParams {
                 name,
-                peer_id: String::new(),
+                peer_id: libp2p_peer_id,
                 did,
                 plaintext,
                 password: password.clone(),

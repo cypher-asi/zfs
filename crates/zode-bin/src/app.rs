@@ -231,7 +231,7 @@ impl ZodeApp {
     pub(crate) fn attempt_unlock(&mut self, profile_id: &str) {
         let base = profile::base_dir();
         match profile::unlock_profile(&base, profile_id, &self.unlock_password) {
-            Ok(plaintext) => {
+            Ok(mut plaintext) => {
                 self.unlock_error = None;
                 self.active_profile_id = Some(profile_id.to_string());
                 self.session_password = Some(self.unlock_password.clone());
@@ -249,8 +249,32 @@ impl ZodeApp {
                 self.identity_state.shares = shares;
                 self.identity_state.identity_id = plaintext.identity_id;
 
-                let libp2p_keypair =
-                    grid_net::Keypair::from_protobuf_encoding(&plaintext.libp2p_keypair).ok();
+                // Migrate pre-fix profiles that were saved with an empty
+                // `libp2p_keypair`: synthesise a fresh keypair, seal it
+                // back into the vault, and use it for this boot. After
+                // the write-back the peer id is stable across all future
+                // restarts. Decoding errors on a non-empty field are
+                // also treated as "regenerate" so a corrupted blob does
+                // not permanently lock the user out of a stable peer id.
+                let libp2p_keypair = match grid_net::Keypair::from_protobuf_encoding(
+                    &plaintext.libp2p_keypair,
+                ) {
+                    Ok(kp) => Some(kp),
+                    Err(_) => match Self::ensure_persisted_libp2p_keypair(
+                        &base,
+                        profile_id,
+                        self.session_password.as_deref().unwrap_or_default(),
+                        &mut plaintext,
+                    ) {
+                        Ok(kp) => Some(kp),
+                        Err(e) => {
+                            tracing::warn!(
+                                "failed to persist libp2p keypair for profile {profile_id}: {e}"
+                            );
+                            None
+                        }
+                    },
+                };
 
                 let caps = zid::MachineKeyCapabilities::from_bits_truncate(plaintext.capabilities);
                 let mk_result = std::thread::Builder::new()
@@ -321,6 +345,39 @@ impl ZodeApp {
                 };
             }
         }
+    }
+
+    /// One-shot migration: synthesise a fresh libp2p keypair, write it
+    /// back into the vault, and return it for this boot.
+    ///
+    /// Used by [`Self::attempt_unlock`] for profiles whose stored
+    /// `libp2p_keypair` field is missing or unparseable. After the
+    /// write-back the peer id stays stable across all future restarts
+    /// without any further user interaction.
+    ///
+    /// Returns the freshly generated keypair on success so the caller
+    /// can hand it to `boot_zode_with_keypair` immediately. Errors are
+    /// surfaced verbatim so the caller can log + fall back to the
+    /// pre-fix behaviour (random keypair per boot) rather than blocking
+    /// the unlock entirely.
+    fn ensure_persisted_libp2p_keypair(
+        base: &std::path::Path,
+        profile_id: &str,
+        password: &str,
+        plaintext: &mut crate::vault::VaultPlaintext,
+    ) -> Result<grid_net::Keypair, String> {
+        let kp = grid_net::Keypair::generate_ed25519();
+        let bytes = kp
+            .to_protobuf_encoding()
+            .map_err(|e| format!("encode keypair: {e}"))?;
+        plaintext.libp2p_keypair = bytes;
+        profile::update_vault(base, profile_id, plaintext, password)
+            .map_err(|e| format!("update vault: {e}"))?;
+        tracing::info!(
+            profile_id = %profile_id,
+            "persisted freshly-generated libp2p keypair into vault"
+        );
+        Ok(kp)
     }
 
     pub(crate) fn boot_zode_with_keypair(&mut self, keypair: Option<grid_net::Keypair>) {
