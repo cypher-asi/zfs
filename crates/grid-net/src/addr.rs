@@ -95,6 +95,41 @@ pub fn extract_peer_id(addr: &Multiaddr) -> Option<libp2p::PeerId> {
     })
 }
 
+/// Extract the dial *destination* `PeerId` from a multiaddr.
+///
+/// For direct addresses this is identical to [`extract_peer_id`] -- the
+/// first (and typically only) `/p2p/<peer>` segment. For circuit-relay
+/// addresses of the form `/.../p2p/<relay>/p2p-circuit/p2p/<dest>` the
+/// returned peer is `<dest>` (the peer reached through the circuit),
+/// **not** `<relay>`.
+///
+/// Use this -- not [`extract_peer_id`] -- when deciding whether a dial
+/// has actually completed. Otherwise libp2p's `PeerConnected(<relay>)`
+/// event will be mistaken for a successful end-to-end handshake even
+/// though the circuit hop to the destination has not yet occurred (or
+/// has failed).
+pub fn extract_dial_target(addr: &Multiaddr) -> Option<libp2p::PeerId> {
+    let mut past_circuit = false;
+    let mut first_peer = None;
+    let mut dest_peer = None;
+    for proto in addr.iter() {
+        match proto {
+            Protocol::P2pCircuit => past_circuit = true,
+            Protocol::P2p(peer) => {
+                if past_circuit {
+                    if dest_peer.is_none() {
+                        dest_peer = Some(peer);
+                    }
+                } else if first_peer.is_none() {
+                    first_peer = Some(peer);
+                }
+            }
+            _ => {}
+        }
+    }
+    dest_peer.or(first_peer)
+}
+
 /// Returns `true` when the multiaddr contains at least one transport component
 /// (IP + port), as opposed to a bare `/p2p/<peer_id>` with no dialable address.
 pub fn has_transport(addr: &Multiaddr) -> bool {
@@ -263,6 +298,61 @@ mod tests {
     fn extract_ip_v4() {
         let addr: Multiaddr = "/ip4/3.129.15.45/tcp/3691".parse().unwrap();
         assert_eq!(extract_ip(&addr), Some("3.129.15.45".to_string()));
+    }
+
+    #[test]
+    fn extract_dial_target_returns_peer_for_direct_addr() {
+        let peer = PeerId::random();
+        let addr: Multiaddr = format!("/ip4/1.2.3.4/tcp/3691/p2p/{peer}").parse().unwrap();
+        assert_eq!(extract_dial_target(&addr), Some(peer));
+    }
+
+    #[test]
+    fn extract_dial_target_returns_destination_not_relay_for_circuit() {
+        let relay = PeerId::random();
+        let dest = PeerId::random();
+        let addr: Multiaddr =
+            format!("/ip4/1.2.3.4/tcp/3691/p2p/{relay}/p2p-circuit/p2p/{dest}")
+                .parse()
+                .unwrap();
+        assert_eq!(extract_dial_target(&addr), Some(dest));
+        // The legacy `extract_peer_id` would return the relay here -- the
+        // whole point of this helper is to disambiguate them.
+        assert_eq!(extract_peer_id(&addr), Some(relay));
+    }
+
+    /// Extra `/p2p/<relay>` segments before `/p2p-circuit` are tolerated
+    /// (matches `normalize_multiaddr`), and only the first peer after the
+    /// circuit token is taken as the destination.
+    #[test]
+    fn extract_dial_target_handles_extra_p2p_segments() {
+        let relay = PeerId::random();
+        let dest = PeerId::random();
+        let extra_dest = PeerId::random();
+        let addr: Multiaddr = format!(
+            "/ip4/1.2.3.4/tcp/3691/p2p/{relay}/p2p/{relay}/p2p-circuit/p2p/{dest}/p2p/{extra_dest}"
+        )
+        .parse()
+        .unwrap();
+        assert_eq!(extract_dial_target(&addr), Some(dest));
+    }
+
+    #[test]
+    fn extract_dial_target_none_for_bare_transport() {
+        let addr: Multiaddr = "/ip4/1.2.3.4/tcp/3691".parse().unwrap();
+        assert_eq!(extract_dial_target(&addr), None);
+    }
+
+    /// A circuit token without a trailing `/p2p/<dest>` is malformed but
+    /// shouldn't crash: fall back to the relay peer so the caller can
+    /// still report *some* connection target rather than `None`.
+    #[test]
+    fn extract_dial_target_falls_back_to_relay_when_no_dest() {
+        let relay = PeerId::random();
+        let addr: Multiaddr = format!("/ip4/1.2.3.4/tcp/3691/p2p/{relay}/p2p-circuit")
+            .parse()
+            .unwrap();
+        assert_eq!(extract_dial_target(&addr), Some(relay));
     }
 
     #[test]
