@@ -302,7 +302,14 @@ impl ZodeApp {
                 self.identity_state.error = None;
                 self.identity_state.save_status = None;
 
-                self.boot_zode_with_keypair(None);
+                // Boot the Zode with the keypair we just sealed into
+                // the vault, not a fresh random one. Otherwise the first
+                // run after setup would advertise a peer id that does
+                // not match what is persisted, and the next unlock would
+                // load the *vault* keypair -- giving the user the
+                // impression that the Zode's identity rotated between
+                // their first and second launches.
+                self.boot_zode_with_keypair(Some(libp2p_keypair));
                 self.phase = AppPhase::Revealing;
                 self.reveal_start = None;
             }
