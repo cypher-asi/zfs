@@ -37,6 +37,21 @@ impl ZoneTaskState {
             self.periodic_mempool_purge(&eng);
             self.periodic_health(&eng);
             self.try_propose(&mut eng);
+            let tick_us = tick_start.elapsed().as_micros();
+            // Warn if a single zone tick exceeds ~25% of the round interval;
+            // sustained slow ticks cause leaders to miss rounds and trigger timeouts.
+            let budget_us = (self.config.round_interval_ms as u128) * 1_000 / 4;
+            if budget_us > 0 && tick_us > budget_us {
+                warn!(
+                    zone_id = self.zone_id,
+                    tick_us = tick_us as u64,
+                    budget_us = budget_us as u64,
+                    round = eng.round(),
+                    height = eng.height(),
+                    mempool_len = self.mempool.len(self.zone_id),
+                    "slow zone tick"
+                );
+            }
             self.engine = Some(eng);
         }
 
