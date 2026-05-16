@@ -34,6 +34,11 @@ pub(crate) struct ZodeApp {
     pub profiles: Vec<ProfileMeta>,
     pub unlock_password: String,
     pub unlock_error: Option<String>,
+    /// One-shot flag: when set, the next render of the unlock screen
+    /// requests focus on the password input. Set on app start and on
+    /// every transition into `AppPhase::Unlock` so the cursor lands in
+    /// the password field without the user having to click it.
+    pub unlock_focus_pending: bool,
     pub confirm_delete_profile: Option<String>,
     pub reveal_start: Option<f64>,
     pub status_first_seen: Option<f64>,
@@ -133,6 +138,7 @@ impl ZodeApp {
             profiles,
             unlock_password: String::new(),
             unlock_error: None,
+            unlock_focus_pending: true,
             confirm_delete_profile: None,
             reveal_start: None,
             status_first_seen: None,
@@ -343,6 +349,7 @@ impl ZodeApp {
                 self.phase = AppPhase::Unlock {
                     profile_id: profile_id.to_string(),
                 };
+                self.unlock_focus_pending = true;
             }
         }
     }
@@ -679,6 +686,7 @@ impl ZodeApp {
             self.identity_state = Default::default();
             AppPhase::Setup
         } else if self.profiles.len() == 1 {
+            self.unlock_focus_pending = true;
             AppPhase::Unlock {
                 profile_id: self.profiles[0].id.clone(),
             }
@@ -702,6 +710,7 @@ impl ZodeApp {
             .clone()
             .unwrap_or_else(|| self.profiles[0].id.clone());
         self.phase = AppPhase::Unlock { profile_id };
+        self.unlock_focus_pending = true;
     }
 
     fn handle_resize_edges(ctx: &egui::Context) -> bool {
@@ -1269,6 +1278,7 @@ impl ZodeApp {
                             self.phase = AppPhase::Unlock {
                                 profile_id: p.id.clone(),
                             };
+                            self.unlock_focus_pending = true;
                         }
                         ui.add_space(spacing::SM);
                     }
@@ -1301,8 +1311,9 @@ impl ZodeApp {
                         text_input_password(&mut self.unlock_password, 280.0)
                             .hint_text("Enter your password"),
                     );
-                    if self.unlock_password.is_empty() && !resp.has_focus() {
+                    if self.unlock_focus_pending {
                         resp.request_focus();
+                        self.unlock_focus_pending = false;
                     }
                     if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         do_unlock = true;
